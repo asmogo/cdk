@@ -1,0 +1,9 @@
+**/target
+.DS_Store
+.direnv
+.vscode/
+.idea/
+*.redb
+*.sqlite*
+.goosehints
+.goose

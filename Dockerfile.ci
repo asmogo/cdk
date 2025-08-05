@@ -1,0 +1,54 @@
+# Use the official Rust image as a base
+FROM rust:1.86.0
+
+# Install system build dependencies
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    curl \
+    protobuf-compiler \
+    libz-dev \
+    git \
+    xz-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install cargo-chef for caching
+RUN cargo install cargo-chef just
+
+# === Install Lightning Binaries for Integration Tests ===
+ARG BITCOIN_VERSION=27.1
+ARG LND_VERSION=0.18.2-beta
+ARG CLN_VERSION=25.05
+
+# Install Bitcoin Core
+RUN curl -sL https://bitcoincore.org/bin/bitcoin-core-${BITCOIN_VERSION}/bitcoin-${BITCOIN_VERSION}-x86_64-linux-gnu.tar.gz -o bitcoin.tar.gz && \
+    tar -xzf bitcoin.tar.gz && \
+    install -m 0755 bitcoin-${BITCOIN_VERSION}/bin/* /usr/local/bin && \
+    rm -rf bitcoin.tar.gz bitcoin-${BITCOIN_VERSION}
+
+# Install LND
+RUN curl -sL https://github.com/lightningnetwork/lnd/releases/download/v${LND_VERSION}/lnd-linux-amd64-v${LND_VERSION}.tar.gz -o lnd.tar.gz && \
+    tar -xzf lnd.tar.gz && \
+    install -m 0755 lnd-linux-amd64-v${LND_VERSION}/* /usr/local/bin && \
+    rm -rf lnd.tar.gz lnd-linux-amd64-v${LND_VERSION}
+# Install Core-Lightning
+RUN curl -sL https://github.com/ElementsProject/lightning/releases/download/v${CLN_VERSION}/clightning-v${CLN_VERSION}-Ubuntu-24.04-amd64.tar.xz -o cln.tar.xz && \
+    tar -xvf cln.tar.xz && \
+    rm -rf cln.tar.xz clightning-v${CLN_VERSION}
+
+# Set working directory
+WORKDIR /usr/src/app
+
+# === Dependency Caching via cargo-chef ===
+COPY ./Cargo.toml ./Cargo.toml
+COPY ./Cargo.lock ./Cargo.lock
+COPY ./crates ./crates
+RUN cargo chef prepare --recipe-path recipe.json
+RUN cargo chef cook --recipe-path recipe.json
+
+# === Build Application ===
+COPY . .
+RUN cargo install sqlx-cli \
+    && cargo install cargo-outdated \
+    && cargo install typos-cli
+
+RUN rustup target add wasm32-unknown-unknown

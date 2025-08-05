@@ -7,15 +7,14 @@ jobs:
     name: Nutshell Mint Integration Tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    needs: build-ci-image
     steps:
       - name: checkout
         uses: actions/checkout@v4
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v17
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
       - name: Test Nutshell
-        run: nix develop -i -L .#integration --command just test-nutshell
+        run: docker run --rm -v $(pwd):/usr/src/app ${{ needs.build-ci-image.outputs.image_tag }} just test-nutshell
       - name: Show logs if tests fail
         if: failure()
         run: docker logs nutshell
@@ -24,18 +23,17 @@ jobs:
     name: Nutshell Wallet Integration Tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    needs: build-ci-image
     steps:
       - name: checkout
         uses: actions/checkout@v4
       - name: Pull Nutshell Docker image
         run: docker pull cashubtc/nutshell:latest
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v17
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
       - name: Test Nutshell Wallet
         run: |
-          nix develop -i -L .#integration --command just nutshell-wallet-itest
+          docker run --rm -v $(pwd):/usr/src/app ${{ needs.build-ci-image.outputs.image_tag }} just nutshell-wallet-itest
       - name: Show Docker logs if tests fail
         if: failure()
         run: docker logs nutshell-wallet || true

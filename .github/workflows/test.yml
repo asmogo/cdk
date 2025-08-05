@@ -1,0 +1,173 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  release:
+    types: [created]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  regtest-itest:
+    name: "Integration regtest tests"
+    runs-on: self-hosted
+    timeout-minutes: 30
+    needs: [pure-itest, fake-mint-itest]
+    strategy:
+      matrix:
+        build-args:
+          [
+            -p cdk-integration-tests,
+          ]
+        database:
+          [
+            SQLITE,
+          ]
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v17
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+      - name: Test
+        run: nix develop -i -L .#stable --command just itest ${{ matrix.database }}
+
+  fake-mint-itest:
+    name: "Integration fake mint tests"
+    runs-on: self-hosted
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        build-args:
+          [
+            -p cdk-integration-tests,
+          ]
+        database:
+          [
+            SQLITE,
+          ]
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v17
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+      - name: Clippy
+        run: nix develop -i -L .#stable --command cargo clippy -- -D warnings
+      - name: Test fake auth mint
+        run: nix develop -i -L .#stable --command just fake-mint-itest ${{ matrix.database }}
+
+  pure-itest:
+    name: "Integration fake wallet tests"
+    runs-on: self-hosted
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        database:
+          [
+            memory,
+            sqlite,
+            redb
+          ]
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v17
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+      - name: Test fake mint
+        run: nix develop -i -L .#stable --command just test-pure ${{ matrix.database }}
+      - name: Test mint
+        run: nix develop -i -L .#stable --command just test
+
+
+  payment-processor-itests:
+    name: "Payment processor tests"
+    runs-on: self-hosted
+    timeout-minutes: 30
+    needs: [pure-itest, fake-mint-itest, regtest-itest]
+    strategy:
+      matrix:
+        ln:
+          [
+            FAKEWALLET,
+            CLN,
+            LND
+          ]
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v17
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+      - name: Test
+        run: nix develop -i -L .#stable --command just itest-payment-processor ${{matrix.ln}}
+
+  fake-mint-auth-itest:
+    name: "Integration fake mint auth tests"
+    runs-on: self-hosted
+    timeout-minutes: 30
+    needs: [pure-itest, fake-mint-itest]
+    strategy:
+      matrix:
+        database:
+          [
+            SQLITE,
+          ]
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v17
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+      - name: Start Keycloak with Backup
+        run: |
+          docker compose -f misc/keycloak/docker-compose-recover.yml up -d
+          until docker logs $(docker ps -q --filter "ancestor=quay.io/keycloak/keycloak:25.0.6") | grep "Keycloak 25.0.6 on JVM (powered by Quarkus 3.8.5) started"; do sleep 1; done
+
+      - name: Verify Keycloak Import
+        run: |
+          docker logs $(docker ps -q --filter "ancestor=quay.io/keycloak/keycloak:25.0.6") | grep "Imported"
+      - name: Test fake auth mint
+        run: nix develop -i -L .#stable --command just fake-auth-mint-itest ${{ matrix.database }} http://127.0.0.1:8080/realms/cdk-test-realm/.well-known/openid-configuration
+      - name: Stop and clean up Docker Compose
+        run: |
+          docker compose -f misc/keycloak/docker-compose-recover.yml down
+
+  doc-tests:
+    name: "Documentation Tests"
+    runs-on: self-hosted
+    timeout-minutes: 30
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v17
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+      - name: Run doc tests
+        run: nix develop -i -L .#stable --command cargo test --doc
+
+  strict-docs:
+    name: "Strict Documentation Check"
+    runs-on: self-hosted
+    timeout-minutes: 30
+    needs: doc-tests
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v17
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+      - name: Check docs with strict warnings
+        run: nix develop -i -L .#stable --command just docs-strict

@@ -1,0 +1,23 @@
+[package]
+name = "mint-load-test"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+cdk = { path = "../cdk", features = ["wallet"] }
+cdk-sqlite = { path = "../cdk-sqlite" }
+bip39 = { workspace = true, features = ["rand"] }
+
+tokio = { version = "1.0", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+anyhow = "1.0"
+clap = { version = "4.0", features = ["derive"] }
+futures = "0.3"
+rand = "0.8"
+uuid = { version = "1.0", features = ["v4"] }
+serde_json = "1.0"
+reqwest = { version = "0.12", features = ["json"] }
+
+[dev-dependencies]
+tempfile = "3.0"

@@ -46,7 +46,7 @@ impl Mint {
         let mut tx = self.localstore.begin_transaction().await?;
 
         for payment in ln_status {
-            if !quote.payment_ids().contains(&&payment.payment_id) {
+            if !quote.payment_ids().contains(&&payment.payment_id) && payment.payment_amount > Amount::ZERO {
                 tracing::debug!("Found payment for quote {} when checking.", quote.id);
                 let amount_paid = to_unit(payment.payment_amount, &payment.unit, &quote.unit)?;
 

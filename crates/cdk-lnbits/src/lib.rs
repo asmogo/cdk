@@ -72,6 +72,9 @@ impl LNbits {
 
     /// Subscribe to lnbits ws
     pub async fn subscribe_ws(&self) -> Result<(), Error> {
+        if rustls::crypto::CryptoProvider::get_default().is_none() {
+            let _ = rustls::crypto::ring::default_provider().install_default();
+        }
         self.lnbits_api
             .subscribe_to_websocket()
             .await
@@ -131,6 +134,7 @@ impl MintPayment for LNbits {
                                                 Ok(decoded) => {
                                                     match decoded.try_into() {
                                                         Ok(hash) => {
+                                                            
                                                             let response = WaitPaymentResponse {
                                                                 payment_identifier: PaymentIdentifier::PaymentHash(hash),
                                                                 payment_amount: Amount::from(payment.details.amount as u64),
@@ -352,11 +356,16 @@ impl MintPayment for LNbits {
                 tracing::error!("{}", err.to_string());
                 Self::Err::Anyhow(anyhow!("Could not check invoice status"))
             })?;
+            let mut amount = payment.details.amount;
+            // lnbits returns negative amount for internal payments
+            if payment.paid && payment.details.amount < 0{
+                amount = payment.details.amount * -1 
+            }
             match payment.paid {
                 true => {
                     Ok(vec![WaitPaymentResponse {
                         payment_identifier: payment_identifier.clone(),
-                        payment_amount: Amount::from(payment.details.amount as u64),
+                        payment_amount: Amount::from(amount as u64),
                         unit: CurrencyUnit::Sat,
                         payment_id: payment.details.payment_hash,
                     }])

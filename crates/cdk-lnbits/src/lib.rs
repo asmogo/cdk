@@ -248,9 +248,9 @@ impl MintPayment for LNbits {
                     })?;
 
                 let status = if invoice_info.paid {
-                    MeltQuoteState::Unpaid
-                } else {
                     MeltQuoteState::Paid
+                } else {
+                    MeltQuoteState::Unpaid
                 };
 
                 let total_spent = Amount::from(
@@ -352,13 +352,24 @@ impl MintPayment for LNbits {
                 tracing::error!("{}", err.to_string());
                 Self::Err::Anyhow(anyhow!("Could not check invoice status"))
             })?;
-
-        Ok(vec![WaitPaymentResponse {
-            payment_identifier: payment_identifier.clone(),
-            payment_amount: Amount::from(payment.details.amount as u64),
-            unit: CurrencyUnit::Sat,
-            payment_id: payment.details.payment_hash,
-        }])
+            match payment.paid {
+                true => {
+                    Ok(vec![WaitPaymentResponse {
+                        payment_identifier: payment_identifier.clone(),
+                        payment_amount: Amount::from(payment.details.amount as u64),
+                        unit: CurrencyUnit::Sat,
+                        payment_id: payment.details.payment_hash,
+                    }])
+                }
+                false => {
+                    Ok(vec![WaitPaymentResponse {
+                        payment_identifier: payment_identifier.clone(),
+                        payment_amount: Amount::from(0),
+                        unit: CurrencyUnit::Sat,
+                        payment_id: payment.details.payment_hash,
+                    }])
+                }
+            }
     }
 
     async fn check_outgoing_payment(

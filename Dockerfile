@@ -10,7 +10,7 @@ COPY Cargo.toml ./Cargo.toml
 COPY crates ./crates
 
 # Start the Nix daemon and develop the environment
-RUN nix develop --extra-experimental-features nix-command --extra-experimental-features flakes --command cargo build --release --bin cdk-mintd --features redis
+RUN nix develop --extra-experimental-features nix-command --extra-experimental-features flakes --command cargo build --release --bin cdk-mintd --features redis --features postgres --features ldk-node
 
 # Create a runtime stage
 FROM debian:sid-slim

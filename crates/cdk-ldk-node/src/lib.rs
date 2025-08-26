@@ -10,6 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use bip39::Mnemonic;
 use cdk_common::amount::to_unit;
 use cdk_common::common::FeeReserve;
 use cdk_common::payment::{self, *};
@@ -126,6 +127,7 @@ impl CdkLdkNode {
         listening_address: Vec<SocketAddress>,
         runtime: Option<Arc<Runtime>>,
         store: Option<Arc<dyn KVStore + Sync + Send>>,
+        seed: Option<Mnemonic>,
     ) -> Result<Self, Error> {
         let mut builder = Builder::new();
         builder.set_network(network);
@@ -157,7 +159,12 @@ impl CdkLdkNode {
         builder.set_listening_addresses(listening_address)?;
 
         builder.set_node_alias("cdk-ldk-node".to_string())?;
-
+        if seed.is_some() {
+            builder.set_entropy_bip39_mnemonic(
+                seed.unwrap(),
+                None
+            );
+        }
         //let node = builder.build_with_store(store.unwrap())?;
         let node = match store {
             None => {

@@ -29,6 +29,7 @@ use cdk::types::FeeReserve;
 use cdk_postgres::LdkPgDatabase;
 use ldk_node::lightning::util::persist::KVStore;
 use std::sync::Arc;
+use bip39::Mnemonic;
 
 #[async_trait]
 pub trait LnBackendSetup {
@@ -311,6 +312,8 @@ impl LnBackendSetup for config::LdkNode {
         } else {
             None
         };
+        let mem: Mnemonic = settings.clone().info.mnemonic.unwrap().parse().unwrap();
+
         let mut ldk_node = cdk_ldk_node::CdkLdkNode::new(
             network,
             chain_source,
@@ -320,6 +323,7 @@ impl LnBackendSetup for config::LdkNode {
             listen_address,
             runtime,
             localstore,
+            Some(mem)
         )?;
 
         // Configure webserver address if specified

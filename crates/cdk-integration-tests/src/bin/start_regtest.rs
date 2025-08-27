@@ -71,6 +71,8 @@ async fn main() -> Result<()> {
         }],
         None,
         None,
+        None,
+        None,
     )?;
 
     let inner_node = cdk_ldk.node();

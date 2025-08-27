@@ -344,6 +344,8 @@ fn main() -> Result<()> {
             }],
             Some(Arc::clone(&rt_clone)),
             None,
+            None,
+            None
         )?;
 
         let inner_node = cdk_ldk.node();

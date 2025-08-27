@@ -313,6 +313,16 @@ impl LnBackendSetup for config::LdkNode {
             None
         };
         let mem: Mnemonic = settings.clone().info.mnemonic.unwrap().parse().unwrap();
+        let announce = settings
+            .clone()
+            .ldk_node
+            .unwrap()
+            .ldk_node_announce_addresses;
+        let announce_addrs: Vec<_> = announce
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|addr| addr.parse().ok())
+            .collect();
 
         let mut ldk_node = cdk_ldk_node::CdkLdkNode::new(
             network,
@@ -323,7 +333,12 @@ impl LnBackendSetup for config::LdkNode {
             listen_address,
             runtime,
             localstore,
-            Some(mem)
+            Some(mem),
+            if announce_addrs.is_empty() {
+                None
+            } else {
+                Some(announce_addrs)
+            },
         )?;
 
         // Configure webserver address if specified

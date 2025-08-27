@@ -230,7 +230,7 @@ impl CdkLdkNode {
         match &self.runtime {
             Some(runtime) => {
                 tracing::info!("Starting cdk-ldk node with existing runtime");
-                self.inner.start_with_runtime(Arc::clone(runtime))?
+               self.inner.start()?
             }
             None => {
                 tracing::info!("Starting cdk-ldk-node with new runtime");

@@ -25,6 +25,7 @@ use ldk_node::lightning::ln::msgs::SocketAddress;
 use ldk_node::lightning::util::persist::KVStore;
 use ldk_node::lightning_invoice::{Bolt11InvoiceDescription, Description};
 use ldk_node::lightning_types::payment::PaymentHash;
+use ldk_node::logger::{LogLevel, LogRecord, LogWriter};
 use ldk_node::payment::{PaymentDirection, PaymentKind, PaymentStatus, SendingParameters};
 use ldk_node::{Builder, Event, Node};
 use tokio::runtime::Runtime;
@@ -33,8 +34,10 @@ use tokio_util::sync::CancellationToken;
 use tracing::instrument;
 
 use crate::error::Error;
+use crate::log::StdoutLogWriter;
 
 mod error;
+mod log;
 mod web;
 
 /// CDK Lightning backend using LDK Node
@@ -101,11 +104,11 @@ pub enum GossipSource {
     RapidGossipSync(String),
 }
 /// A builder for an [`CdkLdkNode`] instance.
-///
 pub struct CdkLdkNodeBuilder {
     network: Network,
     chain_source: ChainSource,
     gossip_source: GossipSource,
+    log_dir_path: Option<String>,
     storage_dir_path: String,
     fee_reserve: FeeReserve,
     listening_addresses: Vec<SocketAddress>,
@@ -134,6 +137,7 @@ impl CdkLdkNodeBuilder {
             runtime: None,
             seed: None,
             announcement_addresses: None,
+            log_dir_path: None,
         }
     }
     /// Configures the [`CdkLdkNode`] to use the provided runtime
@@ -153,6 +157,12 @@ impl CdkLdkNodeBuilder {
         self.announcement_addresses = Some(announcement_addresses);
         self
     }
+    /// Configures the [`CdkLdkNode`] to use announce this address to the lightning network
+    pub fn with_log_dir_path(mut self, log_dir_path: String) -> Self {
+        self.log_dir_path = Some(log_dir_path);
+        self
+    }
+
     /// Builds the [`CdkLdkNode`] instance
     pub fn build(self,store: Option<Arc<dyn KVStore + Sync + Send>>) -> Result<CdkLdkNode, Error> {
         CdkLdkNode::new(self,store)
@@ -210,6 +220,11 @@ impl CdkLdkNode {
         }
 
         ldk.set_listening_addresses(builder.listening_addresses)?;
+        if builder.log_dir_path.is_some() {
+            ldk.set_filesystem_logger(builder.log_dir_path, Some(LogLevel::Info));
+        } else {
+            ldk.set_custom_logger(Arc::new(StdoutLogWriter::default()));
+        }
 
         ldk.set_node_alias("cdk-ldk-node".to_string())?;
         if builder.seed.is_some() {

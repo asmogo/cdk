@@ -48,22 +48,24 @@ where
     where
         X: Into<RM::Config>,
     {
-        print("Connecting to database...");
+        print!("Connecting to database...");
         let pool = Pool::new(db.into());
-        print("Created connection pool");
+        print!("Created connection pool");
         Self::migrate(pool.get().map_err(|e| Error::Database(Box::new(e)))?).await?;
-        print("Starting migration...");
+        print!("Starting migration...");
         Ok(Self { pool })
     }
 
     /// Migrate [`WalletSqliteDatabase`]
     async fn migrate(conn: PooledResource<RM>) -> Result<(), Error> {
         let tx = ConnectionWithTransaction::new(conn).await?;
+        print!("Created transaction for migration");
         migrate(&tx, RM::Connection::name(), migrations::MIGRATIONS).await?;
         // Update any existing keys with missing keyset_u32 values
         Self::add_keyset_u32(&tx).await?;
+        print!("starting commit");
         tx.commit().await?;
-
+        print!("commit done");
         Ok(())
     }
 

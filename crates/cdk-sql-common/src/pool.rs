@@ -139,7 +139,7 @@ where
 {
     /// Creates a new pool
     pub fn new(config: RM::Config) -> Arc<Self> {
-        print("Creating pool:", config.max_size(), config.default_timeout());
+        print!("Creating pool:", config.max_size(), config.default_timeout());
         Arc::new(Self {
             default_timeout: config.default_timeout(),
             max_size: config.max_size(),

@@ -535,13 +535,13 @@ impl WalletSqliteDatabase {
     /// Create a new WalletSqliteDatabase with the given work directory
     #[uniffi::constructor]
     pub fn new(work_dir: String) -> Result<Arc<Self>, FfiError> {
-        tracing::info!("Creating new WalletSqliteDatabase with work_dir: {}", work_dir);
+        println!("Creating new WalletSqliteDatabase with work_dir: {}", work_dir);
         crate::runtime::block_on(async move {
-            tracing::info!("Started RT");
+            println!("Started RT");
             let db = CdkWalletSqliteDatabase::new(work_dir.as_str())
                 .await
                 .map_err(|e| FfiError::Database { msg: e.to_string() })?;
-            tracing::info!("Created database");
+            println!("Created database");
             Ok(Arc::new(Self {
                 inner: Arc::new(db),
             }))

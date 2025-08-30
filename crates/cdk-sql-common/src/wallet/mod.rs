@@ -48,9 +48,11 @@ where
     where
         X: Into<RM::Config>,
     {
+        print("Connecting to database...");
         let pool = Pool::new(db.into());
+        print("Created connection pool");
         Self::migrate(pool.get().map_err(|e| Error::Database(Box::new(e)))?).await?;
-
+        print("Starting migration...");
         Ok(Self { pool })
     }
 

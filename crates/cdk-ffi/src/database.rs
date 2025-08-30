@@ -546,7 +546,7 @@ impl WalletSqliteDatabase {
                 msg: format!("Failed to build runtime: {}", e),
             })?;
         print!("Created runtime");
-        runtime::block_on(async move {
+        runtime.block_on(async move {
             println!("Started RT");
             let db = CdkWalletSqliteDatabase::new(work_dir.as_str())
                 .await

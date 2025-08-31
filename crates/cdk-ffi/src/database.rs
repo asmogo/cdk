@@ -535,6 +535,7 @@ impl WalletSqliteDatabase {
     /// Create a new WalletSqliteDatabase with the given work directory
     #[uniffi::constructor]
     pub fn new(work_dir: String) -> Result<Arc<Self>, FfiError> {
+        println!("Creating database");
         Runtime::new().unwrap().block_on(async move {
             let db = CdkWalletSqliteDatabase::new(work_dir.as_str())
                 .await

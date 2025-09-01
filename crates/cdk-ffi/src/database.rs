@@ -2,7 +2,6 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::runtime::Runtime;
 use cdk_common::database::WalletDatabase as CdkWalletDatabase;
 use cdk_sqlite::wallet::WalletSqliteDatabase as CdkWalletSqliteDatabase;
 
@@ -536,7 +535,7 @@ impl WalletSqliteDatabase {
     #[uniffi::constructor]
     pub fn new(work_dir: String) -> Result<Arc<Self>, FfiError> {
         println!("Creating database");
-        Runtime::new().unwrap().block_on(async move {
+        crate::runtime::block_on(async move {
             let db = CdkWalletSqliteDatabase::new(work_dir.as_str())
                 .await
                 .map_err(|e| FfiError::Database { msg: e.to_string() })?;

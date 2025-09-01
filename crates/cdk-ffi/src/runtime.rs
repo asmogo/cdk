@@ -19,7 +19,7 @@ fn get_mobile_worker_threads() -> usize {
     let cpu_count = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(2);
-    
+
     // Limit to 4 threads max for mobile devices to balance performance and battery life
     // Minimum of 2 threads to ensure responsiveness
     std::cmp::max(2, std::cmp::min(cpu_count, 4))
@@ -28,7 +28,7 @@ fn get_mobile_worker_threads() -> usize {
 /// Global multi-threaded Tokio runtime instance optimized for mobile devices
 static RUNTIME: Lazy<Arc<Runtime>> = Lazy::new(|| {
     let worker_threads = get_mobile_worker_threads();
-    
+
     Arc::new(
         Builder::new_multi_thread()
             .worker_threads(worker_threads)
@@ -47,5 +47,11 @@ static RUNTIME: Lazy<Arc<Runtime>> = Lazy::new(|| {
 /// dynamically adjusts to device capabilities while being compatible with
 /// both iOS and Android platforms and maintaining synchronous FFI interfaces.
 pub(crate) fn block_on<F: std::future::Future>(future: F) -> F::Output {
-    RUNTIME.block_on(future)
+    // If we're already on a Tokio runtime, switch to a blocking thread first
+    // to avoid deadlocks or panics from calling block_on within a runtime.
+    if tokio::runtime::Handle::try_current().is_ok() {
+        tokio::task::block_in_place(|| RUNTIME.block_on(future))
+    } else {
+        RUNTIME.block_on(future)
+    }
 }

@@ -801,7 +801,7 @@ impl TryFrom<MintQuote> for cdk::wallet::MintQuote {
             mint_url: quote.mint_url.try_into()?,
             amount_issued: quote.amount_issued.into(),
             amount_paid: quote.amount_paid.into(),
-            payment_method: cdk_common::PaymentMethod::Custom(quote.payment_method),
+            payment_method: cdk_common::PaymentMethod::from_str(quote.payment_method.as_str()).unwrap_or(cdk_common::PaymentMethod::Bolt11),
             secret_key,
         })
     }

@@ -534,32 +534,58 @@ impl WalletSqliteDatabase {
     /// Create a new WalletSqliteDatabase with the given work directory
     #[uniffi::constructor]
     pub fn new(work_dir: String) -> Result<Arc<Self>, FfiError> {
-        // Treat the provided path as a directory by default and create a file inside it.
-        // This matches typical mobile usage where a directory is passed in.
-        let mut path = std::path::PathBuf::from(&work_dir);
+        // Normalize possible "file://" scheme from higher-level languages (Swift/Kotlin).
+        let mut normalized = work_dir.trim().to_string();
+        if let Some(stripped) = normalized.strip_prefix("file://") {
+            // On Unix-y platforms, file:// URLs are absolute. We accept as-is after stripping.
+            normalized = stripped.to_string();
+        }
+
+        // Build a path from the normalized input.
+        let mut path = std::path::PathBuf::from(&normalized);
+
+        // If it's clearly a directory (or no extension), place the DB file inside it.
+        // Otherwise assume the caller passed a full file path.
         let final_path = if path.extension().is_none() || path.is_dir() {
-            // Ensure directory exists
-            if let Err(e) = std::fs::create_dir_all(&path) {
-                return Err(FfiError::Database {
-                    msg: format!("Failed to create wallet directory '{}': {}", path.display(), e),
-                });
-            }
-            path.push("wallet.sqlite");
+            // We'll append the database file name and create the parent directory below.
+            path.push("data.sqlite");
             path
         } else {
-            // Ensure parent directory exists
-            if let Some(parent) = path.parent() {
-                if let Err(e) = std::fs::create_dir_all(parent) {
-                    return Err(FfiError::Database {
-                        msg: format!(
-                            "Failed to create parent directory '{}': {}",
-                            parent.display(), e
-                        ),
-                    });
-                }
-            }
             path
         };
+
+        // Ensure parent directory exists
+        let parent = final_path
+            .parent()
+            .ok_or_else(|| FfiError::Database {
+                msg: format!(
+                    "Invalid database path (no parent directory): '{}'",
+                    final_path.display()
+                ),
+            })?;
+
+        if let Err(e) = std::fs::create_dir_all(parent) {
+            // Provide actionable diagnostics for common mobile cases.
+            let msg = match e.kind() {
+                std::io::ErrorKind::ReadOnlyFilesystem => format!(
+                    "Cannot create database directory '{}': read-only file system. \
+                     Please pass a writable app data directory (e.g., iOS Application Support, \
+                     Android internal files dir).",
+                    parent.display()
+                ),
+                std::io::ErrorKind::PermissionDenied => format!(
+                    "Permission denied creating database directory '{}'. \
+                     Ensure the path is within the app's writable sandbox.",
+                    parent.display()
+                ),
+                _ => format!(
+                    "Failed to create database directory '{}': {}",
+                    parent.display(),
+                    e
+                ),
+            };
+            return Err(FfiError::Database { msg });
+        }
 
         let final_path_str = final_path.to_string_lossy().to_string();
 
@@ -586,6 +612,7 @@ impl WalletSqliteDatabase {
         })
     }
 }
+
 
 #[uniffi::export]
 impl WalletDatabase for WalletSqliteDatabase {

@@ -26,7 +26,14 @@ where
 
     tracing::trace!("Running db operation {}", info);
 
-    let result = operation().map_err(|e| {
+    // If we're on a Tokio runtime, offload to the blocking pool to avoid
+    // blocking the core thread (and to keep heavy I/O off UI threads).
+    let result = if tokio::runtime::Handle::try_current().is_ok() {
+        tokio::task::block_in_place(|| operation())
+    } else {
+        operation()
+    }
+    .map_err(|e| {
         tracing::error!("Query {} failed with error {:?}", info, e);
         error_map(e)
     });

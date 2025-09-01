@@ -203,7 +203,7 @@ impl Wallet {
             .get_mint_quote(quote_id)
             .await?
             .ok_or(Error::UnknownQuote)?;
-
+        println!("minting quote: {:?}", quote_info);
         if quote_info.payment_method != PaymentMethod::Bolt11 {
             return Err(Error::UnsupportedPaymentMethod);
         }

@@ -534,64 +534,8 @@ impl WalletSqliteDatabase {
     /// Create a new WalletSqliteDatabase with the given work directory
     #[uniffi::constructor]
     pub fn new(work_dir: String) -> Result<Arc<Self>, FfiError> {
-
         crate::runtime::block_on(async move {
-            // Normalize possible "file://" scheme from higher-level languages (Swift/Kotlin).
-            let mut normalized = work_dir.trim().to_string();
-            if let Some(stripped) = normalized.strip_prefix("file://") {
-                // On Unix-y platforms, file:// URLs are absolute. We accept as-is after stripping.
-                normalized = stripped.to_string();
-            }
-
-            // Build a path from the normalized input.
-            let mut path = std::path::PathBuf::from(&normalized);
-
-            // If it's clearly a directory (or no extension), place the DB file inside it.
-            // Otherwise assume the caller passed a full file path.
-            let final_path = if path.extension().is_none() || path.is_dir() {
-                // We'll append the database file name and create the parent directory below.
-                path.push("data.sqlite");
-                path
-            } else {
-                path
-            };
-
-            // Ensure parent directory exists
-            let parent = final_path
-                .parent()
-                .ok_or_else(|| FfiError::Database {
-                    msg: format!(
-                        "Invalid database path (no parent directory): '{}'",
-                        final_path.display()
-                    ),
-                })?;
-
-            if let Err(e) = std::fs::create_dir_all(parent) {
-                // Provide actionable diagnostics for common mobile cases.
-                let msg = match e.kind() {
-                    std::io::ErrorKind::ReadOnlyFilesystem => format!(
-                        "Cannot create database directory '{}': read-only file system. \
-                     Please pass a writable app data directory (e.g., iOS Application Support, \
-                     Android internal files dir).",
-                        parent.display()
-                    ),
-                    std::io::ErrorKind::PermissionDenied => format!(
-                        "Permission denied creating database directory '{}'. \
-                     Ensure the path is within the app's writable sandbox.",
-                        parent.display()
-                    ),
-                    _ => format!(
-                        "Failed to create database directory '{}': {}",
-                        parent.display(),
-                        e
-                    ),
-                };
-                return Err(FfiError::Database { msg });
-            }
-
-            let final_path_str = final_path.to_string_lossy().to_string();
-
-            let db = CdkWalletSqliteDatabase::new(final_path_str.as_str())
+            let db = CdkWalletSqliteDatabase::new(work_dir.as_str())
                 .await
                 .map_err(|e| FfiError::Database { msg: e.to_string() })?;
             Ok(Arc::new(Self {

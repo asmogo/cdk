@@ -656,7 +656,7 @@ pub enum PaymentMethod {
 impl FromStr for PaymentMethod {
     type Err = Error;
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        println!("creating payment method from string{:?}", value);
+        println!("creating payment method from string{:?}", value.as_bytes());
         match value.to_lowercase().as_str() {
             "bolt11" => Ok(Self::Bolt11),
             "bolt12" => Ok(Self::Bolt12),

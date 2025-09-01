@@ -534,39 +534,12 @@ impl WalletSqliteDatabase {
     /// Create a new WalletSqliteDatabase with the given work directory
     #[uniffi::constructor]
     pub fn new(work_dir: String) -> Result<Arc<Self>, FfiError> {
-        // Treat the provided path as a directory by default and create a file inside it.
-        // This matches typical mobile usage where a directory is passed in.
-        let mut path = std::path::PathBuf::from(&work_dir);
-        let final_path = if path.extension().is_none() || path.is_dir() {
-            // Ensure directory exists
-            if let Err(e) = std::fs::create_dir_all(&path) {
-                return Err(FfiError::Database {
-                    msg: format!("Failed to create wallet directory '{}': {}", path.display(), e),
-                });
-            }
-            path.push("wallet.sqlite");
-            path
-        } else {
-            // Ensure parent directory exists
-            if let Some(parent) = path.parent() {
-                if let Err(e) = std::fs::create_dir_all(parent) {
-                    return Err(FfiError::Database {
-                        msg: format!(
-                            "Failed to create parent directory '{}': {}",
-                            parent.display(), e
-                        ),
-                    });
-                }
-            }
-            path
-        };
-
-        let final_path_str = final_path.to_string_lossy().to_string();
-
+        println!("Creating database");
         crate::runtime::block_on(async move {
-            let db = CdkWalletSqliteDatabase::new(final_path_str.as_str())
+            let db = CdkWalletSqliteDatabase::new(work_dir.as_str())
                 .await
                 .map_err(|e| FfiError::Database { msg: e.to_string() })?;
+            println!("Created database");
             Ok(Arc::new(Self {
                 inner: Arc::new(db),
             }))

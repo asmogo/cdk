@@ -269,6 +269,11 @@ impl Token {
     pub fn to_raw_bytes(&self) -> Result<Vec<u8>, FfiError> {
         Ok(self.inner.to_raw_bytes()?)
     }
+
+    /// Convert token to string representation
+    pub fn to_v3_string(&self) -> String {
+        self.inner.to_v3_string()
+    }
 }
 
 /// FFI-compatible SendMemo

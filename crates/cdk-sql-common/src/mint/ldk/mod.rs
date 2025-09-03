@@ -2,7 +2,7 @@ use crate::column_as_string;
 use crate::common::migrate;
 use crate::database::{ConnectionWithTransaction, DatabaseExecutor};
 use async_trait::async_trait;
-use cdk_common::database::Error;
+use cdk_common::database::{Error, MintKVStore};
 use lightning::util::persist::KVStore;
 use migrations::MIGRATIONS;
 use std::sync::Arc;
@@ -11,12 +11,13 @@ use crate::pool::{DatabasePool, Pool, PooledResource};
 use crate::stmt::query;
 
 /// Mint SQL Database
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SQLLdkDatabase<RM>
 where
     RM: DatabasePool + 'static,
 {
     pool: Arc<Pool<RM>>,
+    inner: Arc<dyn MintKVStore<Err = Error> + Send + Sync>,
 }
 #[async_trait]
 impl<D> KVStore for SQLLdkDatabase<D>
@@ -32,38 +33,20 @@ where
     ) -> Result<Vec<u8>, bitcoin::io::Error> {
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {
-                let conn = self.pool.get()
-                    .map_err(|e| bitcoin::io::Error::new(bitcoin::io::ErrorKind::Other, e))?;
-
-                let stmt = query(
-                    "SELECT value FROM ldk_kv_store WHERE primary_namespace = :primary_namespace AND secondary_namespace = :secondary_namespace AND key = :key"
-                )
-                    .map_err(|e| bitcoin::io::Error::new(bitcoin::io::ErrorKind::Other, e))?
-                    .bind("primary_namespace", primary_namespace)
-                    .bind("secondary_namespace", secondary_namespace)
-                    .bind("key", key);
-
-                let row = stmt.fetch_one(&*conn).await
-                    .map_err(|e| bitcoin::io::Error::new(bitcoin::io::ErrorKind::Other, e))?;
-
-                match row {
-                    Some(mut columns) if !columns.is_empty() => {
-                        let value = columns.remove(0);
-                        match value {
-                            crate::value::Value::Blob(bytes) => Ok(bytes),
-                            crate::value::Value::Null => Err(bitcoin::io::Error::new(
-                                bitcoin::io::ErrorKind::NotFound,
-                                "Key not found"
-                            )),
-                            _ => Err(bitcoin::io::Error::new(
-                                bitcoin::io::ErrorKind::InvalidData,
-                                "Invalid data type for value"
-                            )),
-                        }
-                    }
-                    _ => Err(bitcoin::io::Error::new(
+                match self
+                    .inner
+                    .begin_transaction().await.map_err(|e| bitcoin::io::Error::new(bitcoin::io::ErrorKind::Other, e))?
+                    .kv_read(primary_namespace, secondary_namespace, key)
+                    .await
+                {
+                    Ok(Some(bytes)) => Ok(bytes),
+                    Ok(None) => Err(bitcoin::io::Error::new(
                         bitcoin::io::ErrorKind::NotFound,
-                        "Key not found"
+                        "Key not found",
+                    )),
+                    Err(e) => Err(bitcoin::io::Error::new(
+                        bitcoin::io::ErrorKind::Other,
+                        e,
                     )),
                 }
             })
@@ -79,28 +62,17 @@ where
     ) -> Result<(), bitcoin::io::Error> {
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {
-                let conn = self
-                    .pool
-                    .get()
-                    .map_err(|e| bitcoin::io::Error::new(bitcoin::io::ErrorKind::Other, e))?;
-
-                let stmt = query(
-                    "INSERT INTO ldk_kv_store (primary_namespace, secondary_namespace, key, value)
-                     VALUES (:primary_namespace, :secondary_namespace, :key, :value)
-                     ON CONFLICT (primary_namespace, secondary_namespace, key)
-                     DO UPDATE SET value = :value",
-                )
-                .map_err(|e| bitcoin::io::Error::new(bitcoin::io::ErrorKind::Other, e))?
-                .bind("primary_namespace", primary_namespace)
-                .bind("secondary_namespace", secondary_namespace)
-                .bind("key", key)
-                .bind("value", buf.to_vec());
-
-                stmt.execute(&*conn)
+                let mut tx = self
+                    .inner
+                    .begin_transaction()
                     .await
                     .map_err(|e| bitcoin::io::Error::new(bitcoin::io::ErrorKind::Other, e))?;
-
-                Ok(())
+                tx.kv_write(primary_namespace, secondary_namespace, key, buf)
+                    .await
+                    .map_err(|e| bitcoin::io::Error::new(bitcoin::io::ErrorKind::Other, e))?;
+                tx.commit()
+                    .await
+                    .map_err(|e| bitcoin::io::Error::new(bitcoin::io::ErrorKind::Other, e))
             })
         })
     }
@@ -114,21 +86,17 @@ where
     ) -> Result<(), bitcoin::io::Error> {
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {
-                let conn = self.pool.get()
+                let mut tx = self
+                    .inner
+                    .begin_transaction()
+                    .await
                     .map_err(|e| bitcoin::io::Error::new(bitcoin::io::ErrorKind::Other, e))?;
-
-                let stmt = query(
-                    "DELETE FROM ldk_kv_store WHERE primary_namespace = :primary_namespace AND secondary_namespace = :secondary_namespace AND key = :key"
-                )
-                    .map_err(|e| bitcoin::io::Error::new(bitcoin::io::ErrorKind::Other, e))?
-                    .bind("primary_namespace", primary_namespace)
-                    .bind("secondary_namespace", secondary_namespace)
-                    .bind("key", key);
-
-                stmt.execute(&*conn).await
+                tx.kv_remove(primary_namespace, secondary_namespace, key)
+                    .await
                     .map_err(|e| bitcoin::io::Error::new(bitcoin::io::ErrorKind::Other, e))?;
-
-                Ok(())
+                tx.commit()
+                    .await
+                    .map_err(|e| bitcoin::io::Error::new(bitcoin::io::ErrorKind::Other, e))
             })
         })
     }
@@ -140,34 +108,11 @@ where
     ) -> Result<Vec<String>, bitcoin::io::Error> {
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {
-                let conn = self.pool.get()
-                    .map_err(|e| bitcoin::io::Error::new(bitcoin::io::ErrorKind::Other, e))?;
-
-                let stmt = query(
-                    "SELECT key FROM ldk_kv_store WHERE primary_namespace = :primary_namespace AND secondary_namespace = :secondary_namespace"
-                )
-                    .map_err(|e| bitcoin::io::Error::new(bitcoin::io::ErrorKind::Other, e))?
-                    .bind("primary_namespace", primary_namespace)
-                    .bind("secondary_namespace", secondary_namespace);
-
-                let rows = stmt.fetch_all(&*conn).await
-                    .map_err(|e| bitcoin::io::Error::new(bitcoin::io::ErrorKind::Other, e))?;
-
-                let mut keys = Vec::new();
-                for mut row in rows {
-                    if !row.is_empty() {
-                        let key_value = row.remove(0);
-                        match key_value {
-                            crate::value::Value::Text(key) => keys.push(key),
-                            _ => return Err(bitcoin::io::Error::new(
-                                bitcoin::io::ErrorKind::InvalidData,
-                                "Invalid data type for key"
-                            )),
-                        }
-                    }
-                }
-
-                Ok(keys)
+                self.inner
+                    .begin_transaction().await.map_err(|e| bitcoin::io::Error::new(bitcoin::io::ErrorKind::Other, e))?
+                    .kv_list(primary_namespace, secondary_namespace)
+                    .await
+                    .map_err(|e| bitcoin::io::Error::new(bitcoin::io::ErrorKind::Other, e))
             })
         })
     }
@@ -178,7 +123,7 @@ where
     RM: DatabasePool + 'static,
 {
     /// Creates a new instance
-    pub async fn new<X>(db: X) -> Result<Self, Error>
+    pub async fn new<X>(db: X, inner: Arc<dyn MintKVStore<Err = Error> + Send + Sync>) -> Result<Self, Error>
     where
         X: Into<RM::Config>,
     {
@@ -186,13 +131,13 @@ where
 
         Self::migrate(pool.get().map_err(|e| Error::Database(Box::new(e)))?).await?;
 
-        Ok(Self { pool })
+        Ok(Self { pool, inner })
     }
 
     /// Migrate
     async fn migrate(conn: PooledResource<RM>) -> Result<(), Error> {
         let tx = ConnectionWithTransaction::new(conn).await?;
-        migrate(&tx, RM::Connection::name(), crate::mint::ldk::MIGRATIONS).await?;
+        //migrate(&tx, RM::Connection::name(), crate::mint::ldk::MIGRATIONS).await?;
         tx.commit().await?;
         Ok(())
     }

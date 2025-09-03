@@ -311,6 +311,9 @@ impl LnBackendSetup for config::LdkNode {
                             .storage_dir_path
                             .unwrap()
                             .as_str(),
+                        _kv_store
+                            .clone()
+                            .expect("MintKVStore is required for LDK Postgres KV store"),
                     )
                     .await?,
                 )

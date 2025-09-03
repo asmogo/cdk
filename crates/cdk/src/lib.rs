@@ -12,8 +12,8 @@ pub mod cdk_database {
     pub use cdk_common::database::WalletDatabase;
     #[cfg(feature = "mint")]
     pub use cdk_common::database::{
-        MintDatabase, MintKeysDatabase, MintProofsDatabase, MintQuotesDatabase,
-        MintSignaturesDatabase, MintTransaction,
+        MintDatabase, MintKVStore, MintKVStoreDatabase, MintKVStoreTransaction, MintKeysDatabase,
+        MintProofsDatabase, MintQuotesDatabase, MintSignaturesDatabase, MintTransaction,
     };
 }
 
@@ -64,3 +64,7 @@ pub use self::wallet::HttpClient;
 /// Result
 #[doc(hidden)]
 pub type Result<T, E = Box<dyn std::error::Error>> = std::result::Result<T, E>;
+
+/// Re-export futures::Stream
+#[cfg(any(feature = "wallet", feature = "mint"))]
+pub use futures::{Stream, StreamExt};

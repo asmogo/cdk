@@ -111,13 +111,14 @@ pub enum Error {
     #[error("Could not parse bolt12")]
     Bolt12parse,
 
+    /// BIP353 address parsing error
+    #[error("Failed to parse BIP353 address: {0}")]
+    Bip353Parse(String),
+
     /// Operation timeout
     #[error("Operation timeout")]
     Timeout,
 
-    /// BIP353 address parsing error
-    #[error("Failed to parse BIP353 address: {0}")]
-    Bip353Parse(String),
     /// BIP353 address resolution error
     #[error("Failed to resolve BIP353 address: {0}")]
     Bip353Resolve(String),
@@ -270,6 +271,9 @@ pub enum Error {
     /// Transaction not found
     #[error("Transaction not found")]
     TransactionNotFound,
+    /// KV Store invalid key or namespace
+    #[error("Invalid KV store key or namespace: {0}")]
+    KVStoreInvalidKey(String),
     /// Custom Error
     #[error("`{0}`")]
     Custom(String),
@@ -362,6 +366,10 @@ pub enum Error {
     /// NUT23 Error
     #[error(transparent)]
     NUT23(#[from] crate::nuts::nut23::Error),
+    /// Quote ID Error
+    #[error(transparent)]
+    #[cfg(feature = "mint")]
+    QuoteId(#[from] crate::quote_id::QuoteIdError),
     /// From slice error
     #[error(transparent)]
     TryFromSliceError(#[from] TryFromSliceError),

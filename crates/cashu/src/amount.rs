@@ -138,13 +138,13 @@ impl Amount {
             fee_ppk,
             without_fee_amounts.len()
         );
-        
+
         let total_fee_ppk = fee_ppk
             .checked_mul(without_fee_amounts.len() as u64)
             .ok_or(Error::AmountOverflow)?;
         let fee = Amount::from(total_fee_ppk.div_ceil(1000));
         let new_amount = self.checked_add(fee).ok_or(Error::AmountOverflow)?;
-        
+
         println!(
             "split_with_fee: total_fee_ppk={}, fee={}, new_amount={}",
             total_fee_ppk,
@@ -153,12 +153,12 @@ impl Amount {
         );
 
         let split = new_amount.split();
-        // BUG: This multiplies the already multiplied fee_ppk again!
+        // ... existing code ...
         let split_fee_ppk = (split.len() as u64)
-            .checked_mul(total_fee_ppk)  // This causes quadratic fee calculation!
+            .checked_mul(fee_ppk) // Use per-proof fee, not the already-multiplied total
             .ok_or(Error::AmountOverflow)?;
         let split_fee = Amount::from(split_fee_ppk.div_ceil(1000));
-        
+
         println!(
             "split_with_fee: new_splits={}, split_fee_ppk={}, split_fee={}",
             split.len(),
@@ -177,7 +177,7 @@ impl Amount {
                 return Ok(split);
             }
         }
-        
+
         println!("split_with_fee: recursing with amount+1");
         self.checked_add(Amount::ONE)
             .ok_or(Error::AmountOverflow)?

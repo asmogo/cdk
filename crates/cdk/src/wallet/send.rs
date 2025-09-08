@@ -29,7 +29,7 @@ impl Wallet {
         amount: Amount,
         opts: SendOptions,
     ) -> Result<PreparedSend, Error> {
-        tracing::info!("Preparing send");
+        println!("Preparing send");
 
         // If online send check mint for current keysets fees
         if opts.send_kind.is_online() {
@@ -57,7 +57,7 @@ impl Wallet {
                 return Err(Error::InsufficientFunds);
             } else {
                 // Swap is required for send
-                tracing::debug!("Insufficient proofs matching conditions");
+                println!("Insufficient proofs matching conditions");
                 force_swap = true;
                 available_proofs = self
                     .localstore
@@ -132,7 +132,7 @@ impl Wallet {
         let (send_amounts, send_fee) = if opts.include_fee {
             let active_keyset_id = self.get_active_keyset().await?.id;
             let keyset_fee_ppk = self.get_keyset_fees_by_id(active_keyset_id).await?;
-            tracing::debug!("Keyset fee per proof: {:?}", keyset_fee_ppk);
+            println!("Keyset fee per proof: {:?}", keyset_fee_ppk);
             let send_split = amount.split_with_fee(keyset_fee_ppk)?;
             let send_fee = self
                 .get_proofs_fee_by_count(
@@ -147,8 +147,8 @@ impl Wallet {
             let send_fee = Amount::ZERO;
             (send_split, send_fee)
         };
-        tracing::debug!("Send amounts: {:?}", send_amounts);
-        tracing::debug!("Send fee: {:?}", send_fee);
+        println!("Send amounts: {:?}", send_amounts);
+        println!("Send fee: {:?}", send_fee);
 
         // Reserve proofs
         self.localstore
@@ -271,11 +271,13 @@ impl PreparedSend {
         // Calculate total send amount
         let total_send_amount = self.amount + self.send_fee;
         tracing::debug!("Total send amount: {}", total_send_amount);
+        tracing::debug!("Amount: {:?}, Send fee: {:?}", self.amount, self.send_fee);
 
         // Swap proofs if necessary
         if !self.proofs_to_swap.is_empty() {
             let swap_amount = total_send_amount - proofs_to_send.total_amount()?;
             tracing::debug!("Swapping proofs; swap_amount={:?}", swap_amount);
+            tracing::debug!("Proofs to swap total: {:?}", self.proofs_to_swap.total_amount()?);
             if let Some(proofs) = self
                 .wallet
                 .swap(

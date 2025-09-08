@@ -207,6 +207,7 @@ impl Wallet {
 
         // Desired amount is either amount passed or value of all proof
         let proofs_total = proofs.total_amount()?;
+        println!("Swap input proofs total: {:?}", proofs_total);
 
         let ys: Vec<PublicKey> = proofs.ys()?;
         self.localstore
@@ -214,15 +215,18 @@ impl Wallet {
             .await?;
 
         let fee = self.get_proofs_fee(&proofs).await?;
+        println!("Swap fee for {} proofs: {:?}", proofs.len(), fee);
 
         let total_to_subtract = amount
             .unwrap_or(Amount::ZERO)
             .checked_add(fee)
             .ok_or(Error::AmountOverflow)?;
+        println!("Total to subtract (amount + fee): {:?}", total_to_subtract);
 
         let change_amount: Amount = proofs_total
             .checked_sub(total_to_subtract)
             .ok_or(Error::InsufficientFunds)?;
+        println!("Change amount: {:?}", change_amount);
 
         let (send_amount, change_amount) = match include_fees {
             true => {
@@ -231,19 +235,24 @@ impl Wallet {
                     .split_targeted(&SplitTarget::default())
                     .unwrap()
                     .len();
+                println!("Split count for fee calculation: {}", split_count);
 
                 let fee_to_redeem = self
                     .get_keyset_count_fee(&active_keyset_id, split_count as u64)
                     .await?;
+                println!("Fee to redeem: {:?}", fee_to_redeem);
 
-                (
-                    amount
-                        .map(|a| a.checked_add(fee_to_redeem).ok_or(Error::AmountOverflow))
-                        .transpose()?,
-                    change_amount
-                        .checked_sub(fee_to_redeem)
-                        .ok_or(Error::InsufficientFunds)?,
-                )
+                let send_with_fee = amount
+                    .map(|a| a.checked_add(fee_to_redeem).ok_or(Error::AmountOverflow))
+                    .transpose()?;
+                let change_with_fee = change_amount
+                    .checked_sub(fee_to_redeem)
+                    .ok_or(Error::InsufficientFunds)?;
+                
+                println!("Send amount with fee: {:?}", send_with_fee);
+                println!("Change amount after fee: {:?}", change_with_fee);
+                
+                (send_with_fee, change_with_fee)
             }
             false => (amount, change_amount),
         };
@@ -345,6 +354,25 @@ impl Wallet {
         desired_messages.combine(change_messages);
         // Sort the premint secrets to avoid finger printing
         desired_messages.sort_secrets();
+        
+        let total_outputs = desired_messages.len();
+        let outputs_sum: Amount = desired_messages
+            .amounts()
+            .iter()
+            .try_fold(Amount::ZERO, |acc, &amt| acc.checked_add(amt))
+            .ok_or(Error::AmountOverflow)?;
+        
+        println!("Swap outputs: {} outputs totaling {:?}", total_outputs, outputs_sum);
+        println!("Inputs total: {:?}, Outputs total: {:?}", proofs_total, outputs_sum);
+        
+        if proofs_total != outputs_sum {
+            println!(
+                "UNBALANCED SWAP: inputs={:?}, outputs={:?}, difference={:?}",
+                proofs_total,
+                outputs_sum,
+                proofs_total.checked_sub(outputs_sum).or_else(|| outputs_sum.checked_sub(proofs_total))
+            );
+        }
 
         let swap_request = SwapRequest::new(proofs, desired_messages.blinded_messages());
 

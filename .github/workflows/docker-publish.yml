@@ -63,7 +63,7 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-standalone:latest
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-cloud:latest
           build-args: |
-            CARGO_FEATURES=${{ matrix.target == 'minimal' && 'sqlite' || matrix.target == 'base' && 'sqlite,postgres,redis' || matrix.target == 'standalone' && 'sqlite,postgres,redis,ldk-node' || 'sqlite,postgres,redis,grpc,ldk-node' }}
+            CARGO_FEATURES=${{ matrix.target == 'minimal' && 'sqlite' || matrix.target == 'base' && 'sqlite,postgres,redis' || matrix.target == 'standalone' && 'sqlite,postgres,redis,ldk-node' || 'sqlite,postgres,redis,ldk-node' }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

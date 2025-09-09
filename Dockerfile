@@ -21,14 +21,17 @@ ENV RUSTFLAGS="-C target-cpu=native"
 # Use CROSS_COMPILE env to speed up multi-arch builds without QEMU
 ARG CARGO_BUILD_TARGET=""
 
-RUN if [ -n "$CARGO_BUILD_TARGET" ]; then \
-      echo "Cross compiling for target=$CARGO_BUILD_TARGET with features=$CARGO_FEATURES"; \
-      rustup target add $CARGO_BUILD_TARGET; \
-      cargo build --target $CARGO_BUILD_TARGET --release --bin cdk-mintd --features ${CARGO_FEATURES}; \
+RUN CARGO_BUILD_TARGET_TRIMMED="$(printf '%s' "$CARGO_BUILD_TARGET" | tr -d '[:space:]')" && \
+    if [ -n "$CARGO_BUILD_TARGET_TRIMMED" ]; then \
+      echo "Cross compiling for target=$CARGO_BUILD_TARGET_TRIMMED with features=$CARGO_FEATURES"; \
+      rustup target add "$CARGO_BUILD_TARGET_TRIMMED"; \
+      cargo build --target "$CARGO_BUILD_TARGET_TRIMMED" --release --bin cdk-mintd --features "${CARGO_FEATURES}"; \
+      cp "target/$CARGO_BUILD_TARGET_TRIMMED/release/cdk-mintd" target/release/cdk-mintd; \
     else \
       echo "Native build with features=$CARGO_FEATURES"; \
-      cargo build --release --bin cdk-mintd --features ${CARGO_FEATURES}; \
+      cargo build --release --bin cdk-mintd --features "${CARGO_FEATURES}"; \
     fi
+
 
 # Separate targets for multi-image publishing
 # minimal: sqlite only

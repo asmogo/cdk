@@ -51,7 +51,7 @@ jobs:
           push: true
           platforms: linux/arm64
           file: ./Dockerfile
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-minimal:${{ github.event.inputs.tag || 'latest' }}
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-minimal-arm:${{ github.event.inputs.tag || 'latest' }}
           build-args: |
             CARGO_FEATURES=sqlite
             CARGO_BUILD_TARGET=aarch64-unknown-linux-gnu

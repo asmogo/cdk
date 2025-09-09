@@ -1,16 +1,32 @@
-# Use the official NixOS image as the base image
-FROM nixos/nix:latest AS builder
+# Use the official Rust image as the base image
+FROM rust:1.82-slim AS builder
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y pkg-config libssl-dev build-essential && rm -rf /var/lib/apt/lists/*
 
 # Set the working directory
 WORKDIR /usr/src/app
 
 # Copy workspace files and crates directory into the container
-COPY flake.nix ./flake.nix
 COPY Cargo.toml ./Cargo.toml
 COPY crates ./crates
 
-# Start the Nix daemon and develop the environment
-RUN nix develop --extra-experimental-features nix-command --extra-experimental-features flakes --command cargo build --release --bin cdk-mintd --features redis
+# Build with cargo (feature flags provided at build time)
+ARG CARGO_FEATURES="sqlite"
+ENV RUSTFLAGS="-C target-cpu=native"
+RUN cargo build --release --bin cdk-mintd --features ${CARGO_FEATURES}
+
+# Separate targets for multi-image publishing
+# minimal: sqlite only
+# base: sqlite + postgres + redis
+# standalone: sqlite + postgres + redis + ldk-node
+# cloud: sqlite + postgres + prometheus + redis + grpc + ldk-node
+
+# Example build targets:
+# docker build -t cdk-mintd-minimal --build-arg CARGO_FEATURES=sqlite .
+# docker build -t cdk-mintd --build-arg CARGO_FEATURES="sqlite,postgres,redis" .
+# docker build -t cdk-mintd-standalone --build-arg CARGO_FEATURES="sqlite,postgres,redis,ldk-node" .
+# docker build -t cdk-mintd-cloud --build-arg CARGO_FEATURES="sqlite,postgres,prometheus,redis,grpc,ldk-node" .
 
 # Create a runtime stage
 FROM debian:trixie-slim
@@ -37,4 +53,11 @@ RUN ARCH=$(uname -m) && \
     fi
 
 # Set the entry point for the container
-CMD ["cdk-mintd"]
+ENTRYPOINT ["cdk-mintd"]
+
+# Cloud variant requires extra system libs for prometheus/grpc support
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates \
+      curl \
+      libssl3 \
+      && rm -rf /var/lib/apt/lists/*

@@ -1,6 +1,7 @@
-name: Publish Docker Image AMD64
+name: Publish Multi-Arch Docker Images
 
 on:
+  push: # addd this for testing
   release:
     types: [published]
   workflow_dispatch:
@@ -12,7 +13,7 @@ on:
 
 env:
   REGISTRY: docker.io
-  IMAGE_NAME: cashubtc/mintd
+  IMAGE_NAME: asmogo/mintd
 
 jobs:
   build-and-push:
@@ -48,14 +49,21 @@ jobs:
             type=sha
             ${{ github.event.inputs.tag != '' && github.event.inputs.tag || '' }}
 
-      # Build and push AMD64 image with architecture suffix
-      - name: Build and push Docker image
+      # Build and push multi-arch images for all variants
+      - name: Build and push Docker images
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          platforms: linux/amd64
-          tags: ${{ steps.meta.outputs.tags }}-amd64
+          platforms: linux/amd64,linux/arm64
+          file: ./Dockerfile
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-minimal:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-base:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-standalone:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-cloud:latest
+          build-args: |
+            CARGO_FEATURES=${{ matrix.target == 'minimal' && 'sqlite' || matrix.target == 'base' && 'sqlite,postgres,redis' || matrix.target == 'standalone' && 'sqlite,postgres,redis,ldk-node' || 'sqlite,postgres,prometheus,redis,grpc,ldk-node' }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

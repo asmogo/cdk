@@ -1,19 +1,19 @@
-# Use the official NixOS image as the base image
-FROM nixos/nix:latest AS builder
+# Use the official Rust image as the base image
+FROM rust:1.82-slim AS builder
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y pkg-config libssl-dev build-essential && rm -rf /var/lib/apt/lists/*
 
 # Set the working directory
 WORKDIR /usr/src/app
 
 # Copy workspace files and crates directory into the container
-COPY flake.nix ./flake.nix
 COPY Cargo.toml ./Cargo.toml
 COPY crates ./crates
 
-# Create a nix config file to disable syscall filtering
-RUN echo 'filter-syscalls = false' > /etc/nix/nix.conf
-
-# Start the Nix daemon and develop the environment
-RUN nix develop --extra-platforms aarch64-linux --extra-experimental-features nix-command --extra-experimental-features flakes --command cargo build --release --bin cdk-mintd --features redis
+# Build with cargo targeting aarch64 (features set via build args)
+ARG CARGO_FEATURES="sqlite"
+RUN cargo build --release --bin cdk-mintd --features ${CARGO_FEATURES}
 
 # Create a runtime stage
 FROM debian:trixie-slim

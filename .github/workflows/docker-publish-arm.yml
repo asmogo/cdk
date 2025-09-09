@@ -1,4 +1,5 @@
-name: Publish Docker Image ARM64
+# Deprecated, merged into docker-publish.yml (multi-arch)
+# This workflow file is no longer needed and can be safely removed.
 
 on:
   release:

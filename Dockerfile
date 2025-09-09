@@ -19,11 +19,15 @@ ARG CARGO_FEATURES="sqlite"
 ENV RUSTFLAGS="-C target-cpu=native"
 
 # Use CROSS_COMPILE env to speed up multi-arch builds without QEMU
-ARG CARGO_BUILD_TARGET
-RUN if [ -n "$CARGO_BUILD_TARGET" ]; then \
-      rustup target add $CARGO_BUILD_TARGET && \
+ARG CARGO_BUILD_TARGET=""
+ENV CARGO_BUILD_TARGET=${CARGO_BUILD_TARGET}
+
+RUN if [ "$CARGO_BUILD_TARGET" != "" ]; then \
+      echo "Cross compiling for target=$CARGO_BUILD_TARGET with features=$CARGO_FEATURES"; \
+      rustup target add $CARGO_BUILD_TARGET; \
       cargo build --target $CARGO_BUILD_TARGET --release --bin cdk-mintd --features ${CARGO_FEATURES}; \
     else \
+      echo "Native build with features=$CARGO_FEATURES"; \
       cargo build --release --bin cdk-mintd --features ${CARGO_FEATURES}; \
     fi
 

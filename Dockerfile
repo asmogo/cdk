@@ -1,8 +1,8 @@
 # Use Rust nightly base image to support edition2024 crates
 FROM rustlang/rust:nightly-slim AS builder
 
-# Install build dependencies
-RUN apt-get update && apt-get install -y pkg-config libssl-dev build-essential && rm -rf /var/lib/apt/lists/*
+# Install build dependencies including protoc compiler
+RUN apt-get update && apt-get install -y pkg-config libssl-dev build-essential protobuf-compiler && rm -rf /var/lib/apt/lists/*
 
 # Ensure nightly is the default
 RUN rustup default nightly

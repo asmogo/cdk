@@ -20,7 +20,6 @@ ENV RUSTFLAGS="-C target-cpu=native"
 
 # Use CROSS_COMPILE env to speed up multi-arch builds without QEMU
 ARG CARGO_BUILD_TARGET=""
-ENV CARGO_BUILD_TARGET=${CARGO_BUILD_TARGET}
 
 RUN if [ "$CARGO_BUILD_TARGET" != "" ]; then \
       echo "Cross compiling for target=$CARGO_BUILD_TARGET with features=$CARGO_FEATURES"; \

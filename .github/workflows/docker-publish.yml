@@ -35,6 +35,7 @@ jobs:
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-minimal:${{ github.event.inputs.tag || 'latest' }}
           build-args: |
             CARGO_FEATURES=sqlite
+            CARGO_BUILD_TARGET=x86_64-unknown-linux-gnu
   minimal-arm:
     runs-on: ubuntu-latest
     steps:
@@ -75,7 +76,7 @@ jobs:
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-base:${{ github.event.inputs.tag || 'latest' }}
           build-args: |
             CARGO_FEATURES=sqlite,postgres,redis
-
+            CARGO_BUILD_TARGET=x86_64-unknown-linux-gnu
   standalone:
     runs-on: ubuntu-latest
     steps:
@@ -95,6 +96,7 @@ jobs:
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-standalone:${{ github.event.inputs.tag || 'latest' }}
           build-args: |
             CARGO_FEATURES=sqlite,postgres,redis,ldk-node
+            CARGO_BUILD_TARGET=x86_64-unknown-linux-gnu
 
   cloud:
     runs-on: ubuntu-latest
@@ -115,3 +117,4 @@ jobs:
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-cloud:${{ github.event.inputs.tag || 'latest' }}
           build-args: |
             CARGO_FEATURES=sqlite,postgres,prometheus,redis,grpc,ldk-node
+            CARGO_BUILD_TARGET=x86_64-unknown-linux-gnu

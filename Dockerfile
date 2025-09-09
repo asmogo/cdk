@@ -1,8 +1,11 @@
-# Use the official Rust image as the base image
-FROM rust:1.82-slim AS builder
+# Use Rust nightly base image to support edition2024 crates
+FROM rustlang/rust:nightly-slim AS builder
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y pkg-config libssl-dev build-essential && rm -rf /var/lib/apt/lists/*
+
+# Ensure nightly is the default
+RUN rustup default nightly
 
 # Set the working directory
 WORKDIR /usr/src/app

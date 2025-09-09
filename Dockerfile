@@ -17,7 +17,15 @@ COPY crates ./crates
 # Build with cargo (feature flags provided at build time)
 ARG CARGO_FEATURES="sqlite"
 ENV RUSTFLAGS="-C target-cpu=native"
-RUN cargo build --release --bin cdk-mintd --features ${CARGO_FEATURES}
+
+# Use CROSS_COMPILE env to speed up multi-arch builds without QEMU
+ARG CARGO_BUILD_TARGET
+RUN if [ -n "$CARGO_BUILD_TARGET" ]; then \
+      rustup target add $CARGO_BUILD_TARGET && \
+      cargo build --target $CARGO_BUILD_TARGET --release --bin cdk-mintd --features ${CARGO_FEATURES}; \
+    else \
+      cargo build --release --bin cdk-mintd --features ${CARGO_FEATURES}; \
+    fi
 
 # Separate targets for multi-image publishing
 # minimal: sqlite only

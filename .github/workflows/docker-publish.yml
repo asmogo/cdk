@@ -116,5 +116,5 @@ jobs:
           file: ./Dockerfile
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-cloud:${{ github.event.inputs.tag || 'latest' }}
           build-args: |
-            CARGO_FEATURES=sqlite,postgres,prometheus,redis,grpc,ldk-node
+            CARGO_FEATURES=sqlite,postgres,redis,grpc,ldk-node
             CARGO_BUILD_TARGET=x86_64-unknown-linux-gnu

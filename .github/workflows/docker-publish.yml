@@ -1,6 +1,7 @@
 name: Publish Multi-Arch Docker Images
 
 on:
+  push:
   release:
     types: [published]
   workflow_dispatch:

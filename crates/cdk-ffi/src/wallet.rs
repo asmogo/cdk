@@ -147,6 +147,7 @@ impl Wallet {
         amount: Amount,
         description: Option<String>,
     ) -> Result<MintQuote, FfiError> {
+        print!("inner unit {}",self.inner.unit.clone());
         let quote = self.inner.mint_quote(amount.into(), description).await?;
         Ok(quote.into())
     }

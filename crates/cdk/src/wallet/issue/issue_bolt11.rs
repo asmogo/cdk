@@ -51,11 +51,12 @@ impl Wallet {
     ) -> Result<MintQuote, Error> {
         let mint_url = self.mint_url.clone();
         let unit = self.unit.clone();
-
+        println!("minting unit {}", unit.clone());
         self.refresh_keysets().await?;
 
         // If we have a description, we check that the mint supports it.
         if description.is_some() {
+            println!("checking description");
             let settings = self
                 .localstore
                 .get_mint(mint_url.clone())

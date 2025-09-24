@@ -75,7 +75,7 @@ jobs:
           file: ./Dockerfile
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-base:${{ github.event.inputs.tag || 'latest' }}
           build-args: |
-            CARGO_FEATURES=sqlite,postgres,redis
+            CARGO_FEATURES=sqlite,postgres
             CARGO_BUILD_TARGET=x86_64-unknown-linux-gnu
   standalone:
     runs-on: ubuntu-latest
@@ -95,7 +95,7 @@ jobs:
           file: ./Dockerfile
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-standalone:${{ github.event.inputs.tag || 'latest' }}
           build-args: |
-            CARGO_FEATURES=sqlite,postgres,redis,ldk-node
+            CARGO_FEATURES=sqlite,postgres,ldk-node
             CARGO_BUILD_TARGET=x86_64-unknown-linux-gnu
 
   cloud:
@@ -116,5 +116,5 @@ jobs:
           file: ./Dockerfile
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-cloud:${{ github.event.inputs.tag || 'latest' }}
           build-args: |
-            CARGO_FEATURES=sqlite,postgres,redis,grpc,ldk-node
+            CARGO_FEATURES=sqlite,postgres,grpc,ldk-node
             CARGO_BUILD_TARGET=x86_64-unknown-linux-gnu

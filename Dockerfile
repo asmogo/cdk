@@ -22,7 +22,7 @@ ENV RUSTFLAGS="-C target-cpu=native"
 ARG CARGO_BUILD_TARGET
 RUN if [ "$CARGO_BUILD_TARGET" = "x86_64-unknown-linux-gnu" ]; then \
       echo "Building natively for x86_64 with features=$CARGO_FEATURES"; \
-      cargo build --release --bin cdk-mintd --features "${CARGO_FEATURES}" --target-dir target/release/cdk-mintd; \
+      cargo build --release --bin cdk-mintd --features "${CARGO_FEATURES}"; \
     else \
       echo "Cross compiling for target=$CARGO_BUILD_TARGET with features=$CARGO_FEATURES"; \
       rustup target add "$CARGO_BUILD_TARGET"; \

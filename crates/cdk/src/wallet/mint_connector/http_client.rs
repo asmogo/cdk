@@ -1,7 +1,6 @@
 //! HTTP Mint client with pluggable transport
 use std::collections::HashSet;
 use std::sync::{Arc, RwLock as StdRwLock};
-use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use cdk_common::{nut19, MeltQuoteBolt12Request, MintQuoteBolt12Request, MintQuoteBolt12Response};
@@ -13,6 +12,7 @@ use serde::Serialize;
 use tokio::sync::RwLock;
 use tracing::instrument;
 use url::Url;
+use web_time::{Duration, Instant};
 
 use super::transport::Transport;
 use super::{Error, MintConnector};
@@ -187,6 +187,12 @@ impl<T> MintConnector for HttpClient<T>
 where
     T: Transport + Send + Sync + 'static,
 {
+    #[cfg(all(feature = "bip353", not(target_arch = "wasm32")))]
+    #[instrument(skip(self), fields(mint_url = %self.mint_url))]
+    async fn resolve_dns_txt(&self, domain: &str) -> Result<Vec<String>, Error> {
+        self.transport.resolve_dns_txt(domain).await
+    }
+
     /// Get Active Mint Keys [NUT-01]
     #[instrument(skip(self), fields(mint_url = %self.mint_url))]
     async fn get_mint_keys(&self) -> Result<Vec<KeySet>, Error> {

@@ -15,7 +15,6 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use bitcoin::bip32::DerivationPath;
-use cdk_common::common::QuoteTTL;
 use cdk_common::database::mint::validate_kvstore_params;
 use cdk_common::database::{
     self, ConversionError, Error, MintDatabase, MintDbWriterFinalizer, MintKeyDatabaseTransaction,
@@ -32,7 +31,7 @@ use cdk_common::secret::Secret;
 use cdk_common::state::check_state_transition;
 use cdk_common::util::unix_time;
 use cdk_common::{
-    Amount, BlindSignature, BlindSignatureDleq, CurrencyUnit, Id, MeltQuoteState, MintInfo,
+    Amount, BlindSignature, BlindSignatureDleq, BlindedMessage, CurrencyUnit, Id, MeltQuoteState,
     PaymentMethod, Proof, Proofs, PublicKey, SecretKey, State,
 };
 use lightning_invoice::Bolt11Invoice;
@@ -52,11 +51,14 @@ use crate::{
 mod auth;
 
 #[rustfmt::skip]
-mod migrations;
-
+mod migrations {
+    include!(concat!(env!("OUT_DIR"), "/migrations_mint.rs"));
+}
 
 #[cfg(feature = "auth")]
 pub use auth::SQLMintAuthDatabase;
+#[cfg(feature = "prometheus")]
+use cdk_prometheus::METRICS;
 
 /// Mint SQL Database
 #[derive(Debug, Clone)]
@@ -100,26 +102,6 @@ where
         .collect::<Result<HashMap<_, _>, _>>()
 }
 
-#[inline(always)]
-async fn set_to_config<C, V>(conn: &C, id: &str, value: &V) -> Result<(), Error>
-where
-    C: DatabaseExecutor + Send + Sync,
-    V: ?Sized + serde::Serialize,
-{
-    query(
-        r#"
-        INSERT INTO config (id, value) VALUES (:id, :value)
-            ON CONFLICT(id) DO UPDATE SET value = excluded.value
-            "#,
-    )?
-    .bind("id", id.to_owned())
-    .bind("value", serde_json::to_string(&value)?)
-    .execute(conn)
-    .await?;
-
-    Ok(())
-}
-
 impl<RM> SQLMintDatabase<RM>
 where
     RM: DatabasePool + 'static,
@@ -142,21 +124,6 @@ where
         migrate(&tx, RM::Connection::name(), MIGRATIONS).await?;
         tx.commit().await?;
         Ok(())
-    }
-
-    #[inline(always)]
-    async fn fetch_from_config<R>(&self, id: &str) -> Result<R, Error>
-    where
-        R: serde::de::DeserializeOwned,
-    {
-        let conn = self.pool.get().map_err(|e| Error::Database(Box::new(e)))?;
-        let value = column_as_string!(query(r#"SELECT value FROM config WHERE id = :id LIMIT 1"#)?
-            .bind("id", id.to_owned())
-            .pluck(&*conn)
-            .await?
-            .ok_or(Error::UnknownQuoteTTL)?);
-
-        Ok(serde_json::from_str(&value)?)
     }
 }
 
@@ -275,21 +242,38 @@ where
 
         Ok(())
     }
+
+    async fn get_proof_ys_by_quote_id(
+        &self,
+        quote_id: &QuoteId,
+    ) -> Result<Vec<PublicKey>, Self::Err> {
+        Ok(query(
+            r#"
+            SELECT
+                amount,
+                keyset_id,
+                secret,
+                c,
+                witness
+            FROM
+                proof
+            WHERE
+                quote_id = :quote_id
+            "#,
+        )?
+        .bind("quote_id", quote_id.to_string())
+        .fetch_all(&self.inner)
+        .await?
+        .into_iter()
+        .map(sql_row_to_proof)
+        .collect::<Result<Vec<Proof>, _>>()?
+        .ys()?)
+    }
 }
 
 #[async_trait]
-impl<RM> database::MintTransaction<'_, Error> for SQLTransaction<RM>
-where
-    RM: DatabasePool + 'static,
-{
-    async fn set_mint_info(&mut self, mint_info: MintInfo) -> Result<(), Error> {
-        Ok(set_to_config(&self.inner, "mint_info", &mint_info).await?)
-    }
-
-    async fn set_quote_ttl(&mut self, quote_ttl: QuoteTTL) -> Result<(), Error> {
-        Ok(set_to_config(&self.inner, "quote_ttl", &quote_ttl).await?)
-    }
-}
+impl<RM> database::MintTransaction<'_, Error> for SQLTransaction<RM> where RM: DatabasePool + 'static
+{}
 
 #[async_trait]
 impl<RM> MintDbWriterFinalizer for SQLTransaction<RM>
@@ -299,11 +283,27 @@ where
     type Err = Error;
 
     async fn commit(self: Box<Self>) -> Result<(), Error> {
-        self.inner.commit().await
+        let result = self.inner.commit().await;
+        #[cfg(feature = "prometheus")]
+        {
+            let success = result.is_ok();
+            METRICS.record_mint_operation("transaction_commit", success);
+            METRICS.record_mint_operation_histogram("transaction_commit", success, 1.0);
+        }
+
+        Ok(result?)
     }
 
     async fn rollback(self: Box<Self>) -> Result<(), Error> {
-        self.inner.rollback().await
+        let result = self.inner.rollback().await;
+
+        #[cfg(feature = "prometheus")]
+        {
+            let success = result.is_ok();
+            METRICS.record_mint_operation("transaction_rollback", success);
+            METRICS.record_mint_operation_histogram("transaction_rollback", success, 1.0);
+        }
+        Ok(result?)
     }
 }
 
@@ -443,12 +443,14 @@ where
     async fn begin_transaction<'a>(
         &'a self,
     ) -> Result<Box<dyn MintKeyDatabaseTransaction<'a, Error> + Send + Sync + 'a>, Error> {
-        Ok(Box::new(SQLTransaction {
+        let tx = SQLTransaction {
             inner: ConnectionWithTransaction::new(
                 self.pool.get().map_err(|e| Error::Database(Box::new(e)))?,
             )
             .await?,
-        }))
+        };
+
+        Ok(Box::new(tx))
     }
 
     async fn get_active_keyset_id(&self, unit: &CurrencyUnit) -> Result<Option<Id>, Self::Err> {
@@ -543,6 +545,123 @@ where
     RM: DatabasePool + 'static,
 {
     type Err = Error;
+
+    async fn add_melt_request_and_blinded_messages(
+        &mut self,
+        quote_id: &QuoteId,
+        inputs_amount: Amount,
+        inputs_fee: Amount,
+        blinded_messages: &[BlindedMessage],
+    ) -> Result<(), Self::Err> {
+        query(
+            r#"
+            INSERT INTO melt_request
+            (quote_id, inputs_amount, inputs_fee)
+            VALUES
+            (:quote_id, :inputs_amount, :inputs_fee)
+            "#,
+        )?
+        .bind("quote_id", quote_id.to_string())
+        .bind("inputs_amount", inputs_amount.to_i64())
+        .bind("inputs_fee", inputs_fee.to_i64())
+        .execute(&self.inner)
+        .await?;
+
+        for message in blinded_messages {
+            query(
+                r#"
+                INSERT INTO blinded_messages
+                (quote_id, blinded_message, keyset_id, amount)
+                VALUES
+                (:quote_id, :blinded_message, :keyset_id, :amount)
+                "#,
+            )?
+            .bind("quote_id", quote_id.to_string())
+            .bind(
+                "blinded_message",
+                message.blinded_secret.to_bytes().to_vec(),
+            )
+            .bind("keyset_id", message.keyset_id.to_string())
+            .bind("amount", message.amount.to_i64())
+            .execute(&self.inner)
+            .await?;
+        }
+
+        Ok(())
+    }
+
+    async fn get_melt_request_and_blinded_messages(
+        &mut self,
+        quote_id: &QuoteId,
+    ) -> Result<Option<database::mint::MeltRequestInfo>, Self::Err> {
+        let melt_request_row = query(
+            r#"
+            SELECT inputs_amount, inputs_fee
+            FROM melt_request
+            WHERE quote_id = :quote_id
+            FOR UPDATE
+            "#,
+        )?
+        .bind("quote_id", quote_id.to_string())
+        .fetch_one(&self.inner)
+        .await?;
+
+        if let Some(row) = melt_request_row {
+            let inputs_amount: u64 = column_as_number!(row[0].clone());
+            let inputs_fee: u64 = column_as_number!(row[1].clone());
+
+            let blinded_messages_rows = query(
+                r#"
+                SELECT blinded_message, keyset_id, amount
+                FROM blinded_messages
+                WHERE quote_id = :quote_id
+                "#,
+            )?
+            .bind("quote_id", quote_id.to_string())
+            .fetch_all(&self.inner)
+            .await?;
+
+            let blinded_messages: Result<Vec<BlindedMessage>, Error> = blinded_messages_rows
+                .into_iter()
+                .map(|row| -> Result<BlindedMessage, Error> {
+                    let blinded_message_key =
+                        column_as_string!(&row[0], PublicKey::from_hex, PublicKey::from_slice);
+                    let keyset_id = column_as_string!(&row[1], Id::from_str, Id::from_bytes);
+                    let amount: u64 = column_as_number!(row[2].clone());
+
+                    Ok(BlindedMessage {
+                        blinded_secret: blinded_message_key,
+                        keyset_id,
+                        amount: Amount::from(amount),
+                        witness: None, // Not storing witness in database currently
+                    })
+                })
+                .collect();
+            let blinded_messages = blinded_messages?;
+
+            Ok(Some(database::mint::MeltRequestInfo {
+                inputs_amount: Amount::from(inputs_amount),
+                inputs_fee: Amount::from(inputs_fee),
+                change_outputs: blinded_messages,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn delete_melt_request(&mut self, quote_id: &QuoteId) -> Result<(), Self::Err> {
+        query(
+            r#"
+            DELETE FROM melt_request
+            WHERE quote_id = :quote_id
+            "#,
+        )?
+        .bind("quote_id", quote_id.to_string())
+        .execute(&self.inner)
+        .await?;
+
+        Ok(())
+    }
 
     #[instrument(skip(self))]
     async fn increment_mint_quote_amount_paid(
@@ -768,8 +887,6 @@ VALUES (:quote_id, :amount, :timestamp);
     }
 
     async fn add_melt_quote(&mut self, quote: mint::MeltQuote) -> Result<(), Self::Err> {
-        // First try to find and replace any expired UNPAID quotes with the same request_lookup_id
-
         // Now insert the new quote
         query(
             r#"
@@ -896,6 +1013,10 @@ VALUES (:quote_id, :amount, :timestamp);
         let old_state = quote.state;
         quote.state = state;
 
+        if state == MeltQuoteState::Unpaid || state == MeltQuoteState::Failed {
+            self.delete_melt_request(quote_id).await?;
+        }
+
         Ok((old_state, quote))
     }
 
@@ -903,7 +1024,7 @@ VALUES (:quote_id, :amount, :timestamp);
         query(
             r#"
             DELETE FROM melt_quote
-            WHERE id=?
+            WHERE id=:id
             "#,
         )?
         .bind("id", quote_id.to_string())
@@ -1072,35 +1193,58 @@ where
     type Err = Error;
 
     async fn get_mint_quote(&self, quote_id: &QuoteId) -> Result<Option<MintQuote>, Self::Err> {
+        #[cfg(feature = "prometheus")]
+        METRICS.inc_in_flight_requests("get_mint_quote");
+
+        #[cfg(feature = "prometheus")]
+        let start_time = std::time::Instant::now();
         let conn = self.pool.get().map_err(|e| Error::Database(Box::new(e)))?;
 
-        let payments = get_mint_quote_payments(&*conn, quote_id).await?;
-        let issuance = get_mint_quote_issuance(&*conn, quote_id).await?;
+        let result = async {
+            let payments = get_mint_quote_payments(&*conn, quote_id).await?;
+            let issuance = get_mint_quote_issuance(&*conn, quote_id).await?;
 
-        Ok(query(
-            r#"
-            SELECT
-                id,
-                amount,
-                unit,
-                request,
-                expiry,
-                request_lookup_id,
-                pubkey,
-                created_time,
-                amount_paid,
-                amount_issued,
-                payment_method,
-                request_lookup_id_kind
-            FROM
-                mint_quote
-            WHERE id = :id"#,
-        )?
-        .bind("id", quote_id.to_string())
-        .fetch_one(&*conn)
-        .await?
-        .map(|row| sql_row_to_mint_quote(row, payments, issuance))
-        .transpose()?)
+            query(
+                r#"
+                SELECT
+                    id,
+                    amount,
+                    unit,
+                    request,
+                    expiry,
+                    request_lookup_id,
+                    pubkey,
+                    created_time,
+                    amount_paid,
+                    amount_issued,
+                    payment_method,
+                    request_lookup_id_kind
+                FROM
+                    mint_quote
+                WHERE id = :id"#,
+            )?
+            .bind("id", quote_id.to_string())
+            .fetch_one(&*conn)
+            .await?
+            .map(|row| sql_row_to_mint_quote(row, payments, issuance))
+            .transpose()
+        }
+        .await;
+
+        #[cfg(feature = "prometheus")]
+        {
+            let success = result.is_ok();
+
+            METRICS.record_mint_operation("get_mint_quote", success);
+            METRICS.record_mint_operation_histogram(
+                "get_mint_quote",
+                success,
+                start_time.elapsed().as_secs_f64(),
+            );
+            METRICS.dec_in_flight_requests("get_mint_quote");
+        }
+
+        result
     }
 
     async fn get_mint_quote_by_request(
@@ -1228,35 +1372,59 @@ where
         &self,
         quote_id: &QuoteId,
     ) -> Result<Option<mint::MeltQuote>, Self::Err> {
+        #[cfg(feature = "prometheus")]
+        METRICS.inc_in_flight_requests("get_melt_quote");
+
+        #[cfg(feature = "prometheus")]
+        let start_time = std::time::Instant::now();
         let conn = self.pool.get().map_err(|e| Error::Database(Box::new(e)))?;
-        Ok(query(
-            r#"
-            SELECT
-                id,
-                unit,
-                amount,
-                request,
-                fee_reserve,
-                expiry,
-                state,
-                payment_preimage,
-                request_lookup_id,
-                created_time,
-                paid_time,
-                payment_method,
-                options,
-                request_lookup_id_kind
-            FROM
-                melt_quote
-            WHERE
-                id=:id
-            "#,
-        )?
-        .bind("id", quote_id.to_string())
-        .fetch_one(&*conn)
-        .await?
-        .map(sql_row_to_melt_quote)
-        .transpose()?)
+
+        let result = async {
+            query(
+                r#"
+                SELECT
+                    id,
+                    unit,
+                    amount,
+                    request,
+                    fee_reserve,
+                    expiry,
+                    state,
+                    payment_preimage,
+                    request_lookup_id,
+                    created_time,
+                    paid_time,
+                    payment_method,
+                    options,
+                    request_lookup_id_kind
+                FROM
+                    melt_quote
+                WHERE
+                    id=:id
+                "#,
+            )?
+            .bind("id", quote_id.to_string())
+            .fetch_one(&*conn)
+            .await?
+            .map(sql_row_to_melt_quote)
+            .transpose()
+        }
+        .await;
+
+        #[cfg(feature = "prometheus")]
+        {
+            let success = result.is_ok();
+
+            METRICS.record_mint_operation("get_melt_quote", success);
+            METRICS.record_mint_operation_histogram(
+                "get_melt_quote",
+                success,
+                start_time.elapsed().as_secs_f64(),
+            );
+            METRICS.dec_in_flight_requests("get_melt_quote");
+        }
+
+        result
     }
 
     async fn get_melt_quotes(&self) -> Result<Vec<mint::MeltQuote>, Self::Err> {
@@ -1385,7 +1553,7 @@ where
             FROM
                 proof
             WHERE
-                keyset_id=?
+                keyset_id=:keyset_id
             "#,
         )?
         .bind("keyset_id", keyset_id.to_string())
@@ -1826,20 +1994,14 @@ where
     async fn begin_transaction<'a>(
         &'a self,
     ) -> Result<Box<dyn database::MintTransaction<'a, Error> + Send + Sync + 'a>, Error> {
-        Ok(Box::new(SQLTransaction {
+        let tx = SQLTransaction {
             inner: ConnectionWithTransaction::new(
                 self.pool.get().map_err(|e| Error::Database(Box::new(e)))?,
             )
             .await?,
-        }))
-    }
+        };
 
-    async fn get_mint_info(&self) -> Result<MintInfo, Error> {
-        Ok(self.fetch_from_config("mint_info").await?)
-    }
-
-    async fn get_quote_ttl(&self) -> Result<QuoteTTL, Error> {
-        Ok(self.fetch_from_config("quote_ttl").await?)
+        Ok(Box::new(tx))
     }
 }
 

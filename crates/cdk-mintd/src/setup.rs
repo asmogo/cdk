@@ -8,7 +8,6 @@ use std::sync::Arc;
 #[cfg(feature = "cln")]
 use anyhow::anyhow;
 use async_trait::async_trait;
-use axum::Router;
 #[cfg(feature = "fakewallet")]
 use bip39::rand::{thread_rng, Rng};
 use cdk::cdk_database::MintKVStore;
@@ -31,7 +30,6 @@ use crate::expand_path;
 pub trait LnBackendSetup {
     async fn setup(
         &self,
-        routers: &mut Vec<Router>,
         settings: &Settings,
         unit: CurrencyUnit,
         runtime: Option<std::sync::Arc<tokio::runtime::Runtime>>,
@@ -45,12 +43,11 @@ pub trait LnBackendSetup {
 impl LnBackendSetup for config::Cln {
     async fn setup(
         &self,
-        _routers: &mut Vec<Router>,
         _settings: &Settings,
         _unit: CurrencyUnit,
         _runtime: Option<std::sync::Arc<tokio::runtime::Runtime>>,
         _work_dir: &Path,
-        _kv_store: Option<Arc<dyn MintKVStore<Err = cdk::cdk_database::Error> + Send + Sync>>,
+        kv_store: Option<Arc<dyn MintKVStore<Err = cdk::cdk_database::Error> + Send + Sync>>,
     ) -> anyhow::Result<cdk_cln::Cln> {
         let cln_socket = expand_path(
             self.rpc_path
@@ -64,7 +61,12 @@ impl LnBackendSetup for config::Cln {
             percent_fee_reserve: self.fee_percent,
         };
 
-        let cln = cdk_cln::Cln::new(cln_socket, fee_reserve).await?;
+        let cln = cdk_cln::Cln::new(
+            cln_socket,
+            fee_reserve,
+            kv_store.expect("Cln needs kv store"),
+        )
+        .await?;
 
         Ok(cln)
     }
@@ -75,7 +77,6 @@ impl LnBackendSetup for config::Cln {
 impl LnBackendSetup for config::LNbits {
     async fn setup(
         &self,
-        _routers: &mut Vec<Router>,
         _settings: &Settings,
         _unit: CurrencyUnit,
         _runtime: Option<std::sync::Arc<tokio::runtime::Runtime>>,
@@ -110,12 +111,11 @@ impl LnBackendSetup for config::LNbits {
 impl LnBackendSetup for config::Lnd {
     async fn setup(
         &self,
-        _routers: &mut Vec<Router>,
         _settings: &Settings,
         _unit: CurrencyUnit,
         _runtime: Option<std::sync::Arc<tokio::runtime::Runtime>>,
         _work_dir: &Path,
-        _kv_store: Option<Arc<dyn MintKVStore<Err = cdk::cdk_database::Error> + Send + Sync>>,
+        kv_store: Option<Arc<dyn MintKVStore<Err = cdk::cdk_database::Error> + Send + Sync>>,
     ) -> anyhow::Result<cdk_lnd::Lnd> {
         let address = &self.address;
         let cert_file = &self.cert_file;
@@ -131,6 +131,7 @@ impl LnBackendSetup for config::Lnd {
             cert_file.clone(),
             macaroon_file.clone(),
             fee_reserve,
+            kv_store.expect("Lnd needs kv store"),
         )
         .await?;
 
@@ -143,7 +144,6 @@ impl LnBackendSetup for config::Lnd {
 impl LnBackendSetup for config::FakeWallet {
     async fn setup(
         &self,
-        _router: &mut Vec<Router>,
         _settings: &Settings,
         unit: CurrencyUnit,
         _runtime: Option<std::sync::Arc<tokio::runtime::Runtime>>,
@@ -176,7 +176,6 @@ impl LnBackendSetup for config::FakeWallet {
 impl LnBackendSetup for config::GrpcProcessor {
     async fn setup(
         &self,
-        _routers: &mut Vec<Router>,
         _settings: &Settings,
         _unit: CurrencyUnit,
         _runtime: Option<std::sync::Arc<tokio::runtime::Runtime>>,
@@ -199,7 +198,6 @@ impl LnBackendSetup for config::GrpcProcessor {
 impl LnBackendSetup for config::LdkNode {
     async fn setup(
         &self,
-        _routers: &mut Vec<Router>,
         _settings: &Settings,
         _unit: CurrencyUnit,
         runtime: Option<std::sync::Arc<tokio::runtime::Runtime>>,

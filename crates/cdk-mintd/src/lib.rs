@@ -13,10 +13,7 @@ use std::sync::Arc;
 use anyhow::{anyhow, bail, Result};
 use axum::Router;
 use bip39::Mnemonic;
-// internal crate modules
 use cdk::cdk_database::{self, MintDatabase, MintKVStore, MintKeysDatabase};
-use cdk::cdk_payment;
-use cdk::cdk_payment::MintPayment;
 use cdk::mint::{Mint, MintBuilder, MintMeltLimits};
 #[cfg(any(
     feature = "cln",
@@ -39,16 +36,25 @@ use cdk::nuts::CurrencyUnit;
 #[cfg(feature = "auth")]
 use cdk::nuts::{AuthRequired, Method, ProtectedEndpoint, RoutePath};
 use cdk::nuts::{ContactInfo, MintVersion, PaymentMethod};
-use cdk::types::QuoteTTL;
 use cdk_axum::cache::HttpCache;
+use cdk_common::common::QuoteTTL;
+use cdk_common::database::DynMintDatabase;
+// internal crate modules
+#[cfg(feature = "prometheus")]
+use cdk_common::payment::MetricsMintPayment;
+use cdk_common::payment::MintPayment;
+#[cfg(all(feature = "auth", feature = "postgres"))]
+use cdk_postgres::MintPgAuthDatabase;
 #[cfg(feature = "postgres")]
-use cdk_postgres::{MintPgAuthDatabase, MintPgDatabase};
+use cdk_postgres::MintPgDatabase;
 #[cfg(all(feature = "auth", feature = "sqlite"))]
 use cdk_sqlite::mint::MintSqliteAuthDatabase;
 #[cfg(feature = "sqlite")]
 use cdk_sqlite::MintSqliteDatabase;
 use cli::CLIArgs;
-use config::{AuthType, DatabaseEngine, LnBackend};
+#[cfg(feature = "auth")]
+use config::AuthType;
+use config::{DatabaseEngine, LnBackend};
 use env_vars::ENV_WORK_DIR;
 use setup::LnBackendSetup;
 use tower::ServiceBuilder;
@@ -92,7 +98,7 @@ async fn initial_setup(
     settings: &config::Settings,
     db_password: Option<String>,
 ) -> Result<(
-    Arc<dyn MintDatabase<cdk_database::Error> + Send + Sync>,
+    DynMintDatabase,
     Arc<dyn MintKeysDatabase<Err = cdk_database::Error> + Send + Sync>,
     Arc<dyn MintKVStore<Err = cdk_database::Error> + Send + Sync>,
 )> {
@@ -252,7 +258,7 @@ async fn setup_database(
     _work_dir: &Path,
     _db_password: Option<String>,
 ) -> Result<(
-    Arc<dyn MintDatabase<cdk_database::Error> + Send + Sync>,
+    DynMintDatabase,
     Arc<dyn MintKeysDatabase<Err = cdk_database::Error> + Send + Sync>,
     Arc<dyn MintKVStore<Err = cdk_database::Error> + Send + Sync>,
 )> {
@@ -332,27 +338,18 @@ async fn configure_mint_builder(
     runtime: Option<std::sync::Arc<tokio::runtime::Runtime>>,
     work_dir: &Path,
     kv_store: Option<Arc<dyn MintKVStore<Err = cdk::cdk_database::Error> + Send + Sync>>,
-) -> Result<(MintBuilder, Vec<Router>)> {
-    let mut ln_routers = vec![];
-
+) -> Result<MintBuilder> {
     // Configure basic mint information
     let mint_builder = configure_basic_info(settings, mint_builder);
 
     // Configure lightning backend
-    let mint_builder = configure_lightning_backend(
-        settings,
-        mint_builder,
-        &mut ln_routers,
-        runtime,
-        work_dir,
-        kv_store,
-    )
-    .await?;
+    let mint_builder =
+        configure_lightning_backend(settings, mint_builder, runtime, work_dir, kv_store).await?;
 
     // Configure caching
     let mint_builder = configure_cache(settings, mint_builder);
 
-    Ok((mint_builder, ln_routers))
+    Ok(mint_builder)
 }
 
 /// Configures basic mint information (name, contact info, descriptions, etc.)
@@ -409,7 +406,6 @@ fn configure_basic_info(settings: &config::Settings, mint_builder: MintBuilder) 
 async fn configure_lightning_backend(
     settings: &config::Settings,
     mut mint_builder: MintBuilder,
-    ln_routers: &mut Vec<Router>,
     _runtime: Option<std::sync::Arc<tokio::runtime::Runtime>>,
     work_dir: &Path,
     _kv_store: Option<Arc<dyn MintKVStore<Err = cdk::cdk_database::Error> + Send + Sync>>,
@@ -431,15 +427,10 @@ async fn configure_lightning_backend(
                 .clone()
                 .expect("Config checked at load that cln is some");
             let cln = cln_settings
-                .setup(
-                    ln_routers,
-                    settings,
-                    CurrencyUnit::Msat,
-                    None,
-                    work_dir,
-                    None,
-                )
+                .setup(settings, CurrencyUnit::Msat, None, work_dir, _kv_store)
                 .await?;
+            #[cfg(feature = "prometheus")]
+            let cln = MetricsMintPayment::new(cln);
 
             mint_builder = configure_backend_for_unit(
                 settings,
@@ -454,15 +445,10 @@ async fn configure_lightning_backend(
         LnBackend::LNbits => {
             let lnbits_settings = settings.clone().lnbits.expect("Checked on config load");
             let lnbits = lnbits_settings
-                .setup(
-                    ln_routers,
-                    settings,
-                    CurrencyUnit::Sat,
-                    None,
-                    work_dir,
-                    None,
-                )
+                .setup(settings, CurrencyUnit::Sat, None, work_dir, None)
                 .await?;
+            #[cfg(feature = "prometheus")]
+            let lnbits = MetricsMintPayment::new(lnbits);
 
             mint_builder = configure_backend_for_unit(
                 settings,
@@ -477,15 +463,10 @@ async fn configure_lightning_backend(
         LnBackend::Lnd => {
             let lnd_settings = settings.clone().lnd.expect("Checked at config load");
             let lnd = lnd_settings
-                .setup(
-                    ln_routers,
-                    settings,
-                    CurrencyUnit::Msat,
-                    None,
-                    work_dir,
-                    None,
-                )
+                .setup(settings, CurrencyUnit::Msat, None, work_dir, _kv_store)
                 .await?;
+            #[cfg(feature = "prometheus")]
+            let lnd = MetricsMintPayment::new(lnd);
 
             mint_builder = configure_backend_for_unit(
                 settings,
@@ -503,15 +484,10 @@ async fn configure_lightning_backend(
 
             for unit in fake_wallet.clone().supported_units {
                 let fake = fake_wallet
-                    .setup(
-                        ln_routers,
-                        settings,
-                        unit.clone(),
-                        None,
-                        work_dir,
-                        _kv_store.clone(),
-                    )
+                    .setup(settings, unit.clone(), None, work_dir, _kv_store.clone())
                     .await?;
+                #[cfg(feature = "prometheus")]
+                let fake = MetricsMintPayment::new(fake);
 
                 mint_builder = configure_backend_for_unit(
                     settings,
@@ -539,8 +515,10 @@ async fn configure_lightning_backend(
             for unit in grpc_processor.clone().supported_units {
                 tracing::debug!("Adding unit: {:?}", unit);
                 let processor = grpc_processor
-                    .setup(ln_routers, settings, unit.clone(), None, work_dir, None)
+                    .setup(settings, unit.clone(), None, work_dir, None)
                     .await?;
+                #[cfg(feature = "prometheus")]
+                let processor = MetricsMintPayment::new(processor);
 
                 mint_builder = configure_backend_for_unit(
                     settings,
@@ -558,14 +536,7 @@ async fn configure_lightning_backend(
             tracing::info!("Using LDK Node backend: {:?}", ldk_node_settings);
 
             let ldk_node = ldk_node_settings
-                .setup(
-                    ln_routers,
-                    settings,
-                    CurrencyUnit::Sat,
-                    _runtime,
-                    work_dir,
-                    None,
-                )
+                .setup(settings, CurrencyUnit::Sat, _runtime, work_dir, None)
                 .await?;
 
             mint_builder = configure_backend_for_unit(
@@ -595,7 +566,7 @@ async fn configure_backend_for_unit(
     mut mint_builder: MintBuilder,
     unit: cdk::nuts::CurrencyUnit,
     mint_melt_limits: MintMeltLimits,
-    backend: Arc<dyn MintPayment<Err = cdk_payment::Error> + Send + Sync>,
+    backend: Arc<dyn MintPayment<Err = cdk_common::payment::Error> + Send + Sync>,
 ) -> Result<MintBuilder> {
     let payment_settings = backend.get_settings().await?;
 
@@ -664,10 +635,10 @@ async fn setup_authentication(
     _password: Option<String>,
 ) -> Result<MintBuilder> {
     if let Some(auth_settings) = settings.auth.clone() {
+        use cdk_common::database::DynMintAuthDatabase;
+
         tracing::info!("Auth settings are defined. {:?}", auth_settings);
-        let auth_localstore: Arc<
-            dyn cdk_database::MintAuthDatabase<Err = cdk_database::Error> + Send + Sync,
-        > = match settings.database.engine {
+        let auth_localstore: DynMintAuthDatabase = match settings.database.engine {
             #[cfg(feature = "sqlite")]
             DatabaseEngine::Sqlite => {
                 #[cfg(feature = "sqlite")]
@@ -692,16 +663,20 @@ async fn setup_authentication(
             DatabaseEngine::Postgres => {
                 #[cfg(feature = "postgres")]
                 {
-                    // Get the PostgreSQL configuration, ensuring it exists
-                    let pg_config = settings.database.postgres.as_ref().ok_or_else(|| {
-                        anyhow!("PostgreSQL configuration is required when using PostgreSQL engine")
+                    // Require dedicated auth database configuration - no fallback to main database
+                    let auth_db_config = settings.auth_database.as_ref().ok_or_else(|| {
+                        anyhow!("Auth database configuration is required when using PostgreSQL with authentication. Set [auth_database] section in config file or CDK_MINTD_AUTH_POSTGRES_URL environment variable")
                     })?;
 
-                    if pg_config.url.is_empty() {
-                        bail!("PostgreSQL URL is required for auth database. Set it in config file [database.postgres] section or via CDK_MINTD_POSTGRES_URL/CDK_MINTD_DATABASE_URL environment variable");
+                    let auth_pg_config = auth_db_config.postgres.as_ref().ok_or_else(|| {
+                        anyhow!("PostgreSQL auth database configuration is required when using PostgreSQL with authentication. Set [auth_database.postgres] section in config file or CDK_MINTD_AUTH_POSTGRES_URL environment variable")
+                    })?;
+
+                    if auth_pg_config.url.is_empty() {
+                        bail!("Auth database PostgreSQL URL is required and cannot be empty. Set it in config file [auth_database.postgres] section or via CDK_MINTD_AUTH_POSTGRES_URL environment variable");
                     }
 
-                    Arc::new(MintPgAuthDatabase::new(pg_config.url.as_str()).await?)
+                    Arc::new(MintPgAuthDatabase::new(auth_pg_config.url.as_str()).await?)
                 }
                 #[cfg(not(feature = "postgres"))]
                 {
@@ -878,10 +853,10 @@ async fn build_mint(
 async fn start_services_with_shutdown(
     mint: Arc<cdk::mint::Mint>,
     settings: &config::Settings,
-    ln_routers: Vec<Router>,
     work_dir: &Path,
     mint_builder_info: cdk::nuts::MintInfo,
     shutdown_signal: impl std::future::Future<Output = ()> + Send + 'static,
+    routers: Vec<Router>,
 ) -> Result<()> {
     let listen_addr = settings.info.listen_host.clone();
     let listen_port = settings.info.listen_port;
@@ -919,16 +894,21 @@ async fn start_services_with_shutdown(
         }
     }
 
+    // Determine the desired QuoteTTL from config/env or fall back to defaults
+    let desired_quote_ttl: QuoteTTL = settings.info.quote_ttl.unwrap_or_default();
+
     if rpc_enabled {
         if mint.mint_info().await.is_err() {
             tracing::info!("Mint info not set on mint, setting.");
+            // First boot with RPC enabled: seed from config
             mint.set_mint_info(mint_builder_info).await?;
-            mint.set_quote_ttl(QuoteTTL::new(10_000, 10_000)).await?;
+            mint.set_quote_ttl(desired_quote_ttl).await?;
         } else {
-            if mint.localstore().get_quote_ttl().await.is_err() {
-                mint.set_quote_ttl(QuoteTTL::new(10_000, 10_000)).await?;
+            // If QuoteTTL has never been persisted, seed it now from config
+            if !mint.quote_ttl_is_persisted().await? {
+                mint.set_quote_ttl(desired_quote_ttl).await?;
             }
-            // Add version information
+            // Add/refresh version information without altering stored mint_info fields
             let mint_version = MintVersion::new(
                 "cdk-mintd".to_string(),
                 CARGO_PKG_VERSION.unwrap_or("Unknown").to_string(),
@@ -940,9 +920,18 @@ async fn start_services_with_shutdown(
             tracing::info!("Mint info already set, not using config file settings.");
         }
     } else {
-        tracing::info!("RPC not enabled, using mint info from config.");
+        // RPC disabled: config is source of truth on every boot
+        tracing::info!("RPC not enabled, using mint info and quote TTL from config.");
+        let mut mint_builder_info = mint_builder_info;
+
+        if let Ok(mint_info) = mint.mint_info().await {
+            if mint_builder_info.pubkey.is_none() {
+                mint_builder_info.pubkey = mint_info.pubkey;
+            }
+        }
+
         mint.set_mint_info(mint_builder_info).await?;
-        mint.set_quote_ttl(QuoteTTL::new(10_000, 10_000)).await?;
+        mint.set_quote_ttl(desired_quote_ttl).await?;
     }
 
     let mint_info = mint.mint_info().await?;
@@ -965,6 +954,10 @@ async fn start_services_with_shutdown(
         )
         .layer(TraceLayer::new_for_http());
 
+    for router in routers {
+        mint_service = mint_service.merge(router);
+    }
+
     #[cfg(feature = "swagger")]
     {
         if settings.info.enable_swagger_ui.unwrap_or(false) {
@@ -974,10 +967,48 @@ async fn start_services_with_shutdown(
             );
         }
     }
+    // Create a broadcast channel to share shutdown signal between services
+    let (shutdown_tx, _) = tokio::sync::broadcast::channel::<()>(1);
 
-    for router in ln_routers {
-        mint_service = mint_service.merge(router);
-    }
+    // Start Prometheus server if enabled
+    #[cfg(feature = "prometheus")]
+    let prometheus_handle = {
+        if let Some(prometheus_settings) = &settings.prometheus {
+            if prometheus_settings.enabled {
+                let addr = prometheus_settings
+                    .address
+                    .clone()
+                    .unwrap_or("127.0.0.1".to_string());
+                let port = prometheus_settings.port.unwrap_or(9000);
+
+                let address = format!("{}:{}", addr, port)
+                    .parse()
+                    .expect("Invalid prometheus address");
+
+                let server = cdk_prometheus::PrometheusBuilder::new()
+                    .bind_address(address)
+                    .build_with_cdk_metrics()?;
+
+                let mut shutdown_rx = shutdown_tx.subscribe();
+                let prometheus_shutdown = async move {
+                    let _ = shutdown_rx.recv().await;
+                };
+
+                Some(tokio::spawn(async move {
+                    if let Err(e) = server.start(prometheus_shutdown).await {
+                        tracing::error!("Failed to start prometheus server: {}", e);
+                    }
+                }))
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    };
+
+    #[cfg(not(feature = "prometheus"))]
+    let prometheus_handle: Option<tokio::task::JoinHandle<()>> = None;
 
     mint.start().await?;
 
@@ -987,8 +1018,24 @@ async fn start_services_with_shutdown(
 
     tracing::info!("listening on {}", listener.local_addr().unwrap());
 
+    // Create a task to wait for the shutdown signal and broadcast it
+    let shutdown_broadcast_task = {
+        let shutdown_tx = shutdown_tx.clone();
+        tokio::spawn(async move {
+            shutdown_signal.await;
+            tracing::info!("Shutdown signal received, broadcasting to all services");
+            let _ = shutdown_tx.send(());
+        })
+    };
+
+    // Create shutdown future for axum server
+    let mut axum_shutdown_rx = shutdown_tx.subscribe();
+    let axum_shutdown = async move {
+        let _ = axum_shutdown_rx.recv().await;
+    };
+
     // Wait for axum server to complete with custom shutdown signal
-    let axum_result = axum::serve(listener, mint_service).with_graceful_shutdown(shutdown_signal);
+    let axum_result = axum::serve(listener, mint_service).with_graceful_shutdown(axum_shutdown);
 
     match axum_result.await {
         Ok(_) => {
@@ -998,6 +1045,17 @@ async fn start_services_with_shutdown(
             tracing::warn!("Axum server stopped with error");
             tracing::error!("{}", err);
             bail!("Axum exited with error")
+        }
+    }
+
+    // Wait for the shutdown broadcast task to complete
+    let _ = shutdown_broadcast_task.await;
+
+    // Wait for prometheus server to shutdown if it was started
+    #[cfg(feature = "prometheus")]
+    if let Some(handle) = prometheus_handle {
+        if let Err(e) = handle.await {
+            tracing::warn!("Prometheus server task failed: {}", e);
         }
     }
 
@@ -1036,6 +1094,7 @@ pub async fn run_mintd(
     db_password: Option<String>,
     enable_logging: bool,
     runtime: Option<std::sync::Arc<tokio::runtime::Runtime>>,
+    routers: Vec<Router>,
 ) -> Result<()> {
     let _guard = if enable_logging {
         setup_tracing(work_dir, &settings.info.logging)?
@@ -1043,8 +1102,15 @@ pub async fn run_mintd(
         None
     };
 
-    let result =
-        run_mintd_with_shutdown(work_dir, settings, shutdown_signal(), db_password, runtime).await;
+    let result = run_mintd_with_shutdown(
+        work_dir,
+        settings,
+        shutdown_signal(),
+        db_password,
+        runtime,
+        routers,
+    )
+    .await;
 
     // Explicitly drop the guard to ensure proper cleanup
     if let Some(guard) = _guard {
@@ -1066,15 +1132,44 @@ pub async fn run_mintd_with_shutdown(
     shutdown_signal: impl std::future::Future<Output = ()> + Send + 'static,
     db_password: Option<String>,
     runtime: Option<std::sync::Arc<tokio::runtime::Runtime>>,
+    routers: Vec<Router>,
 ) -> Result<()> {
     let (localstore, keystore, kv) = initial_setup(work_dir, settings, db_password.clone()).await?;
 
     let mint_builder = MintBuilder::new(localstore);
 
-    let (mint_builder, ln_routers) =
-        configure_mint_builder(settings, mint_builder, runtime, work_dir, Some(kv)).await?;
+    // If RPC is enabled and DB contains mint_info already, initialize the builder from DB.
+    // This ensures subsequent builder modifications (like version injection) can respect stored values.
+    let maybe_mint_builder = {
+        #[cfg(feature = "management-rpc")]
+        {
+            if let Some(rpc_settings) = settings.mint_management_rpc.clone() {
+                if rpc_settings.enabled {
+                    // Best-effort: pull DB state into builder if present
+                    let mut tmp = mint_builder;
+                    if let Err(e) = tmp.init_from_db_if_present().await {
+                        tracing::warn!("Failed to init builder from DB: {}", e);
+                    }
+                    tmp
+                } else {
+                    mint_builder
+                }
+            } else {
+                mint_builder
+            }
+        }
+        #[cfg(not(feature = "management-rpc"))]
+        {
+            mint_builder
+        }
+    };
+
+    let mint_builder =
+        configure_mint_builder(settings, maybe_mint_builder, runtime, work_dir, Some(kv)).await?;
     #[cfg(feature = "auth")]
     let mint_builder = setup_authentication(settings, work_dir, mint_builder, db_password).await?;
+
+    let config_mint_info = mint_builder.current_mint_info();
 
     let mint = build_mint(settings, keystore, mint_builder).await?;
 
@@ -1087,19 +1182,37 @@ pub async fn run_mintd_with_shutdown(
     // Pending melt quotes where the payment has **failed** inputs are reset to unspent
     mint.check_pending_melt_quotes().await?;
 
-    let result = start_services_with_shutdown(
+    start_services_with_shutdown(
         mint.clone(),
         settings,
-        ln_routers,
         work_dir,
-        mint.mint_info().await?,
+        config_mint_info,
         shutdown_signal,
+        routers,
     )
-    .await;
+    .await
+}
 
-    // Ensure any remaining tracing data is flushed
-    // This is particularly important for file-based logging
-    tracing::debug!("Flushing remaining trace data");
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    result
+    #[test]
+    fn test_postgres_auth_url_validation() {
+        // Test that the auth database config requires explicit configuration
+
+        // Test empty URL
+        let auth_config = config::PostgresAuthConfig {
+            url: "".to_string(),
+            ..Default::default()
+        };
+        assert!(auth_config.url.is_empty());
+
+        // Test non-empty URL
+        let auth_config = config::PostgresAuthConfig {
+            url: "postgresql://user:password@localhost:5432/auth_db".to_string(),
+            ..Default::default()
+        };
+        assert!(!auth_config.url.is_empty());
+    }
 }

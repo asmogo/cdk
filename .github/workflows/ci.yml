@@ -22,7 +22,7 @@ jobs:
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@v17
         with:
-          args: install linux --no-confirm --init none
+          args: --init none
       - name: Nix Cache
         uses: DeterminateSystems/magic-nix-cache-action@main
       - name: Rust Cache

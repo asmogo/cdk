@@ -14,7 +14,7 @@ env:
 jobs:
   pre-commit-checks:
     name: "Cargo fmt, typos"
-    runs-on: cdk-runner-set
+    runs-on: self-hosted
     timeout-minutes: 30
     steps:
       - name: checkout
@@ -35,7 +35,7 @@ jobs:
 
   examples:
     name: "Run examples"
-    runs-on: cdk-runner-set
+    runs-on: self-hosted
     timeout-minutes: 30
     needs: pre-commit-checks
     strategy:
@@ -64,7 +64,7 @@ jobs:
 
   clippy:
     name: "Stable build, clippy and test"
-    runs-on: cdk-runner-set
+    runs-on: self-hosted
     timeout-minutes: 30
     needs: pre-commit-checks
     strategy:
@@ -158,7 +158,7 @@ jobs:
 
   regtest-itest:
     name: "Integration regtest tests"
-    runs-on: cdk-runner-set
+    runs-on: self-hosted
     timeout-minutes: 30
     needs: [pre-commit-checks, clippy, pure-itest, fake-mint-itest]
     strategy:
@@ -193,12 +193,17 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: "stable"
-      - name: Test
-        run: nix develop -i -L .#stable --command just itest ${{ matrix.database }}
+      - name: Test in Isolated Container
+        run: |
+          # Build the container driver
+          nix build .#nixosConfigurations.test-runner.config.system.build.driver -L
+          # Run the test command inside the container
+          ./result/bin/nixos-container run test-runner -- \
+            "sudo -u runner -- sh -c 'cd /testing && just itest ${{ matrix.database }}'"
 
   fake-mint-itest:
     name: "Integration fake mint tests"
-    runs-on: cdk-runner-set
+    runs-on: self-hosted
     timeout-minutes: 30
     needs: [pre-commit-checks, clippy]
     strategy:
@@ -234,12 +239,15 @@ jobs:
           shared-key: "stable"
       - name: Clippy
         run: nix develop -i -L .#stable --command cargo clippy -- -D warnings
-      - name: Test fake auth mint
-        run: nix develop -i -L .#stable --command just fake-mint-itest ${{ matrix.database }}
+      - name: Test fake auth mint in Isolated Container
+        run: |
+          nix build .#nixosConfigurations.test-runner.config.system.build.driver -L
+          ./result/bin/nixos-container run test-runner -- \
+            "sudo -u runner -- sh -c 'cd /testing && just fake-mint-itest ${{ matrix.database }}'"
 
   pure-itest:
     name: "Integration fake wallet tests"
-    runs-on: cdk-runner-set
+    runs-on: self-hosted
     timeout-minutes: 30
     needs: [pre-commit-checks, clippy]
     strategy:
@@ -271,17 +279,23 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: "stable"
-      - name: Test fake mint
-        run: nix develop -i -L .#stable --command just test-pure ${{ matrix.database }}
+      - name: Test fake mint in Isolated Container
+        run: |
+          nix build .#nixosConfigurations.test-runner.config.system.build.driver -L
+          ./result/bin/nixos-container run test-runner -- \
+            "sudo -u runner -- sh -c 'cd /testing && just test-pure ${{ matrix.database }}'"
       - name: Install Postgres
         run: bash -x crates/cdk-postgres/start_db_for_test.sh
-      - name: Test mint
-        run: nix develop -i -L .#stable --command just test
+      - name: Test mint in Isolated Container
+        run: |
+          nix build .#nixosConfigurations.test-runner.config.system.build.driver -L
+          ./result/bin/nixos-container run test-runner -- \
+            "sudo -u runner -- sh -c 'cd /testing && just test'"
 
 
   payment-processor-itests:
     name: "Payment processor tests"
-    runs-on: cdk-runner-set
+    runs-on: self-hosted
     timeout-minutes: 30
     needs: [pre-commit-checks, clippy, pure-itest, fake-mint-itest, regtest-itest]
     strategy:
@@ -313,12 +327,15 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: "stable"
-      - name: Test
-        run: nix develop -i -L .#stable --command just itest-payment-processor ${{matrix.ln}}
+      - name: Test in Isolated Container
+        run: |
+          nix build .#nixosConfigurations.test-runner.config.system.build.driver -L
+          ./result/bin/nixos-container run test-runner -- \
+            "sudo -u runner -- sh -c 'cd /testing && just itest-payment-processor ${{matrix.ln}}'"
 
   msrv-build:
     name: "MSRV build"
-    runs-on: cdk-runner-set
+    runs-on: self-hosted
     timeout-minutes: 30
     needs: [pre-commit-checks, clippy]
     strategy:
@@ -360,7 +377,7 @@ jobs:
 
   check-wasm:
     name: Check WASM
-    runs-on: cdk-runner-set
+    runs-on: self-hosted
     timeout-minutes: 30
     needs: [pre-commit-checks, clippy]
     strategy:
@@ -392,7 +409,7 @@ jobs:
 
   check-wasm-msrv:
     name: Check WASM
-    runs-on: cdk-runner-set
+    runs-on: self-hosted
     timeout-minutes: 30
     needs: [pre-commit-checks, clippy, msrv-build]
     strategy:
@@ -421,55 +438,10 @@ jobs:
       - name: Build cdk wasm
         run: nix develop -i -L ".#${{ matrix.rust }}" --command cargo build ${{ matrix.build-args }} --target ${{ matrix.target }}
 
-  fake-mint-auth-itest:
-    name: "Integration fake mint auth tests"
-    runs-on: cdk-runner-set
-    timeout-minutes: 30
-    needs: [pre-commit-checks, clippy, pure-itest, fake-mint-itest]
-    strategy:
-      matrix:
-        database:
-          [
-          SQLITE,
-          ]
-    steps:
-      - name: checkout
-        uses: actions/checkout@v4
-      - name: Free Disk Space (Ubuntu)
-        uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: false
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
-          swap-storage: true
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v17
-      - name: Nix Cache
-        uses: DeterminateSystems/magic-nix-cache-action@main
-      - name: Rust Cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: "stable"
-      - name: Start Keycloak with Backup
-        run: |
-          docker compose -f misc/keycloak/docker-compose-recover.yml up -d
-          until docker logs $(docker ps -q --filter "ancestor=quay.io/keycloak/keycloak:25.0.6") | grep "Keycloak 25.0.6 on JVM (powered by Quarkus 3.8.5) started"; do sleep 1; done
-
-      - name: Verify Keycloak Import
-        run: |
-          docker logs $(docker ps -q --filter "ancestor=quay.io/keycloak/keycloak:25.0.6") | grep "Imported"
-      - name: Test fake auth mint
-        run: nix develop -i -L .#stable --command just fake-auth-mint-itest ${{ matrix.database }} http://127.0.0.1:8080/realms/cdk-test-realm/.well-known/openid-configuration
-      - name: Stop and clean up Docker Compose
-        run: |
-          docker compose -f misc/keycloak/docker-compose-recover.yml down
 
   doc-tests:
     name: "Documentation Tests"
-    runs-on: cdk-runner-set
+    runs-on: self-hosted
     timeout-minutes: 30
     needs: pre-commit-checks
     steps:
@@ -488,7 +460,7 @@ jobs:
 
   strict-docs:
     name: "Strict Documentation Check"
-    runs-on: cdk-runner-set
+    runs-on: self-hosted
     timeout-minutes: 30
     needs: doc-tests
     steps:

@@ -240,6 +240,44 @@
               ;
             default = stable;
           };
+
+        nixosConfigurations = {
+          test-runner = pkgs.nixpkgs.lib.nixosSystem {
+            inherit system;
+            modules = [
+              {
+                boot.isContainer = true;
+                users.users.runner = {
+                  isNormalUser = true;
+                  extraGroups = [ "wheel" "docker" ];
+                };
+                virtualisation.docker.enable = true;
+                environment.systemPackages = buildInputs ++ [ stable_toolchain ];
+
+                # Mount the project directory into the container
+                fileSystems."/testing" = {
+                  device = builtins.toString ./.;
+                  fsType = "none";
+                  options = [ "bind" ];
+                };
+
+                # Mount the docker socket
+                fileSystems."/var/run/docker.sock" = {
+                  device = "/var/run/docker.sock";
+                  fsType = "none";
+                  options = [ "bind" ];
+                };
+
+                # Basic networking setup
+                networking.hostName = "test-runner";
+                networking.firewall.enable = false;
+
+                # Set the state version
+                system.stateVersion = "25.05";
+              }
+            ];
+          };
+        };
       }
     );
 }

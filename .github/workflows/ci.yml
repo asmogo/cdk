@@ -23,6 +23,8 @@ jobs:
         uses: DeterminateSystems/nix-installer-action@v20
         with:
           init: none
+      - name: sleep
+        run: sleep 500
       - name: Nix Cache
         uses: DeterminateSystems/magic-nix-cache-action@main
       - name: Rust Cache

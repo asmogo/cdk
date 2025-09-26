@@ -282,4 +282,6 @@
     in
     flake-utils.lib.eachDefaultSystem (system: perSystem system) // {
       nixosConfigurations = (perSystem "x86_64-linux").nixosConfigurations;
+    };
+
     }

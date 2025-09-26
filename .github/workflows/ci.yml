@@ -196,9 +196,9 @@ jobs:
       - name: Test in Isolated Container
         run: |
           # Build the container driver
-          nix build .#nixosConfigurations.test-runner.config.system.build.driver -L
+          nix build .#nixosConfigurations.test-runner.config.system.build.nixos-container -L
           # Run the test command inside the container
-          ./result/bin/nixos-container run test-runner -- \
+          ./result run test-runner -- \
             "sudo -u runner -- sh -c 'cd /testing && just itest ${{ matrix.database }}'"
 
   fake-mint-itest:
@@ -241,8 +241,8 @@ jobs:
         run: nix develop -i -L .#stable --command cargo clippy -- -D warnings
       - name: Test fake auth mint in Isolated Container
         run: |
-          nix build .#nixosConfigurations.test-runner.config.system.build.driver -L
-          ./result/bin/nixos-container run test-runner -- \
+          nix build .#nixosConfigurations.test-runner.config.system.build.nixos-container -L
+          ./result run test-runner -- \
             "sudo -u runner -- sh -c 'cd /testing && just fake-mint-itest ${{ matrix.database }}'"
 
   pure-itest:
@@ -269,15 +269,15 @@ jobs:
           shared-key: "stable"
       - name: Test fake mint in Isolated Container
         run: |
-          nix build .#nixosConfigurations.test-runner.config.system.build.driver -L
-          ./result/bin/nixos-container run test-runner -- \
+          nix build .#nixosConfigurations.test-runner.config.system.build.nixos-container -L
+          ./result run test-runner -- \
             "sudo -u runner -- sh -c 'cd /testing && just test-pure ${{ matrix.database }}'"
       - name: Install Postgres
         run: bash -x crates/cdk-postgres/start_db_for_test.sh
       - name: Test mint in Isolated Container
         run: |
-          nix build .#nixosConfigurations.test-runner.config.system.build.driver -L
-          ./result/bin/nixos-container run test-runner -- \
+          nix build .#nixosConfigurations.test-runner.config.system.build.nixos-container -L
+          ./result run test-runner -- \
             "sudo -u runner -- sh -c 'cd /testing && just test'"
 
 
@@ -317,8 +317,8 @@ jobs:
           shared-key: "stable"
       - name: Test in Isolated Container
         run: |
-          nix build .#nixosConfigurations.test-runner.config.system.build.driver -L
-          ./result/bin/nixos-container run test-runner -- \
+          nix build .#nixosConfigurations.test-runner.config.system.build.nixos-container -L
+          ./result run test-runner -- \
             "sudo -u runner -- sh -c 'cd /testing && just itest-payment-processor ${{matrix.ln}}'"
 
   msrv-build:

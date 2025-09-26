@@ -249,7 +249,6 @@ jobs:
     name: "Integration fake wallet tests"
     runs-on: self-hosted
     timeout-minutes: 30
-    needs: [pre-commit-checks]
     strategy:
       matrix:
         database:

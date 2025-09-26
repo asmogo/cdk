@@ -24,7 +24,7 @@ jobs:
         with:
           init: none
       - name: sleep
-        run: sleep 500
+        run: apt update && apt install xz 
       - name: Nix Cache
         uses: DeterminateSystems/magic-nix-cache-action@main
       - name: Rust Cache

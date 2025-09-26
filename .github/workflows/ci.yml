@@ -249,7 +249,7 @@ jobs:
     name: "Integration fake wallet tests"
     runs-on: self-hosted
     timeout-minutes: 30
-    needs: [pre-commit-checks, clippy]
+    needs: [pre-commit-checks]
     strategy:
       matrix:
         database:
@@ -261,18 +261,6 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v4
-      - name: Free Disk Space (Ubuntu)
-        uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: true
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
-          swap-storage: true
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v17
       - name: Nix Cache
         uses: DeterminateSystems/magic-nix-cache-action@main
       - name: Rust Cache

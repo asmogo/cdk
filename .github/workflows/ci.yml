@@ -27,9 +27,9 @@ jobs:
         with:
           shared-key: "nightly"
       - name: Cargo fmt
-        run: docker run --rm -it -v "$PWD":/work -v /var/run/docker.sock:/var/run/docker.sock -w /work ghcr.io/asmogo/cdk-ci:0fa2658c408825c3d00265e0f06f0c3f1593264e  bash -lc "git config --global --add safe.directory /work && nix develop -i -L .#nightly --command bash -c 'cargo fmt --check'"
+        run: docker run --rm -v "$PWD":/work -v /var/run/docker.sock:/var/run/docker.sock -w /work ghcr.io/asmogo/cdk-ci:0fa2658c408825c3d00265e0f06f0c3f1593264e  bash -lc "nix develop -i -L .#nightly --command bash -c 'cargo fmt --check'"
       - name: typos
-        run: docker run --rm -it -v "$PWD":/work -v /var/run/docker.sock:/var/run/docker.sock -w /work ghcr.io/asmogo/cdk-ci:0fa2658c408825c3d00265e0f06f0c3f1593264e  bash -lc "nix develop -i -L .#nightly --command typos"
+        run: docker run --rm -v "$PWD":/work -v /var/run/docker.sock:/var/run/docker.sock -w /work ghcr.io/asmogo/cdk-ci:0fa2658c408825c3d00265e0f06f0c3f1593264e  bash -lc "nix develop -i -L .#nightly --command typos"
 
   examples:
     name: "Run examples"

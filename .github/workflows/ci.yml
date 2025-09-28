@@ -28,7 +28,7 @@ jobs:
           shared-key: "nightly"
       - name: Cargo fmt
         run: |
-          docker run --rm -it -v "$PWD":/work -v /var/run/docker.sock:/var/run/docker.sock -w /work ghcr.io/asmogo/cdk-ci:72116032240a80dd33574e45b1dfb77d0e870934  bash -lc "nix develop -i -L .#nightly --command bash -c 'export RUSTFMT=$(command -v rustfmt) && cargo fmt --check'"
+          docker run --rm -it -v "$PWD":/work -v /var/run/docker.sock:/var/run/docker.sock -w /work ghcr.io/asmogo/cdk-ci:72116032240a80dd33574e45b1dfb77d0e870934  bash -lc "git config --global --add safe.directory /work && nix develop -i -L .#nightly --command bash -c 'export RUSTFMT=$(command -v rustfmt) && cargo fmt --check'"
       - name: typos
         run: docker run --rm -it -v "$PWD":/work -v /var/run/docker.sock:/var/run/docker.sock -w /work ghcr.io/asmogo/cdk-ci:72116032240a80dd33574e45b1dfb77d0e870934  bash -lc "nix develop -i -L .#nightly --command typos"
 

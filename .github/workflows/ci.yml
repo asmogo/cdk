@@ -192,13 +192,12 @@ jobs:
         with:
           shared-key: "stable"
       - name: Test
-        run: nix develop -i -L .#stable --command just itest ${{ matrix.database }}
+        run: docker run --rm -v "$PWD":/work -v /var/run/docker.sock:/var/run/docker.sock -w /work ghcr.io/asmogo/cdk-ci:0fa2658c408825c3d00265e0f06f0c3f1593264e  bash -lc "nix develop -i -L .#stable --command just itest ${{ matrix.database }}"
 
   fake-mint-itest:
     name: "Integration fake mint tests"
     runs-on: self-hosted
     timeout-minutes: 30
-    needs: [pre-commit-checks, clippy]
     strategy:
       matrix:
         build-args:
@@ -231,15 +230,14 @@ jobs:
         with:
           shared-key: "stable"
       - name: Clippy
-        run: nix develop -i -L .#stable --command cargo clippy -- -D warnings
+        run: docker run --rm -v "$PWD":/work -v /var/run/docker.sock:/var/run/docker.sock -w /work ghcr.io/asmogo/cdk-ci:0fa2658c408825c3d00265e0f06f0c3f1593264e  bash -lc "nix develop -i -L .#stable --command cargo clippy -- -D warnings"
       - name: Test fake auth mint
-        run: nix develop -i -L .#stable --command just fake-mint-itest ${{ matrix.database }}
+        run: docker run --rm -v "$PWD":/work -v /var/run/docker.sock:/var/run/docker.sock -w /work ghcr.io/asmogo/cdk-ci:0fa2658c408825c3d00265e0f06f0c3f1593264e  bash -lc "nix develop -i -L .#stable --command just fake-mint-itest ${{ matrix.database }}"
 
   pure-itest:
     name: "Integration fake wallet tests"
     runs-on: self-hosted
     timeout-minutes: 30
-    needs: [pre-commit-checks, clippy]
     strategy:
       matrix:
         database:
@@ -270,11 +268,11 @@ jobs:
         with:
           shared-key: "stable"
       - name: Test fake mint
-        run: nix develop -i -L .#stable --command just test-pure ${{ matrix.database }}
+        run: docker run --rm -v "$PWD":/work -v /var/run/docker.sock:/var/run/docker.sock -w /work ghcr.io/asmogo/cdk-ci:0fa2658c408825c3d00265e0f06f0c3f1593264e  bash -lc "nix develop -i -L .#stable --command just test-pure ${{ matrix.database }}"
       - name: Install Postgres
         run: bash -x crates/cdk-postgres/start_db_for_test.sh
       - name: Test mint
-        run: nix develop -i -L .#stable --command just test
+        run: docker run --rm -v "$PWD":/work -v /var/run/docker.sock:/var/run/docker.sock -w /work ghcr.io/asmogo/cdk-ci:0fa2658c408825c3d00265e0f06f0c3f1593264e  bash -lc "nix develop -i -L .#stable --command just test"
 
 
   payment-processor-itests:

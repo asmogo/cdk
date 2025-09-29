@@ -7,30 +7,85 @@ on:
     branches: [main]
   release:
     types: [created]
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: "Optional: limit to a subset (all, lint, unit, itests, docs)"
+        required: false
+        default: "all"
+        type: choice
+        options:
+          - all
+          - lint
+          - unit
+          - itests
+          - docs
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref || github.run_id }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
+  # Enable sccache for rustc/linker artifact reuse across jobs
+  RUSTC_WRAPPER: sccache
+  SCCACHE_GHA_ENABLED: "true"
+  # Keep incremental off in CI for deterministic builds (sccache handles reuse)
+  CARGO_INCREMENTAL: "0"
 
 jobs:
+  # Gate to optionally skip groups when dispatching (keeps PR behavior unchanged)
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      run_lint: ${{ steps.set.outputs.run_lint }}
+      run_unit: ${{ steps.set.outputs.run_unit }}
+      run_itests: ${{ steps.set.outputs.run_itests }}
+      run_docs: ${{ steps.set.outputs.run_docs }}
+    steps:
+      - id: set
+        run: |
+          scope="${{ github.event.inputs.scope || 'all' }}"
+          case "$scope" in
+            all|"")  echo "run_lint=true"  >> $GITHUB_OUTPUT
+                     echo "run_unit=true"  >> $GITHUB_OUTPUT
+                     echo "run_itests=true">> $GITHUB_OUTPUT
+                     echo "run_docs=true"  >> $GITHUB_OUTPUT ;;
+            lint)    echo "run_lint=true"  >> $GITHUB_OUTPUT ;;
+            unit)    echo "run_unit=true"  >> $GITHUB_OUTPUT ;;
+            itests)  echo "run_itests=true">> $GITHUB_OUTPUT ;;
+            docs)    echo "run_docs=true"  >> $GITHUB_OUTPUT ;;
+            *)       echo "run_lint=true"  >> $GITHUB_OUTPUT
+                     echo "run_unit=true"  >> $GITHUB_OUTPUT
+                     echo "run_itests=true">> $GITHUB_OUTPUT
+                     echo "run_docs=true"  >> $GITHUB_OUTPUT ;;
+          esac
   pre-commit-checks:
     name: "Cargo fmt, typos"
     runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'workflow_dispatch' || needs.plan.outputs.run_lint == 'true' }}
     timeout-minutes: 30
     steps:
       - name: checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@v17
       - name: Nix Cache
         uses: DeterminateSystems/magic-nix-cache-action@main
+      # Global Rust dependency cache (target/ and registry/git) keyed by lockfiles
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: "nightly"
+          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'release' }}
+      # Compiler cache backed by GitHub Actions cache storage
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.5
       - name: Cargo fmt
         run: |
           nix develop -i -L .#nightly --command bash -c '
-            # Force use of Nix-provided rustfmt
             export RUSTFMT=$(command -v rustfmt)
             cargo fmt --check
           '
@@ -42,7 +97,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: pre-commit-checks
+    if: ${{ github.event_name != 'workflow_dispatch' || needs.plan.outputs.run_unit == 'true' }}
     strategy:
+      fail-fast: false
+      max-parallel: 8
       matrix:
         build-args:
           [
@@ -55,6 +113,8 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@v17
       - name: Nix Cache
@@ -63,15 +123,20 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: "stable"
+          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'release' }}
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.5
       - name: Run example
         run: nix develop -i -L .#stable --command cargo r --example ${{ matrix.build-args }}
 
   clippy:
     name: "Stable build, clippy and test"
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     needs: pre-commit-checks
     strategy:
+      fail-fast: false
+      max-parallel: 12
       matrix:
         build-args:
           [
@@ -148,6 +213,8 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@v17
       - name: Nix Cache
@@ -156,17 +223,25 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: "stable"
-      - name: Clippy
-        run: nix develop -i -L .#stable --command cargo clippy ${{ matrix.build-args }} -- -D warnings
-      - name: Test
-        run: nix develop -i -L .#stable --command cargo test ${{ matrix.build-args }}
+          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'release' }}
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.5
+      - name: Clippy + Test
+        run: |
+          nix develop -i -L .#stable --command bash -lc '
+            set -euo pipefail
+            cargo clippy ${{ matrix.build-args }} -- -D warnings
+            cargo test   ${{ matrix.build-args }}
+          '
 
   regtest-itest:
     name: "Integration regtest tests"
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    if: ${{ github.event_name != 'workflow_dispatch' || needs.plan.outputs.run_itests == 'true' }}
+    timeout-minutes: 45
     needs: [pre-commit-checks, clippy, pure-itest, fake-mint-itest]
     strategy:
+      fail-fast: false
       matrix:
         build-args:
           [
@@ -180,6 +255,8 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Free Disk Space (Ubuntu)
         uses: jlumbroso/free-disk-space@main
         with:
@@ -198,15 +275,20 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: "stable"
+          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'release' }}
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.5
       - name: Test
         run: nix develop -i -L .#stable --command just itest ${{ matrix.database }}
 
   fake-mint-itest:
     name: "Integration fake mint tests"
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    if: ${{ github.event_name != 'workflow_dispatch' || needs.plan.outputs.run_itests == 'true' }}
+    timeout-minutes: 35
     needs: [pre-commit-checks, clippy]
     strategy:
+      fail-fast: false
       matrix:
         build-args:
           [
@@ -219,6 +301,8 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Free Disk Space (Ubuntu)
         uses: jlumbroso/free-disk-space@main
         with:
@@ -237,6 +321,9 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: "stable"
+          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'release' }}
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.5
       - name: Clippy
         run: nix develop -i -L .#stable --command cargo clippy -- -D warnings
       - name: Test fake auth mint
@@ -245,9 +332,12 @@ jobs:
   pure-itest:
     name: "Integration fake wallet tests"
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    if: ${{ github.event_name != 'workflow_dispatch' || needs.plan.outputs.run_itests == 'true' }}
+    timeout-minutes: 40
     needs: [pre-commit-checks, clippy]
     strategy:
+      fail-fast: false
+      max-parallel: 3
       matrix:
         database:
           [
@@ -258,6 +348,8 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Free Disk Space (Ubuntu)
         uses: jlumbroso/free-disk-space@main
         with:
@@ -276,9 +368,12 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: "stable"
+          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'release' }}
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.5
       - name: Test fake mint
         run: nix develop -i -L .#stable --command just test-pure ${{ matrix.database }}
-      - name: Install Postgres
+      - name: Install Postgres (cached)
         run: bash -x crates/cdk-postgres/start_db_for_test.sh
       - name: Test mint
         run: nix develop -i -L .#stable --command just test
@@ -287,9 +382,10 @@ jobs:
   payment-processor-itests:
     name: "Payment processor tests"
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     needs: [pre-commit-checks, clippy, pure-itest, fake-mint-itest, regtest-itest]
     strategy:
+      fail-fast: false
       matrix:
         ln:
           [
@@ -300,6 +396,8 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Free Disk Space (Ubuntu)
         uses: jlumbroso/free-disk-space@main
         with:
@@ -318,15 +416,21 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: "stable"
+          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'release' }}
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.5
       - name: Test
         run: nix develop -i -L .#stable --command just itest-payment-processor ${{matrix.ln}}
 
   msrv-build:
     name: "MSRV build"
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    if: ${{ github.event_name != 'workflow_dispatch' || needs.plan.outputs.run_unit == 'true' }}
+    timeout-minutes: 40
     needs: [pre-commit-checks, clippy]
     strategy:
+      fail-fast: false
+      max-parallel: 8
       matrix:
         build-args:
           [
@@ -351,6 +455,8 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@v17
       - name: Nix Cache
@@ -359,6 +465,9 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: "msrv"
+          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'release' }}
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.5
       - name: Build
         run: nix develop -i -L .#msrv --command cargo build ${{ matrix.build-args }}
 
@@ -366,9 +475,11 @@ jobs:
   check-wasm:
     name: Check WASM
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    if: ${{ github.event_name != 'workflow_dispatch' || needs.plan.outputs.run_unit == 'true' }}
+    timeout-minutes: 35
     needs: [pre-commit-checks, clippy]
     strategy:
+      fail-fast: false
       matrix:
         rust:
           - stable
@@ -383,6 +494,8 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@v17
       - name: Nix Cache
@@ -391,6 +504,9 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: "stable"
+          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'release' }}
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.5
       - name: Build cdk and binding
         run: nix develop -i -L ".#${{ matrix.rust }}" --command cargo build ${{ matrix.build-args }} --target ${{ matrix.target }}
 
@@ -398,9 +514,11 @@ jobs:
   check-wasm-msrv:
     name: Check WASM
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    if: ${{ github.event_name != 'workflow_dispatch' || needs.plan.outputs.run_unit == 'true' }}
+    timeout-minutes: 35
     needs: [pre-commit-checks, clippy, msrv-build]
     strategy:
+      fail-fast: false
       matrix:
         rust:
           - msrv
@@ -415,6 +533,8 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@v17
       - name: Nix Cache
@@ -423,15 +543,20 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: "msrv"
+          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'release' }}
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.5
       - name: Build cdk wasm
         run: nix develop -i -L ".#${{ matrix.rust }}" --command cargo build ${{ matrix.build-args }} --target ${{ matrix.target }}
 
   fake-mint-auth-itest:
     name: "Integration fake mint auth tests"
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    if: ${{ github.event_name != 'workflow_dispatch' || needs.plan.outputs.run_itests == 'true' }}
+    timeout-minutes: 45
     needs: [pre-commit-checks, clippy, pure-itest, fake-mint-itest]
     strategy:
+      fail-fast: false
       matrix:
         database:
           [
@@ -440,6 +565,8 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Free Disk Space (Ubuntu)
         uses: jlumbroso/free-disk-space@main
         with:
@@ -458,6 +585,9 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: "stable"
+          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'release' }}
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.5
       - name: Start Keycloak with Backup
         run: |
           docker compose -f misc/keycloak/docker-compose-recover.yml up -d
@@ -475,11 +605,13 @@ jobs:
   doc-tests:
     name: "Documentation Tests"
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     needs: pre-commit-checks
     steps:
       - name: checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@v17
       - name: Nix Cache
@@ -488,17 +620,22 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: "stable"
+          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'release' }}
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.5
       - name: Run doc tests
         run: nix develop -i -L .#stable --command cargo test --doc
 
   strict-docs:
     name: "Strict Documentation Check"
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     needs: doc-tests
     steps:
       - name: checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@v17
       - name: Nix Cache
@@ -507,5 +644,8 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: "stable"
+          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'release' }}
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.5
       - name: Check docs with strict warnings
         run: nix develop -i -L .#stable --command just docs-strict

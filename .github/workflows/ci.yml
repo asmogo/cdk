@@ -237,7 +237,10 @@ jobs:
         run: bash -x crates/cdk-postgres/start_db_for_test.sh
       - name: Test mint
         run: docker run --rm -v "$PWD":/work -v /var/run/docker.sock:/var/run/docker.sock -w /work ghcr.io/asmogo/cdk-ci:0fa2658c408825c3d00265e0f06f0c3f1593264e  bash -lc "nix develop -i -L .#stable --command just test"
-
+      - name: Stop Postgres
+        run: docker stop rust-test-pg
+      - name: Cleanup
+        run: rm -rf ~/runner/_work/cdk/cdk/target/debug
 
   payment-processor-itests:
     name: "Payment processor tests"

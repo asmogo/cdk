@@ -312,7 +312,8 @@ pub async fn create_mint_router_with_custom_cache(
 
     #[cfg(feature = "auth")]
     let mint_router = {
-        let auth_router = create_auth_router(state.clone());
+        let auth_router = create_auth_router(state.clone()).
+            layer(from_fn(cors_middleware));
         mint_router.nest("/v1", auth_router)
     };
 

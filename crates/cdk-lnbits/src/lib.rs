@@ -15,9 +15,9 @@ use cdk_common::amount::{to_unit, Amount, MSAT_IN_SAT};
 use cdk_common::common::FeeReserve;
 use cdk_common::nuts::{CurrencyUnit, MeltOptions, MeltQuoteState};
 use cdk_common::payment::{
-    self, Bolt11Settings, CreateIncomingPaymentResponse, Event, IncomingPaymentOptions,
-    MakePaymentResponse, MintPayment, OutgoingPaymentOptions, PaymentIdentifier,
-    PaymentQuoteResponse, WaitPaymentResponse,
+    self, CreateIncomingPaymentResponse, Event, IncomingPaymentOptions, MakePaymentResponse,
+    MintPayment, OutgoingPaymentOptions, PaymentIdentifier, PaymentQuoteResponse, SettingsResponse,
+    WaitPaymentResponse,
 };
 use cdk_common::util::{hex, unix_time};
 use cdk_common::Bolt11Invoice;
@@ -25,7 +25,6 @@ use error::Error;
 use futures::Stream;
 use lnbits_rs::api::invoice::CreateInvoiceRequest;
 use lnbits_rs::LNBitsClient;
-use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
 pub mod error;
@@ -37,7 +36,7 @@ pub struct LNbits {
     fee_reserve: FeeReserve,
     wait_invoice_cancel_token: CancellationToken,
     wait_invoice_is_active: Arc<AtomicBool>,
-    settings: Bolt11Settings,
+    settings: SettingsResponse,
 }
 
 impl LNbits {
@@ -56,12 +55,14 @@ impl LNbits {
             fee_reserve,
             wait_invoice_cancel_token: CancellationToken::new(),
             wait_invoice_is_active: Arc::new(AtomicBool::new(false)),
-            settings: Bolt11Settings {
+            settings: SettingsResponse {
+                bolt11: true,
                 mpp: false,
-                unit: CurrencyUnit::Sat,
+                unit: CurrencyUnit::Sat.to_string(),
                 invoice_description: true,
                 amountless: false,
                 bolt12: false,
+                custom: vec![],
             },
         })
     }
@@ -143,8 +144,8 @@ impl LNbits {
 impl MintPayment for LNbits {
     type Err = payment::Error;
 
-    async fn get_settings(&self) -> Result<Value, Self::Err> {
-        Ok(serde_json::to_value(&self.settings)?)
+    async fn get_settings(&self) -> Result<SettingsResponse, Self::Err> {
+        Ok(self.settings.clone())
     }
 
     fn is_wait_invoice_active(&self) -> bool {
@@ -262,6 +263,7 @@ impl MintPayment for LNbits {
             OutgoingPaymentOptions::Bolt12(_bolt12_options) => {
                 Err(Self::Err::Anyhow(anyhow!("BOLT12 not supported by LNbits")))
             }
+            OutgoingPaymentOptions::Custom(_) => Err(payment::Error::UnsupportedPaymentOption),
         }
     }
 
@@ -323,6 +325,7 @@ impl MintPayment for LNbits {
             OutgoingPaymentOptions::Bolt12(_) => {
                 Err(Self::Err::Anyhow(anyhow!("BOLT12 not supported by LNbits")))
             }
+            OutgoingPaymentOptions::Custom(_) => Err(payment::Error::UnsupportedPaymentOption),
         }
     }
 
@@ -374,6 +377,7 @@ impl MintPayment for LNbits {
             IncomingPaymentOptions::Bolt12(_) => {
                 Err(Self::Err::Anyhow(anyhow!("BOLT12 not supported by LNbits")))
             }
+            IncomingPaymentOptions::Custom(_) => Err(payment::Error::UnsupportedPaymentOption),
         }
     }
 

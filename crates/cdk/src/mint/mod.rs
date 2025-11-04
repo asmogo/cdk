@@ -47,6 +47,7 @@ mod verification;
 
 pub use builder::{MintBuilder, MintMeltLimits};
 pub use cdk_common::mint::{MeltQuote, MintKeySetInfo, MintQuote};
+pub use issue::{MintQuoteRequest, MintQuoteResponse};
 pub use verification::Verification;
 
 const CDK_MINT_PRIMARY_NAMESPACE: &str = "cdk_mint";
@@ -397,6 +398,37 @@ impl Mint {
         }
         tracing::info!("Payment processor shutdown completed");
         Ok(())
+    }
+
+    /// Get all custom payment methods supported by registered payment processors
+    ///
+    /// This queries all payment processors for their supported custom methods
+    /// and returns a deduplicated list.
+    pub async fn get_custom_payment_methods(&self) -> Result<Vec<String>, Error> {
+        use std::collections::HashSet;
+        let mut custom_methods = HashSet::new();
+        let mut seen_processors = Vec::new();
+
+        for processor in self.payment_processors.values() {
+            // Skip if we've already queried this processor instance
+            if seen_processors.iter().any(|p| Arc::ptr_eq(p, processor)) {
+                continue;
+            }
+            seen_processors.push(Arc::clone(processor));
+
+            match processor.get_settings().await {
+                Ok(settings) => {
+                    for method in settings.custom {
+                        custom_methods.insert(method);
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to get settings from payment processor: {}", e);
+                }
+            }
+        }
+
+        Ok(custom_methods.into_iter().collect())
     }
 
     /// Get the payment processor for the given unit and payment method

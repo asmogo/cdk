@@ -21,8 +21,9 @@ use crate::mint_url::MintUrl;
 use crate::nuts::nut22::MintAuthRequest;
 use crate::nuts::{
     AuthToken, CheckStateRequest, CheckStateResponse, Id, KeySet, KeysResponse, KeysetResponse,
-    MeltQuoteBolt11Request, MeltQuoteBolt11Response, MeltRequest, MintInfo, MintQuoteBolt11Request,
-    MintQuoteBolt11Response, MintRequest, MintResponse, RestoreRequest, RestoreResponse,
+    MeltQuoteBolt11Request, MeltQuoteBolt11Response, MeltQuoteCustomRequest, MeltRequest, MintInfo,
+    MintQuoteBolt11Request, MintQuoteBolt11Response, MintQuoteCustomRequest,
+    MintQuoteCustomResponse, MintRequest, MintResponse, RestoreRequest, RestoreResponse,
     SwapRequest, SwapResponse,
 };
 #[cfg(feature = "auth")]
@@ -258,7 +259,7 @@ where
 
         #[cfg(feature = "auth")]
         let auth_token = self
-            .get_auth_token(Method::Post, RoutePath::MintQuoteBolt11)
+            .get_auth_token(Method::Post, RoutePath::MintQuote("bolt11".to_string()))
             .await?;
 
         #[cfg(not(feature = "auth"))]
@@ -279,7 +280,7 @@ where
 
         #[cfg(feature = "auth")]
         let auth_token = self
-            .get_auth_token(Method::Get, RoutePath::MintQuoteBolt11)
+            .get_auth_token(Method::Get, RoutePath::MintQuote("bolt11".to_string()))
             .await?;
 
         #[cfg(not(feature = "auth"))]
@@ -292,7 +293,7 @@ where
     async fn post_mint(&self, request: MintRequest<String>) -> Result<MintResponse, Error> {
         #[cfg(feature = "auth")]
         let auth_token = self
-            .get_auth_token(Method::Post, RoutePath::MintBolt11)
+            .get_auth_token(Method::Post, RoutePath::Mint("bolt11".to_string()))
             .await?;
 
         #[cfg(not(feature = "auth"))]
@@ -317,7 +318,7 @@ where
             .join_paths(&["v1", "melt", "quote", "bolt11"])?;
         #[cfg(feature = "auth")]
         let auth_token = self
-            .get_auth_token(Method::Post, RoutePath::MeltQuoteBolt11)
+            .get_auth_token(Method::Post, RoutePath::MeltQuote("bolt11".to_string()))
             .await?;
 
         #[cfg(not(feature = "auth"))]
@@ -337,7 +338,7 @@ where
 
         #[cfg(feature = "auth")]
         let auth_token = self
-            .get_auth_token(Method::Get, RoutePath::MeltQuoteBolt11)
+            .get_auth_token(Method::Get, RoutePath::MeltQuote("bolt11".to_string()))
             .await?;
 
         #[cfg(not(feature = "auth"))]
@@ -354,7 +355,7 @@ where
     ) -> Result<MeltQuoteBolt11Response<String>, Error> {
         #[cfg(feature = "auth")]
         let auth_token = self
-            .get_auth_token(Method::Post, RoutePath::MeltBolt11)
+            .get_auth_token(Method::Post, RoutePath::Melt("bolt11".to_string()))
             .await?;
 
         #[cfg(not(feature = "auth"))]
@@ -462,7 +463,7 @@ where
 
         #[cfg(feature = "auth")]
         let auth_token = self
-            .get_auth_token(Method::Post, RoutePath::MintQuoteBolt12)
+            .get_auth_token(Method::Post, RoutePath::MintQuote("bolt12".to_string()))
             .await?;
 
         #[cfg(not(feature = "auth"))]
@@ -483,7 +484,7 @@ where
 
         #[cfg(feature = "auth")]
         let auth_token = self
-            .get_auth_token(Method::Get, RoutePath::MintQuoteBolt12)
+            .get_auth_token(Method::Get, RoutePath::MintQuote("bolt12".to_string()))
             .await?;
 
         #[cfg(not(feature = "auth"))]
@@ -502,7 +503,7 @@ where
             .join_paths(&["v1", "melt", "quote", "bolt12"])?;
         #[cfg(feature = "auth")]
         let auth_token = self
-            .get_auth_token(Method::Post, RoutePath::MeltQuoteBolt12)
+            .get_auth_token(Method::Post, RoutePath::MeltQuote("bolt12".to_string()))
             .await?;
 
         #[cfg(not(feature = "auth"))]
@@ -522,7 +523,7 @@ where
 
         #[cfg(feature = "auth")]
         let auth_token = self
-            .get_auth_token(Method::Get, RoutePath::MeltQuoteBolt12)
+            .get_auth_token(Method::Get, RoutePath::MeltQuote("bolt12".to_string()))
             .await?;
 
         #[cfg(not(feature = "auth"))]
@@ -538,7 +539,7 @@ where
     ) -> Result<MeltQuoteBolt11Response<String>, Error> {
         #[cfg(feature = "auth")]
         let auth_token = self
-            .get_auth_token(Method::Post, RoutePath::MeltBolt12)
+            .get_auth_token(Method::Post, RoutePath::Melt("bolt12".to_string()))
             .await?;
 
         #[cfg(not(feature = "auth"))]
@@ -550,6 +551,53 @@ where
             &request,
         )
         .await
+    }
+
+    /// Mint Quote for Custom Payment Method
+    #[instrument(skip(self), fields(mint_url = %self.mint_url))]
+    async fn post_mint_custom_quote(
+        &self,
+        request: MintQuoteCustomRequest,
+    ) -> Result<MintQuoteCustomResponse<String>, Error> {
+        // Extract method from request data
+        let method = request
+            .data
+            .get("method")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| Error::Custom("Missing method in custom quote request".to_string()))?;
+
+        let url = self.mint_url.join_paths(&["v1", "mint", "quote", method])?;
+
+        #[cfg(feature = "auth")]
+        let auth_token = self
+            .get_auth_token(Method::Post, RoutePath::MintQuote(method.to_string()))
+            .await?;
+
+        #[cfg(not(feature = "auth"))]
+        let auth_token = None;
+
+        self.transport.http_post(url, auth_token, &request).await
+    }
+
+    /// Melt Quote for Custom Payment Method
+    #[instrument(skip(self, request), fields(mint_url = %self.mint_url))]
+    async fn post_melt_custom_quote(
+        &self,
+        request: MeltQuoteCustomRequest,
+    ) -> Result<MeltQuoteBolt11Response<String>, Error> {
+        let url = self
+            .mint_url
+            .join_paths(&["v1", "melt", "quote", &request.method])?;
+
+        #[cfg(feature = "auth")]
+        let auth_token = self
+            .get_auth_token(Method::Post, RoutePath::MeltQuote(request.method.clone()))
+            .await?;
+
+        #[cfg(not(feature = "auth"))]
+        let auth_token = None;
+
+        self.transport.http_post(url, auth_token, &request).await
     }
 }
 

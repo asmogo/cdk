@@ -1,5 +1,7 @@
 //! Melt types
-use cashu::{MeltQuoteBolt11Request, MeltQuoteBolt12Request, MeltQuoteCustomRequest};
+use cashu::{
+    MeltQuoteBolt11Request, MeltQuoteBolt12Request, MeltQuoteCustomRequest, SimpleMeltQuoteRequest,
+};
 
 /// Melt quote request enum for different types of quotes
 ///
@@ -30,5 +32,20 @@ impl From<MeltQuoteBolt12Request> for MeltQuoteRequest {
 impl From<MeltQuoteCustomRequest> for MeltQuoteRequest {
     fn from(request: MeltQuoteCustomRequest) -> Self {
         MeltQuoteRequest::Custom(request)
+    }
+}
+
+impl From<SimpleMeltQuoteRequest> for MeltQuoteRequest {
+    fn from(request: SimpleMeltQuoteRequest) -> Self {
+        // Convert SimpleMeltQuoteRequest (generic with NoAdditionalFields) to deprecated MeltQuoteCustomRequest
+        // Note: MeltQuoteCustomRequest is deprecated but still used in the enum for backward compatibility
+        // The method field is set to empty as it should come from the URL path per NUT-05
+        let custom_req = MeltQuoteCustomRequest {
+            method: String::new(), // Method is in URL path, not request body per NUT-05
+            request: request.request,
+            unit: request.unit,
+            data: std::collections::HashMap::new(), // NoAdditionalFields means no extra data
+        };
+        MeltQuoteRequest::Custom(custom_req)
     }
 }

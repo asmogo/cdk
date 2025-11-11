@@ -8,6 +8,7 @@ pub mod nut02;
 pub mod nut03;
 pub mod nut04;
 pub mod nut05;
+pub mod payment_method;
 pub mod nut06;
 pub mod nut07;
 pub mod nut08;
@@ -48,9 +49,13 @@ pub use nut02::{Id, KeySet, KeySetInfo, KeysetResponse};
 #[cfg(feature = "wallet")]
 pub use nut03::PreSwap;
 pub use nut03::{SwapRequest, SwapResponse};
-pub use nut04::{MintMethodSettings, MintRequest, MintResponse, Settings as NUT04Settings};
+pub use nut04::{
+    MintMethodSettings, MintQuoteRequest, MintQuoteResponse, MintRequest, MintResponse,
+    Settings as NUT04Settings,
+};
 pub use nut05::{
-    MeltMethodSettings, MeltRequest, QuoteState as MeltQuoteState, Settings as NUT05Settings,
+    MeltMethodSettings, MeltQuoteRequest, MeltQuoteResponse, MeltRequest,
+    QuoteState as MeltQuoteState, Settings as NUT05Settings,
 };
 pub use nut06::{ContactInfo, MintInfo, MintVersion, Nuts};
 pub use nut07::{CheckStateRequest, CheckStateResponse, ProofState, State};
@@ -72,5 +77,10 @@ pub use nut23::{
 pub use nut25::{MeltQuoteBolt12Request, MintQuoteBolt12Request, MintQuoteBolt12Response};
 pub use nut_custom::{
     MeltQuoteCustomRequest, MeltQuoteCustomResponse, MintQuoteCustomRequest,
-    MintQuoteCustomResponse,
+    MintQuoteCustomResponse, NoAdditionalFields, SimpleMeltQuoteRequest, SimpleMeltQuoteResponse,
+    SimpleMintQuoteRequest, SimpleMintQuoteResponse,
+};
+pub use payment_method::{
+    IncomingPaymentMethodData, MeltQuoteMethodFields, MeltQuoteResponseFields,
+    MintQuoteMethodFields, MintQuoteResponseFields, OutgoingPaymentMethodData,
 };

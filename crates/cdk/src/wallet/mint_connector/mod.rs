@@ -8,10 +8,10 @@ use cdk_common::{MeltQuoteBolt12Request, MintQuoteBolt12Request, MintQuoteBolt12
 use super::Error;
 use crate::nuts::{
     CheckStateRequest, CheckStateResponse, Id, KeySet, KeysetResponse, MeltQuoteBolt11Request,
-    MeltQuoteBolt11Response, MeltQuoteCustomRequest, MeltQuoteCustomResponse, MeltRequest,
-    MintInfo, MintQuoteBolt11Request, MintQuoteBolt11Response, MintQuoteCustomRequest,
-    MintQuoteCustomResponse, MintRequest, MintResponse, RestoreRequest, RestoreResponse,
-    SwapRequest, SwapResponse,
+    MeltQuoteBolt11Response, MeltRequest, MintInfo, MintQuoteBolt11Request,
+    MintQuoteBolt11Response, MintRequest, MintResponse, RestoreRequest, RestoreResponse,
+    SimpleMeltQuoteRequest, SimpleMeltQuoteResponse, SimpleMintQuoteRequest,
+    SimpleMintQuoteResponse, SwapRequest, SwapResponse,
 };
 #[cfg(feature = "auth")]
 use crate::wallet::AuthWallet;
@@ -116,35 +116,39 @@ pub trait MintConnector: Debug {
     ) -> Result<MeltQuoteBolt11Response<String>, Error>;
 
     /// Mint Quote for Custom Payment Method
+    /// Note: Method is specified in URL path per NUT-05, not in request body
     async fn post_mint_custom_quote(
         &self,
-        request: MintQuoteCustomRequest,
-    ) -> Result<MintQuoteCustomResponse<String>, Error>;
+        method: &str,
+        request: SimpleMintQuoteRequest,
+    ) -> Result<SimpleMintQuoteResponse<String>, Error>;
 
     /// Mint Quote Status for Custom Payment Method
     async fn get_mint_custom_quote_status(
         &self,
         method: &str,
         quote_id: &str,
-    ) -> Result<MintQuoteCustomResponse<String>, Error>;
+    ) -> Result<SimpleMintQuoteResponse<String>, Error>;
 
     /// Melt Quote for Custom Payment Method
+    /// Note: Method is specified in URL path per NUT-05, not in request body
     async fn post_melt_custom_quote(
         &self,
-        request: MeltQuoteCustomRequest,
-    ) -> Result<MeltQuoteCustomResponse<String>, Error>;
+        method: &str,
+        request: SimpleMeltQuoteRequest,
+    ) -> Result<SimpleMeltQuoteResponse<String>, Error>;
 
     /// Melt Quote Status for Custom Payment Method
     async fn get_melt_custom_quote_status(
         &self,
         method: &str,
         quote_id: &str,
-    ) -> Result<MeltQuoteCustomResponse<String>, Error>;
+    ) -> Result<SimpleMeltQuoteResponse<String>, Error>;
 
     /// Melt with Custom Payment Method
     async fn post_melt_custom(
         &self,
         method: String,
         request: MeltRequest<String>,
-    ) -> Result<MeltQuoteCustomResponse<String>, Error>;
+    ) -> Result<SimpleMeltQuoteResponse<String>, Error>;
 }

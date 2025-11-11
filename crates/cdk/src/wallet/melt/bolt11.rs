@@ -11,7 +11,7 @@ use crate::amount::to_unit;
 use crate::dhke::construct_proofs;
 use crate::nuts::{
     CurrencyUnit, MeltOptions, MeltQuoteBolt11Request, MeltQuoteBolt11Response,
-    MeltQuoteCustomResponse, MeltRequest, PreMintSecrets, Proofs, ProofsMethods, State,
+    MeltRequest, PreMintSecrets, Proofs, ProofsMethods, SimpleMeltQuoteResponse, State,
 };
 use crate::types::{Melted, ProofInfo};
 use crate::util::unix_time;
@@ -199,7 +199,7 @@ impl Wallet {
 
         enum MeltResponseWrapper {
             Bolt11(MeltQuoteBolt11Response<String>),
-            Custom(MeltQuoteCustomResponse<String>),
+            Custom(SimpleMeltQuoteResponse<String>),
         }
 
         let melt_response_wrapper = match &quote_info.payment_method {
@@ -238,7 +238,8 @@ impl Wallet {
                 response.state,
             ),
             MeltResponseWrapper::Custom(response) => {
-                (None, response.payment_preimage.clone(), response.state)
+                // SimpleMeltQuoteResponse doesn't have payment_preimage field
+                (None, None, response.state)
             }
         };
 

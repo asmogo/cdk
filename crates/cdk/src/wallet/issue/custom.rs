@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use cdk_common::nut04::MintMethodOptions;
 use cdk_common::wallet::{MintQuote, Transaction, TransactionDirection};
 use cdk_common::{Proofs, SecretKey};
@@ -9,8 +7,8 @@ use crate::amount::SplitTarget;
 use crate::dhke::construct_proofs;
 use crate::nuts::nut00::ProofsMethods;
 use crate::nuts::{
-    nut12, MintQuoteCustomRequest, MintRequest, PaymentMethod, PreMintSecrets, SpendingConditions,
-    State,
+    nut12, MintRequest, NoAdditionalFields, PaymentMethod, PreMintSecrets,
+    SimpleMintQuoteRequest, SpendingConditions, State,
 };
 use crate::types::ProofInfo;
 use crate::util::unix_time;
@@ -54,20 +52,16 @@ impl Wallet {
 
         let amount = amount.ok_or(Error::AmountUndefined)?;
 
-        // Pack method and request into data field (will be flattened to top-level)
-        let mut data = HashMap::new();
-        data.insert("method".to_string(), serde_json::json!(method));
-        data.insert("request".to_string(), serde_json::json!(request));
-
-        let mint_request = MintQuoteCustomRequest {
+        // Spec-compliant request with no additional fields
+        // Note: Method is specified in the URL path per NUT-05, not in request body
+        // The 'request' parameter is stored locally and will be returned in the response
+        let mint_request = SimpleMintQuoteRequest {
             amount,
             unit: self.unit.clone(),
-            description,
-            pubkey: Some(secret_key.public_key()),
-            data,
+            method_fields: NoAdditionalFields {},
         };
 
-        let quote_res = self.client.post_mint_custom_quote(mint_request).await?;
+        let quote_res = self.client.post_mint_custom_quote(method, mint_request).await?;
 
         let quote = MintQuote::new(
             quote_res.quote,
@@ -76,7 +70,7 @@ impl Wallet {
             Some(amount),
             unit.clone(),
             request,
-            quote_res.expiry.unwrap_or(0),
+            quote_res.expiry, // expiry is now u64, not Option<u64>
             Some(secret_key),
         );
 
@@ -226,7 +220,7 @@ impl Wallet {
                 ys: proofs.ys()?,
                 timestamp: unix_time,
                 memo: None,
-                metadata: HashMap::new(),
+                metadata: std::collections::HashMap::new(),
                 quote_id: Some(quote_id.to_string()),
                 payment_request: Some(quote_info.request),
                 payment_proof: None,

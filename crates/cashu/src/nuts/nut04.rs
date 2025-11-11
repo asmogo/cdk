@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use super::nut00::{BlindSignature, BlindedMessage, CurrencyUnit, PaymentMethod};
+use super::payment_method::{MintQuoteMethodFields, MintQuoteResponseFields};
 #[cfg(feature = "mint")]
 use crate::quote_id::QuoteId;
 #[cfg(feature = "mint")]
@@ -76,6 +77,183 @@ impl<Q> MintRequest<Q> {
 pub struct MintResponse {
     /// Blinded Signatures
     pub signatures: Vec<BlindSignature>,
+}
+
+/// Generic mint quote request [NUT-04]
+///
+/// This is a generic request type that works with any payment method.
+/// The payment method-specific fields are provided through the generic type parameter `M`
+/// which must implement [`MintQuoteMethodFields`].
+///
+/// ## Type Parameters
+///
+/// - `M`: Payment method-specific request fields (e.g., Bolt11Fields, PayPalFields)
+///
+/// ## NUT-04 Specification
+///
+/// Per NUT-04, mint quote requests must include:
+/// - `amount`: The amount to mint (required)
+/// - `unit`: The currency unit (required)
+/// - Method-specific fields as defined by the payment method's NUT
+///
+/// ## Example JSON (Bolt11)
+///
+/// ```json
+/// {
+///   "amount": 1000,
+///   "unit": "sat",
+///   "description": "Payment for services"
+/// }
+/// ```
+///
+/// ## Example JSON (Custom Payment Method)
+///
+/// ```json
+/// {
+///   "amount": 1000,
+///   "unit": "sat",
+///   "paypal_return_url": "https://example.com/return",
+///   "paypal_email": "user@example.com"
+/// }
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "swagger", derive(utoipa::ToSchema))]
+#[serde(bound = "M: MintQuoteMethodFields")]
+pub struct MintQuoteRequest<M: MintQuoteMethodFields> {
+    /// Amount to mint
+    pub amount: Amount,
+    /// Currency unit
+    pub unit: CurrencyUnit,
+    /// Payment method-specific fields (flattened into top-level JSON)
+    #[serde(flatten)]
+    pub method_fields: M,
+}
+
+impl<M: MintQuoteMethodFields> MintQuoteRequest<M> {
+    /// Create a new mint quote request
+    pub fn new(amount: Amount, unit: CurrencyUnit, method_fields: M) -> Self {
+        Self {
+            amount,
+            unit,
+            method_fields,
+        }
+    }
+
+    /// Validate the request
+    pub fn validate(&self) -> Result<(), String> {
+        self.method_fields.validate()
+    }
+}
+
+/// Generic mint quote response [NUT-04]
+///
+/// This is a generic response type that works with any payment method.
+/// The payment method-specific fields are provided through the generic type parameter `M`
+/// which must implement [`MintQuoteResponseFields`].
+///
+/// ## Type Parameters
+///
+/// - `Q`: Quote identifier type (typically `String` or `QuoteId`)
+/// - `M`: Payment method-specific response fields (e.g., Bolt11ResponseFields, PayPalResponseFields)
+///
+/// ## NUT-04 Specification
+///
+/// Per NUT-04, ALL of the following fields are REQUIRED in mint quote responses:
+/// - `quote`: Unique quote identifier (required)
+/// - `request`: Payment request string in method-specific format (required)
+/// - `unit`: Currency unit for the quote (required)
+/// - `state`: Current state of the quote (UNPAID, PAID, ISSUED) (required)
+/// - `expiry`: Unix timestamp until the quote is valid (required)
+/// - Method-specific fields as defined by the payment method's NUT
+///
+/// ## Example JSON (Bolt11)
+///
+/// ```json
+/// {
+///   "quote": "abc123",
+///   "request": "lnbc10u1...",
+///   "unit": "sat",
+///   "state": "UNPAID",
+///   "expiry": 1234567890,
+///   "description": "Payment for services"
+/// }
+/// ```
+///
+/// ## Example JSON (Custom Payment Method)
+///
+/// ```json
+/// {
+///   "quote": "def456",
+///   "request": "paypal://checkout/xyz",
+///   "unit": "sat",
+///   "state": "UNPAID",
+///   "expiry": 1234567890,
+///   "paypal_transaction_id": "xyz789",
+///   "paypal_checkout_url": "https://paypal.com/checkout/xyz"
+/// }
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "swagger", derive(utoipa::ToSchema))]
+#[serde(bound = "Q: Serialize + DeserializeOwned, M: MintQuoteResponseFields")]
+pub struct MintQuoteResponse<Q, M: MintQuoteResponseFields> {
+    /// Quote identifier - REQUIRED per NUT-04
+    pub quote: Q,
+    /// Payment request string - REQUIRED per NUT-04
+    /// Format is payment method-specific (e.g., BOLT11 invoice, PayPal URL)
+    pub request: String,
+    /// Currency unit - REQUIRED per NUT-04
+    pub unit: CurrencyUnit,
+    /// Quote state - REQUIRED per NUT-04
+    /// One of: UNPAID, PAID, ISSUED
+    pub state: super::nut23::QuoteState,
+    /// Unix timestamp until quote is valid - REQUIRED per NUT-04
+    pub expiry: u64,
+    /// Payment method-specific response fields (flattened into top-level JSON)
+    #[serde(flatten)]
+    pub method_fields: M,
+}
+
+impl<Q, M: MintQuoteResponseFields> MintQuoteResponse<Q, M> {
+    /// Create a new mint quote response
+    pub fn new(
+        quote: Q,
+        request: String,
+        unit: CurrencyUnit,
+        state: super::nut23::QuoteState,
+        expiry: u64,
+        method_fields: M,
+    ) -> Self {
+        Self {
+            quote,
+            request,
+            unit,
+            state,
+            expiry,
+            method_fields,
+        }
+    }
+
+    /// Validate the response
+    pub fn validate(&self) -> Result<(), String> {
+        self.method_fields.validate()
+    }
+}
+
+impl<Q: ToString, M: MintQuoteResponseFields> MintQuoteResponse<Q, M> {
+    /// Convert quote ID to String
+    pub fn to_string_id(&self) -> MintQuoteResponse<String, M>
+    where
+        M: Clone,
+    {
+        MintQuoteResponse {
+            quote: self.quote.to_string(),
+            request: self.request.clone(),
+            unit: self.unit.clone(),
+            state: self.state,
+            expiry: self.expiry,
+            method_fields: self.method_fields.clone(),
+        }
+    }
 }
 
 /// Mint Method Settings

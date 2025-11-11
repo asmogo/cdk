@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use cdk_common::payment::{IncomingPaymentOptions, MintPayment};
-use cdk_common::CurrencyUnit;
+use cdk_common::{CurrencyUnit, NoAdditionalFields};
 use futures::{Stream, StreamExt};
 use lightning::offers::offer::Offer;
 use tokio::sync::{mpsc, Notify};
@@ -203,7 +203,7 @@ impl CdkPaymentProcessor for PaymentProcessorServer {
         {
             incoming_payment_options::Options::Custom(opts) => IncomingPaymentOptions::Custom(
                 Box::new(cdk_common::payment::CustomIncomingPaymentOptions {
-                    data: Default::default(), // Empty HashMap
+                    data: NoAdditionalFields, // No additional fields for custom incoming payment
                     method: "".to_string(),
                     description: opts.description,
                     amount: opts.amount.unwrap_or(0).into(),
@@ -279,7 +279,7 @@ impl CdkPaymentProcessor for PaymentProcessorServer {
                         request: request.request.clone(),
                         max_fee_amount: None,
                         timeout_secs: None,
-                        data: Default::default(), // Empty HashMap
+                        data: NoAdditionalFields, // No additional fields for custom outgoing payment
                         melt_options: request.options.map(Into::into),
                     },
                 ))
@@ -350,7 +350,7 @@ impl CdkPaymentProcessor for PaymentProcessorServer {
                         request: opts.offer,   // Reusing offer field for custom request string
                         max_fee_amount: opts.max_fee_amount.map(Into::into),
                         timeout_secs: opts.timeout_secs,
-                        data: Default::default(), // Empty HashMap
+                        data: NoAdditionalFields, // No additional fields for custom outgoing payment
                         melt_options: opts.melt_options.map(Into::into),
                     }),
                 );

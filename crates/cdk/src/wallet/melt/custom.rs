@@ -1,11 +1,9 @@
-use std::collections::HashMap;
-
 use cdk_common::wallet::MeltQuote;
 use cdk_common::PaymentMethod;
 use tracing::instrument;
 
-use crate::nuts::{MeltOptions, MeltQuoteCustomRequest, MeltQuoteCustomResponse};
-use crate::{Error, Wallet};
+use crate::nuts::{MeltOptions, NoAdditionalFields, SimpleMeltQuoteRequest, SimpleMeltQuoteResponse};
+use crate::{Amount, Error, Wallet};
 
 impl Wallet {
     /// Melt Quote for Custom Payment Method
@@ -18,23 +16,24 @@ impl Wallet {
     ) -> Result<MeltQuote, Error> {
         self.refresh_keysets().await?;
 
-        let quote_request = MeltQuoteCustomRequest {
-            method: method.to_string(),
+        // Spec-compliant request with no additional fields
+        // Note: Method is specified in the URL path per NUT-05, not in request body
+        let quote_request = SimpleMeltQuoteRequest {
             request: request.clone(),
             unit: self.unit.clone(),
-            data: HashMap::new(), // Can be extended for method-specific data
+            method_fields: NoAdditionalFields {},
         };
-        let quote_res = self.client.post_melt_custom_quote(quote_request).await?;
+        let quote_res = self.client.post_melt_custom_quote(method, quote_request).await?;
 
         let quote = MeltQuote {
             id: quote_res.quote,
             amount: quote_res.amount,
             request,
             unit: self.unit.clone(),
-            fee_reserve: quote_res.fee_reserve,
+            fee_reserve: Amount::ZERO, // SimpleMeltQuoteResponse doesn't include fee_reserve
             state: quote_res.state,
-            expiry: quote_res.expiry.unwrap_or(0),
-            payment_preimage: quote_res.payment_preimage,
+            expiry: quote_res.expiry, // expiry is now u64, not Option<u64>
+            payment_preimage: None, // SimpleMeltQuoteResponse doesn't include payment_preimage
             payment_method: PaymentMethod::Custom(method.to_string()),
         };
 
@@ -49,7 +48,7 @@ impl Wallet {
         &self,
         method: &str,
         quote_id: &str,
-    ) -> Result<MeltQuoteCustomResponse<String>, Error> {
+    ) -> Result<SimpleMeltQuoteResponse<String>, Error> {
         let response = self
             .client
             .get_melt_custom_quote_status(method, quote_id)

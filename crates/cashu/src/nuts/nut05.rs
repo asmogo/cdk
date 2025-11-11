@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use super::nut00::{BlindedMessage, CurrencyUnit, PaymentMethod, Proofs};
+use super::payment_method::{MeltQuoteMethodFields, MeltQuoteResponseFields};
 use super::ProofsMethods;
 #[cfg(feature = "mint")]
 use crate::quote_id::QuoteId;
@@ -74,6 +75,189 @@ impl FromStr for QuoteState {
             "UNKNOWN" => Ok(Self::Unknown),
             "FAILED" => Ok(Self::Failed),
             _ => Err(Error::UnknownState),
+        }
+    }
+}
+
+/// Generic melt quote request [NUT-05]
+///
+/// This is a generic request type that works with any payment method.
+/// The payment method-specific fields are provided through the generic type parameter `M`
+/// which must implement [`MeltQuoteMethodFields`].
+///
+/// ## Type Parameters
+///
+/// - `M`: Payment method-specific request fields (e.g., Bolt11Fields, PayPalFields)
+///
+/// ## NUT-05 Specification
+///
+/// Per NUT-05, melt quote requests must include:
+/// - `request`: The payment request to satisfy (required)
+/// - `unit`: The currency unit (required)
+/// - Method-specific fields as defined by the payment method's NUT
+///
+/// **IMPORTANT:** The `method` field is NOT included in the request body.
+/// It is specified in the URL path as per NUT-05: `POST /v1/melt/quote/{method}`
+///
+/// ## Example JSON (Bolt11)
+///
+/// ```json
+/// {
+///   "request": "lnbc10u1...",
+///   "unit": "sat"
+/// }
+/// ```
+///
+/// ## Example JSON (Custom Payment Method)
+///
+/// ```json
+/// {
+///   "request": "user@example.com",
+///   "unit": "sat",
+///   "paypal_memo": "Payment for services"
+/// }
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "swagger", derive(utoipa::ToSchema))]
+#[serde(bound = "M: MeltQuoteMethodFields")]
+pub struct MeltQuoteRequest<M: MeltQuoteMethodFields> {
+    /// Payment request to satisfy - REQUIRED per NUT-05
+    /// Format is payment method-specific (e.g., BOLT11 invoice, PayPal email)
+    pub request: String,
+    /// Currency unit - REQUIRED per NUT-05
+    pub unit: CurrencyUnit,
+    /// Payment method-specific fields (flattened into top-level JSON)
+    #[serde(flatten)]
+    pub method_fields: M,
+}
+
+impl<M: MeltQuoteMethodFields> MeltQuoteRequest<M> {
+    /// Create a new melt quote request
+    pub fn new(request: String, unit: CurrencyUnit, method_fields: M) -> Self {
+        Self {
+            request,
+            unit,
+            method_fields,
+        }
+    }
+
+    /// Validate the request
+    pub fn validate(&self) -> Result<(), String> {
+        self.method_fields.validate()
+    }
+}
+
+/// Generic melt quote response [NUT-05]
+///
+/// This is a generic response type that works with any payment method.
+/// The payment method-specific fields are provided through the generic type parameter `M`
+/// which must implement [`MeltQuoteResponseFields`].
+///
+/// ## Type Parameters
+///
+/// - `Q`: Quote identifier type (typically `String` or `QuoteId`)
+/// - `M`: Payment method-specific response fields (e.g., Bolt11ResponseFields, PayPalResponseFields)
+///
+/// ## NUT-05 Specification
+///
+/// Per NUT-05, ALL of the following fields are REQUIRED in melt quote responses:
+/// - `quote`: Unique quote identifier (required)
+/// - `amount`: Amount to be melted in the specified unit (required)
+/// - `unit`: Currency unit for the quote (required)
+/// - `state`: Current state of the quote (UNPAID, PAID, PENDING) (required)
+/// - `expiry`: Unix timestamp until the quote is valid (required)
+/// - Method-specific fields as defined by the payment method's NUT
+///
+/// **IMPORTANT:** The `fee_reserve` field is NOT part of the base NUT-05 specification.
+/// It is Lightning-specific (NUT-23) and should be included in method-specific response fields
+/// for payment methods that require it.
+///
+/// ## Example JSON (Bolt11 with fee_reserve via method fields)
+///
+/// ```json
+/// {
+///   "quote": "abc123",
+///   "amount": 1000,
+///   "unit": "sat",
+///   "state": "UNPAID",
+///   "expiry": 1234567890,
+///   "fee_reserve": 50,
+///   "description": "Payment"
+/// }
+/// ```
+///
+/// ## Example JSON (Custom Payment Method)
+///
+/// ```json
+/// {
+///   "quote": "def456",
+///   "amount": 950,
+///   "unit": "sat",
+///   "state": "PENDING",
+///   "expiry": 1234567890,
+///   "paypal_transaction_id": "abc123",
+///   "paypal_status": "pending"
+/// }
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "swagger", derive(utoipa::ToSchema))]
+#[serde(bound = "Q: Serialize + DeserializeOwned, M: MeltQuoteResponseFields")]
+pub struct MeltQuoteResponse<Q, M: MeltQuoteResponseFields> {
+    /// Quote identifier - REQUIRED per NUT-05
+    pub quote: Q,
+    /// Amount to be melted - REQUIRED per NUT-05
+    pub amount: Amount,
+    /// Currency unit - REQUIRED per NUT-05
+    pub unit: CurrencyUnit,
+    /// Quote state - REQUIRED per NUT-05
+    /// One of: UNPAID, PAID, PENDING
+    pub state: QuoteState,
+    /// Unix timestamp until quote is valid - REQUIRED per NUT-05
+    pub expiry: u64,
+    /// Payment method-specific response fields (flattened into top-level JSON)
+    #[serde(flatten)]
+    pub method_fields: M,
+}
+
+impl<Q, M: MeltQuoteResponseFields> MeltQuoteResponse<Q, M> {
+    /// Create a new melt quote response
+    pub fn new(
+        quote: Q,
+        amount: Amount,
+        unit: CurrencyUnit,
+        state: QuoteState,
+        expiry: u64,
+        method_fields: M,
+    ) -> Self {
+        Self {
+            quote,
+            amount,
+            unit,
+            state,
+            expiry,
+            method_fields,
+        }
+    }
+
+    /// Validate the response
+    pub fn validate(&self) -> Result<(), String> {
+        self.method_fields.validate()
+    }
+}
+
+impl<Q: ToString, M: MeltQuoteResponseFields> MeltQuoteResponse<Q, M> {
+    /// Convert quote ID to String
+    pub fn to_string_id(&self) -> MeltQuoteResponse<String, M>
+    where
+        M: Clone,
+    {
+        MeltQuoteResponse {
+            quote: self.quote.to_string(),
+            amount: self.amount,
+            unit: self.unit.clone(),
+            state: self.state,
+            expiry: self.expiry,
+            method_fields: self.method_fields.clone(),
         }
     }
 }

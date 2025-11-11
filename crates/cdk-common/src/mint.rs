@@ -666,30 +666,31 @@ impl TryFrom<MintQuote> for MintQuoteBolt12Response<String> {
     }
 }
 
-impl TryFrom<crate::mint::MintQuote> for crate::nuts::MintQuoteCustomResponse<QuoteId> {
-    type Error = crate::Error;
-
-    fn try_from(mint_quote: crate::mint::MintQuote) -> Result<Self, Self::Error> {
-        Ok(crate::nuts::MintQuoteCustomResponse {
-            state: mint_quote.state(),
+impl From<crate::mint::MintQuote> for crate::nuts::SimpleMintQuoteResponse<QuoteId> {
+    fn from(mint_quote: crate::mint::MintQuote) -> Self {
+        let state = mint_quote.state();
+        crate::nuts::SimpleMintQuoteResponse {
             quote: mint_quote.id.clone(),
             request: mint_quote.request,
-            expiry: Some(mint_quote.expiry),
-            pubkey: mint_quote.pubkey,
-            amount: mint_quote.amount,
-            unit: Some(mint_quote.unit),
-            data: Default::default(), // Default empty HashMap
-        })
+            unit: mint_quote.unit,
+            state,
+            expiry: mint_quote.expiry,
+            method_fields: crate::nuts::NoAdditionalFields {},
+        }
     }
 }
 
-impl TryFrom<MintQuote> for crate::nuts::MintQuoteCustomResponse<String> {
-    type Error = crate::Error;
-
-    fn try_from(quote: MintQuote) -> Result<Self, Self::Error> {
-        let quote: crate::nuts::MintQuoteCustomResponse<QuoteId> = quote.try_into()?;
-
-        Ok(quote.into())
+impl From<MintQuote> for crate::nuts::SimpleMintQuoteResponse<String> {
+    fn from(quote: MintQuote) -> Self {
+        let quote: crate::nuts::SimpleMintQuoteResponse<QuoteId> = quote.into();
+        crate::nuts::SimpleMintQuoteResponse {
+            quote: quote.quote.to_string(),
+            request: quote.request,
+            unit: quote.unit,
+            state: quote.state,
+            expiry: quote.expiry,
+            method_fields: crate::nuts::NoAdditionalFields {},
+        }
     }
 }
 

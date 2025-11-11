@@ -10,9 +10,9 @@ use async_trait::async_trait;
 use bip39::Mnemonic;
 use cashu::quote_id::QuoteId;
 use cashu::{
-    MeltQuoteBolt12Request, MeltQuoteCustomRequest, MeltQuoteCustomResponse,
-    MintQuoteBolt12Request, MintQuoteBolt12Response, MintQuoteCustomRequest,
-    MintQuoteCustomResponse,
+    MeltQuoteBolt12Request, SimpleMeltQuoteRequest, SimpleMeltQuoteResponse,
+    MintQuoteBolt12Request, MintQuoteBolt12Response, SimpleMintQuoteRequest,
+    SimpleMintQuoteResponse,
 };
 use cdk::amount::SplitTarget;
 use cdk::cdk_database::{self, WalletDatabase};
@@ -213,8 +213,8 @@ impl MintConnector for DirectMintConnection {
     /// Mint Quote for Custom Payment Method
     async fn post_mint_custom_quote(
         &self,
-        _request: MintQuoteCustomRequest,
-    ) -> Result<MintQuoteCustomResponse<String>, Error> {
+        _request: SimpleMintQuoteRequest,
+    ) -> Result<SimpleMintQuoteResponse<String>, Error> {
         // Custom payment methods not implemented in test mock
         Err(Error::UnsupportedPaymentMethod)
     }
@@ -222,8 +222,8 @@ impl MintConnector for DirectMintConnection {
     /// Melt Quote for Custom Payment Method
     async fn post_melt_custom_quote(
         &self,
-        _request: MeltQuoteCustomRequest,
-    ) -> Result<MeltQuoteCustomResponse<String>, Error> {
+        _request: SimpleMeltQuoteRequest,
+    ) -> Result<SimpleMeltQuoteResponse<String>, Error> {
         // Custom payment methods not implemented in test mock
         Err(Error::UnsupportedPaymentMethod)
     }
@@ -233,7 +233,7 @@ impl MintConnector for DirectMintConnection {
         &self,
         _method: &str,
         _quote_id: &str,
-    ) -> Result<MintQuoteCustomResponse<String>, Error> {
+    ) -> Result<SimpleMintQuoteResponse<String>, Error> {
         // Custom payment methods not implemented in test mock
         Err(Error::UnsupportedPaymentMethod)
     }
@@ -243,7 +243,7 @@ impl MintConnector for DirectMintConnection {
         &self,
         _method: &str,
         _quote_id: &str,
-    ) -> Result<MeltQuoteCustomResponse<String>, Error> {
+    ) -> Result<SimpleMeltQuoteResponse<String>, Error> {
         // Custom payment methods not implemented in test mock
         Err(Error::UnsupportedPaymentMethod)
     }
@@ -253,7 +253,7 @@ impl MintConnector for DirectMintConnection {
         &self,
         _method: String,
         _request: MeltRequest<String>,
-    ) -> Result<MeltQuoteCustomResponse<String>, Error> {
+    ) -> Result<SimpleMeltQuoteResponse<String>, Error> {
         // Custom payment methods not implemented in test mock
         Err(Error::UnsupportedPaymentMethod)
     }

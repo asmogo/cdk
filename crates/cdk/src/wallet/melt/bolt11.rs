@@ -10,8 +10,8 @@ use tracing::instrument;
 use crate::amount::to_unit;
 use crate::dhke::construct_proofs;
 use crate::nuts::{
-    CurrencyUnit, MeltOptions, MeltQuoteBolt11Request, MeltQuoteBolt11Response, MeltRequest,
-    PreMintSecrets, Proofs, ProofsMethods, State,
+    CurrencyUnit, MeltOptions, MeltQuoteBolt11Request, MeltQuoteBolt11Response,
+    MeltQuoteCustomResponse, MeltRequest, PreMintSecrets, Proofs, ProofsMethods, State,
 };
 use crate::types::{Melted, ProofInfo};
 use crate::util::unix_time;
@@ -197,29 +197,48 @@ impl Wallet {
             Some(premint_secrets.blinded_messages()),
         );
 
-        let melt_response = match &quote_info.payment_method {
+        enum MeltResponseWrapper {
+            Bolt11(MeltQuoteBolt11Response<String>),
+            Custom(MeltQuoteCustomResponse<String>),
+        }
+
+        let melt_response_wrapper = match &quote_info.payment_method {
             cdk_common::PaymentMethod::Known(cdk_common::nut00::KnownMethod::Bolt11) => {
-                self.try_proof_operation_or_reclaim(
-                    request.inputs().clone(),
-                    self.client.post_melt(request),
+                MeltResponseWrapper::Bolt11(
+                    self.try_proof_operation_or_reclaim(
+                        request.inputs().clone(),
+                        self.client.post_melt(request),
+                    )
+                    .await?,
                 )
-                .await?
             }
             cdk_common::PaymentMethod::Known(cdk_common::nut00::KnownMethod::Bolt12) => {
-                self.try_proof_operation_or_reclaim(
-                    request.inputs().clone(),
-                    self.client.post_melt_bolt12(request),
+                MeltResponseWrapper::Bolt11(
+                    self.try_proof_operation_or_reclaim(
+                        request.inputs().clone(),
+                        self.client.post_melt_bolt12(request),
+                    )
+                    .await?,
                 )
-                .await?
             }
-            cdk_common::PaymentMethod::Custom(_method) => {
-                // For now, custom methods will use the same post_melt endpoint
-                // This will be enhanced when custom HTTP client methods are added
+            cdk_common::PaymentMethod::Custom(method) => MeltResponseWrapper::Custom(
                 self.try_proof_operation_or_reclaim(
                     request.inputs().clone(),
-                    self.client.post_melt(request),
+                    self.client.post_melt_custom(method.clone(), request),
                 )
-                .await?
+                .await?,
+            ),
+        };
+
+        // Extract common fields from either response type
+        let (change, payment_preimage, state) = match &melt_response_wrapper {
+            MeltResponseWrapper::Bolt11(response) => (
+                response.change.clone(),
+                response.payment_preimage.clone(),
+                response.state,
+            ),
+            MeltResponseWrapper::Custom(response) => {
+                (None, response.payment_preimage.clone(), response.state)
             }
         };
 
@@ -229,7 +248,7 @@ impl Wallet {
             .await?
             .ok_or(Error::NoActiveKeyset)?;
 
-        let change_proofs = match melt_response.change {
+        let change_proofs = match change {
             Some(change) => {
                 let num_change_proof = change.len();
 
@@ -253,9 +272,6 @@ impl Wallet {
             }
             None => None,
         };
-
-        let payment_preimage = melt_response.payment_preimage.clone();
-        let state = melt_response.state;
 
         let melted = Melted::from_proofs(
             state,

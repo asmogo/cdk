@@ -506,7 +506,7 @@ impl Issuance {
 }
 
 /// Melt Quote Info
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MeltQuote {
     /// Quote id
     pub id: QuoteId,
@@ -670,8 +670,6 @@ impl TryFrom<crate::mint::MintQuote> for crate::nuts::MintQuoteCustomResponse<Qu
     type Error = crate::Error;
 
     fn try_from(mint_quote: crate::mint::MintQuote) -> Result<Self, Self::Error> {
-        use serde_json::Value;
-
         Ok(crate::nuts::MintQuoteCustomResponse {
             state: mint_quote.state(),
             quote: mint_quote.id.clone(),
@@ -680,7 +678,7 @@ impl TryFrom<crate::mint::MintQuote> for crate::nuts::MintQuoteCustomResponse<Qu
             pubkey: mint_quote.pubkey,
             amount: mint_quote.amount,
             unit: Some(mint_quote.unit),
-            data: Value::Object(Default::default()), // Default empty JSON object
+            data: Default::default(), // Default empty HashMap
         })
     }
 }
@@ -731,7 +729,7 @@ impl From<MeltQuote> for MeltQuoteBolt11Response<QuoteId> {
 }
 
 /// Payment request
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MeltPaymentRequest {
     /// Bolt11 Payment
     Bolt11 {
@@ -750,8 +748,8 @@ pub enum MeltPaymentRequest {
         method: String,
         /// Payment request string
         request: String,
-        /// Method-specific data
-        data: serde_json::Value,
+        /// Method-specific data (flattened fields as HashMap)
+        data: std::collections::HashMap<String, serde_json::Value>,
     },
 }
 

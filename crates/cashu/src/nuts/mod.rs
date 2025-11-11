@@ -70,4 +70,7 @@ pub use nut23::{
     MintQuoteBolt11Response, QuoteState as MintQuoteState,
 };
 pub use nut25::{MeltQuoteBolt12Request, MintQuoteBolt12Request, MintQuoteBolt12Response};
-pub use nut_custom::{MeltQuoteCustomRequest, MintQuoteCustomRequest, MintQuoteCustomResponse};
+pub use nut_custom::{
+    MeltQuoteCustomRequest, MeltQuoteCustomResponse, MintQuoteCustomRequest,
+    MintQuoteCustomResponse,
+};

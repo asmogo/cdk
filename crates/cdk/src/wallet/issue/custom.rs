@@ -54,11 +54,10 @@ impl Wallet {
 
         let amount = amount.ok_or(Error::AmountUndefined)?;
 
-        // Pack method and request into data field
-        let data = serde_json::json!({
-            "method": method,
-            "request": request,
-        });
+        // Pack method and request into data field (will be flattened to top-level)
+        let mut data = HashMap::new();
+        data.insert("method".to_string(), serde_json::json!(method));
+        data.insert("request".to_string(), serde_json::json!(request));
 
         let mint_request = MintQuoteCustomRequest {
             amount,

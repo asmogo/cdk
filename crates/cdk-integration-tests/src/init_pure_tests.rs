@@ -10,8 +10,9 @@ use async_trait::async_trait;
 use bip39::Mnemonic;
 use cashu::quote_id::QuoteId;
 use cashu::{
-    MeltQuoteBolt12Request, MeltQuoteCustomRequest, MintQuoteBolt12Request,
-    MintQuoteBolt12Response, MintQuoteCustomRequest, MintQuoteCustomResponse,
+    MeltQuoteBolt12Request, MeltQuoteCustomRequest, MeltQuoteCustomResponse,
+    MintQuoteBolt12Request, MintQuoteBolt12Response, MintQuoteCustomRequest,
+    MintQuoteCustomResponse,
 };
 use cdk::amount::SplitTarget;
 use cdk::cdk_database::{self, WalletDatabase};
@@ -222,7 +223,37 @@ impl MintConnector for DirectMintConnection {
     async fn post_melt_custom_quote(
         &self,
         _request: MeltQuoteCustomRequest,
-    ) -> Result<MeltQuoteBolt11Response<String>, Error> {
+    ) -> Result<MeltQuoteCustomResponse<String>, Error> {
+        // Custom payment methods not implemented in test mock
+        Err(Error::UnsupportedPaymentMethod)
+    }
+
+    /// Mint Quote Status for Custom Payment Method
+    async fn get_mint_custom_quote_status(
+        &self,
+        _method: &str,
+        _quote_id: &str,
+    ) -> Result<MintQuoteCustomResponse<String>, Error> {
+        // Custom payment methods not implemented in test mock
+        Err(Error::UnsupportedPaymentMethod)
+    }
+
+    /// Melt Quote Status for Custom Payment Method
+    async fn get_melt_custom_quote_status(
+        &self,
+        _method: &str,
+        _quote_id: &str,
+    ) -> Result<MeltQuoteCustomResponse<String>, Error> {
+        // Custom payment methods not implemented in test mock
+        Err(Error::UnsupportedPaymentMethod)
+    }
+
+    /// Melt with Custom Payment Method
+    async fn post_melt_custom(
+        &self,
+        _method: String,
+        _request: MeltRequest<String>,
+    ) -> Result<MeltQuoteCustomResponse<String>, Error> {
         // Custom payment methods not implemented in test mock
         Err(Error::UnsupportedPaymentMethod)
     }

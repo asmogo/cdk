@@ -1,5 +1,6 @@
 //! CDK Mint Lightning
 
+use std::collections::HashMap;
 use std::convert::Infallible;
 use std::pin::Pin;
 
@@ -174,7 +175,7 @@ pub struct Bolt12IncomingPaymentOptions {
 }
 
 /// Options for creating a custom incoming payment request
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CustomIncomingPaymentOptions {
     /// Payment method name (e.g., "paypal", "venmo")
     pub method: String,
@@ -182,14 +183,14 @@ pub struct CustomIncomingPaymentOptions {
     pub description: Option<String>,
     /// Amount for the payment request
     pub amount: Amount,
-    /// Method-specific data (opaque JSON)
-    pub data: Value,
+    /// Method-specific data (flattened fields as HashMap)
+    pub data: HashMap<String, Value>,
     /// Optional expiry time as Unix timestamp in seconds
     pub unix_expiry: Option<u64>,
 }
 
 /// Options for creating an incoming payment request
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IncomingPaymentOptions {
     /// BOLT11 payment request options
     Bolt11(Bolt11IncomingPaymentOptions),
@@ -226,7 +227,7 @@ pub struct Bolt12OutgoingPaymentOptions {
 }
 
 /// Options for custom outgoing payments
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CustomOutgoingPaymentOptions {
     /// Payment method name
     pub method: String,
@@ -236,14 +237,14 @@ pub struct CustomOutgoingPaymentOptions {
     pub max_fee_amount: Option<Amount>,
     /// Optional timeout in seconds
     pub timeout_secs: Option<u64>,
-    /// Method-specific data (opaque JSON)
-    pub data: Value,
+    /// Method-specific data (flattened fields as HashMap)
+    pub data: HashMap<String, Value>,
     /// Melt options
     pub melt_options: Option<MeltOptions>,
 }
 
 /// Options for creating an outgoing payment
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OutgoingPaymentOptions {
     /// BOLT11 payment options
     Bolt11(Box<Bolt11OutgoingPaymentOptions>),

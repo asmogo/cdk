@@ -201,6 +201,8 @@ pub struct MintQuoteResponse<Q, M: MintQuoteResponseFields> {
     /// Payment request string - REQUIRED per NUT-04
     /// Format is payment method-specific (e.g., BOLT11 invoice, PayPal URL)
     pub request: String,
+    /// Amount - REQUIRED per NUT-04
+    pub amount: Amount,
     /// Currency unit - REQUIRED per NUT-04
     pub unit: CurrencyUnit,
     /// Quote state - REQUIRED per NUT-04
@@ -218,6 +220,7 @@ impl<Q, M: MintQuoteResponseFields> MintQuoteResponse<Q, M> {
     pub fn new(
         quote: Q,
         request: String,
+        amount: Amount,
         unit: CurrencyUnit,
         state: super::nut23::QuoteState,
         expiry: u64,
@@ -226,6 +229,7 @@ impl<Q, M: MintQuoteResponseFields> MintQuoteResponse<Q, M> {
         Self {
             quote,
             request,
+            amount,
             unit,
             state,
             expiry,
@@ -248,6 +252,7 @@ impl<Q: ToString, M: MintQuoteResponseFields> MintQuoteResponse<Q, M> {
         MintQuoteResponse {
             quote: self.quote.to_string(),
             request: self.request.clone(),
+            amount: self.amount,
             unit: self.unit.clone(),
             state: self.state,
             expiry: self.expiry,
@@ -549,5 +554,13 @@ mod tests {
             }
             _ => panic!("Expected Bolt11 options with description = true"),
         }
+    }
+}
+
+// Add From implementation for QuoteId -> String conversion
+#[cfg(feature = "mint")]
+impl<M: MintQuoteResponseFields + Clone> From<MintQuoteResponse<QuoteId, M>> for MintQuoteResponse<String, M> {
+    fn from(value: MintQuoteResponse<QuoteId, M>) -> Self {
+        value.to_string_id()
     }
 }

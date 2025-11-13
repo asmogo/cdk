@@ -2047,11 +2047,11 @@ async fn create_test_melt_quote(
     );
 
     // Create melt quote request
-    let bolt11_request = MeltQuoteBolt11Request {
-        request: invoice,
-        unit: CurrencyUnit::Sat,
-        options: None,
-    };
+    let bolt11_request = MeltQuoteBolt11Request::new(
+        invoice.to_string(),
+        CurrencyUnit::Sat,
+        crate::nuts::Bolt11MeltRequestFields { options: None },
+    );
 
     let request = MeltQuoteRequest::Bolt11(bolt11_request);
 

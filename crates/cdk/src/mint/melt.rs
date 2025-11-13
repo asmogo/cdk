@@ -9,7 +9,7 @@ use cdk_common::payment::{
     OutgoingPaymentOptions,
 };
 use cdk_common::quote_id::QuoteId;
-use cdk_common::{MeltOptions, MeltQuoteBolt12Request, NoAdditionalFields, SimpleMeltQuoteRequest};
+use cdk_common::{Bolt11Invoice, MeltOptions, MeltQuoteBolt12Request, NoAdditionalFields, SimpleMeltQuoteRequest};
 #[cfg(feature = "prometheus")]
 use cdk_prometheus::METRICS;
 use lightning::offers::offer::Offer;
@@ -135,12 +135,9 @@ impl Mint {
     ) -> Result<MeltQuoteBolt11Response<QuoteId>, Error> {
         #[cfg(feature = "prometheus")]
         METRICS.inc_in_flight_requests("get_melt_bolt11_quote");
-        let MeltQuoteBolt11Request {
-            request,
-            unit,
-            options,
-            ..
-        } = melt_request;
+        let request = &melt_request.request;
+        let unit = &melt_request.unit;
+        let options = &melt_request.method_fields.options;
 
         let ln = self
             .payment_processors
@@ -154,11 +151,14 @@ impl Mint {
                 Error::UnsupportedUnit
             })?;
 
+        let invoice = Bolt11Invoice::from_str(&melt_request.request)
+            .map_err(|_| Error::InvalidPaymentRequest)?;
+        
         let bolt11 = Bolt11OutgoingPaymentOptions {
-            bolt11: melt_request.request.clone(),
+            bolt11: invoice.clone(),
             max_fee_amount: None,
             timeout_secs: None,
-            melt_options: melt_request.options,
+            melt_options: options.clone(),
         };
 
         let payment_quote = ln
@@ -201,14 +201,14 @@ impl Mint {
 
         let quote = MeltQuote::new(
             MeltPaymentRequest::Bolt11 {
-                bolt11: request.clone(),
+                bolt11: invoice.clone(),
             },
             unit.clone(),
             payment_quote.amount,
             payment_quote.fee,
             unix_time() + melt_ttl,
             payment_quote.request_lookup_id.clone(),
-            *options,
+            options.clone(),
             PaymentMethod::from("bolt11"),
         );
 
@@ -234,11 +234,9 @@ impl Mint {
         &self,
         melt_request: &MeltQuoteBolt12Request,
     ) -> Result<MeltQuoteBolt11Response<QuoteId>, Error> {
-        let MeltQuoteBolt12Request {
-            request,
-            unit,
-            options,
-        } = melt_request;
+        let request = &melt_request.request;
+        let unit = &melt_request.unit;
+        let options = &melt_request.method_fields.options;
 
         let offer = Offer::from_str(request).map_err(|_| Error::InvalidPaymentRequest)?;
 
@@ -493,18 +491,18 @@ impl Mint {
 
         let change = (!blind_signatures.is_empty()).then_some(blind_signatures);
 
-        let response = MeltQuoteBolt11Response {
-            quote: quote.id,
-            paid: Some(quote.state == MeltQuoteState::Paid),
-            state: quote.state,
-            expiry: quote.expiry,
-            amount: quote.amount,
-            fee_reserve: quote.fee_reserve,
-            payment_preimage: quote.payment_preimage,
-            change,
-            request: Some(quote.request.to_string()),
-            unit: Some(quote.unit.clone()),
-        };
+        let response = MeltQuoteBolt11Response::new(
+            quote.id,
+            quote.amount,
+            quote.unit.clone(),
+            quote.state,
+            quote.expiry,
+            crate::nuts::Bolt11MeltResponseFields {
+                fee_reserve: quote.fee_reserve,
+                payment_preimage: quote.payment_preimage,
+                change,
+            },
+        );
 
         #[cfg(feature = "prometheus")]
         {

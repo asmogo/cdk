@@ -53,11 +53,11 @@ impl Wallet {
 
         let invoice = Bolt11Invoice::from_str(&request)?;
 
-        let quote_request = MeltQuoteBolt11Request {
-            request: invoice.clone(),
-            unit: self.unit.clone(),
-            options,
-        };
+        let quote_request = MeltQuoteBolt11Request::new(
+            invoice.to_string(),
+            self.unit.clone(),
+            crate::nuts::Bolt11MeltRequestFields { options },
+        );
 
         let quote_res = self.client.post_melt_quote(quote_request).await?;
 
@@ -84,10 +84,10 @@ impl Wallet {
             amount: quote_res.amount,
             request,
             unit: self.unit.clone(),
-            fee_reserve: quote_res.fee_reserve,
+            fee_reserve: quote_res.method_fields.fee_reserve,
             state: quote_res.state,
             expiry: quote_res.expiry,
-            payment_preimage: quote_res.payment_preimage,
+            payment_preimage: quote_res.method_fields.payment_preimage.clone(),
             payment_method: PaymentMethod::from("bolt11"),
         };
 
@@ -233,8 +233,8 @@ impl Wallet {
         // Extract common fields from either response type
         let (change, payment_preimage, state) = match &melt_response_wrapper {
             MeltResponseWrapper::Bolt11(response) => (
-                response.change.clone(),
-                response.payment_preimage.clone(),
+                response.method_fields.change.clone(),
+                response.method_fields.payment_preimage.clone(),
                 response.state,
             ),
             MeltResponseWrapper::Custom(response) => {

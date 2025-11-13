@@ -250,8 +250,8 @@ impl PubSubManager {
         amount_issued: Amount,
     ) {
         if let Ok(mut event) = quote.try_into() {
-            event.amount_paid = amount_paid;
-            event.amount_issued = amount_issued;
+            event.method_fields.amount_paid = amount_paid;
+            event.method_fields.amount_issued = amount_issued;
 
             self.publish(event);
         } else {
@@ -269,9 +269,8 @@ impl PubSubManager {
     ) {
         let mut quote = quote.into();
         quote.state = new_state;
-        quote.paid = Some(new_state == MeltQuoteState::Paid);
-        quote.payment_preimage = payment_preimage;
-        quote.change = change;
+        quote.method_fields.payment_preimage = payment_preimage;
+        quote.method_fields.change = change;
         self.publish(quote);
     }
 }

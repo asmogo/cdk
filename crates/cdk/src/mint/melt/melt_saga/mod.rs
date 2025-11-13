@@ -853,18 +853,18 @@ impl MeltSaga<PaymentConfirmed> {
             METRICS.record_mint_operation("melt_bolt11", true);
         }
 
-        let response = MeltQuoteBolt11Response {
-            amount: self.state_data.quote.amount,
-            paid: Some(true),
-            payment_preimage,
-            change,
-            quote: self.state_data.quote.id,
-            fee_reserve: self.state_data.quote.fee_reserve,
-            state: MeltQuoteState::Paid,
-            expiry: self.state_data.quote.expiry,
-            request: Some(self.state_data.quote.request.to_string()),
-            unit: Some(self.state_data.quote.unit.clone()),
-        };
+        let response = MeltQuoteBolt11Response::new(
+            self.state_data.quote.id,
+            self.state_data.quote.amount,
+            self.state_data.quote.unit.clone(),
+            MeltQuoteState::Paid,
+            self.state_data.quote.expiry,
+            crate::nuts::Bolt11MeltResponseFields {
+                fee_reserve: self.state_data.quote.fee_reserve,
+                payment_preimage,
+                change,
+            },
+        );
 
         Ok(response)
     }

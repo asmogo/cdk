@@ -619,23 +619,39 @@ impl From<MintKeySetInfo> for KeySetInfo {
 
 impl From<MintQuote> for MintQuoteBolt11Response<QuoteId> {
     fn from(mint_quote: crate::mint::MintQuote) -> MintQuoteBolt11Response<QuoteId> {
-        MintQuoteBolt11Response {
-            quote: mint_quote.id.clone(),
-            state: mint_quote.state(),
-            request: mint_quote.request,
-            expiry: Some(mint_quote.expiry),
-            pubkey: mint_quote.pubkey,
-            amount: mint_quote.amount,
-            unit: Some(mint_quote.unit.clone()),
-        }
+        use cashu::nut04::MintQuoteResponse;
+        use cashu::Bolt11MintResponseFields;
+        
+        MintQuoteResponse::new(
+            mint_quote.id.clone(),
+            mint_quote.request.clone(),
+            mint_quote.amount.unwrap_or(Amount::ZERO),
+            mint_quote.unit.clone(),
+            mint_quote.state(),
+            mint_quote.expiry,
+            Bolt11MintResponseFields {
+                pubkey: mint_quote.pubkey,
+            },
+        )
     }
 }
 
 impl From<MintQuote> for MintQuoteBolt11Response<String> {
     fn from(quote: MintQuote) -> Self {
-        let quote: MintQuoteBolt11Response<QuoteId> = quote.into();
-
-        quote.into()
+        use cashu::nut04::MintQuoteResponse;
+        use cashu::Bolt11MintResponseFields;
+        
+        MintQuoteResponse::new(
+            quote.id.to_string(),
+            quote.request.clone(),
+            quote.amount.unwrap_or(Amount::ZERO),
+            quote.unit.clone(),
+            quote.state(),
+            quote.expiry,
+            Bolt11MintResponseFields {
+                pubkey: quote.pubkey,
+            },
+        )
     }
 }
 
@@ -643,16 +659,22 @@ impl TryFrom<crate::mint::MintQuote> for MintQuoteBolt12Response<QuoteId> {
     type Error = crate::Error;
 
     fn try_from(mint_quote: crate::mint::MintQuote) -> Result<Self, Self::Error> {
-        Ok(MintQuoteBolt12Response {
-            quote: mint_quote.id.clone(),
-            request: mint_quote.request,
-            expiry: Some(mint_quote.expiry),
-            amount_paid: mint_quote.amount_paid,
-            amount_issued: mint_quote.amount_issued,
-            pubkey: mint_quote.pubkey.ok_or(crate::Error::PubkeyRequired)?,
-            amount: mint_quote.amount,
-            unit: mint_quote.unit,
-        })
+        use cashu::nut04::MintQuoteResponse;
+        use cashu::Bolt12MintResponseFields;
+        
+        Ok(MintQuoteResponse::new(
+            mint_quote.id.clone(),
+            mint_quote.request.clone(),
+            mint_quote.amount.unwrap_or(Amount::ZERO),
+            mint_quote.unit.clone(),
+            mint_quote.state(),
+            mint_quote.expiry,
+            Bolt12MintResponseFields {
+                pubkey: mint_quote.pubkey.ok_or(crate::Error::PubkeyRequired)?,
+                amount_paid: mint_quote.amount_paid,
+                amount_issued: mint_quote.amount_issued,
+            },
+        ))
     }
 }
 
@@ -660,72 +682,96 @@ impl TryFrom<MintQuote> for MintQuoteBolt12Response<String> {
     type Error = crate::Error;
 
     fn try_from(quote: MintQuote) -> Result<Self, Self::Error> {
-        let quote: MintQuoteBolt12Response<QuoteId> = quote.try_into()?;
-
-        Ok(quote.into())
+        use cashu::nut04::MintQuoteResponse;
+        use cashu::Bolt12MintResponseFields;
+        
+        Ok(MintQuoteResponse::new(
+            quote.id.to_string(),
+            quote.request.clone(),
+            quote.amount.unwrap_or(Amount::ZERO),
+            quote.unit.clone(),
+            quote.state(),
+            quote.expiry,
+            Bolt12MintResponseFields {
+                pubkey: quote.pubkey.ok_or(crate::Error::PubkeyRequired)?,
+                amount_paid: quote.amount_paid,
+                amount_issued: quote.amount_issued,
+            },
+        ))
     }
 }
 
 impl From<crate::mint::MintQuote> for crate::nuts::SimpleMintQuoteResponse<QuoteId> {
     fn from(mint_quote: crate::mint::MintQuote) -> Self {
-        let state = mint_quote.state();
-        crate::nuts::SimpleMintQuoteResponse {
-            quote: mint_quote.id.clone(),
-            request: mint_quote.request,
-            unit: mint_quote.unit,
-            state,
-            expiry: mint_quote.expiry,
-            method_fields: crate::nuts::NoAdditionalFields {},
-        }
+        use cashu::nut04::MintQuoteResponse;
+        use cashu::NoAdditionalFields;
+        
+        MintQuoteResponse::new(
+            mint_quote.id.clone(),
+            mint_quote.request.clone(),
+            mint_quote.amount.unwrap_or(Amount::ZERO),
+            mint_quote.unit.clone(),
+            mint_quote.state(),
+            mint_quote.expiry,
+            NoAdditionalFields {},
+        )
     }
 }
 
 impl From<MintQuote> for crate::nuts::SimpleMintQuoteResponse<String> {
     fn from(quote: MintQuote) -> Self {
-        let quote: crate::nuts::SimpleMintQuoteResponse<QuoteId> = quote.into();
-        crate::nuts::SimpleMintQuoteResponse {
-            quote: quote.quote.to_string(),
-            request: quote.request,
-            unit: quote.unit,
-            state: quote.state,
-            expiry: quote.expiry,
-            method_fields: crate::nuts::NoAdditionalFields {},
-        }
+        use cashu::nut04::MintQuoteResponse;
+        use cashu::NoAdditionalFields;
+        
+        MintQuoteResponse::new(
+            quote.id.to_string(),
+            quote.request.clone(),
+            quote.amount.unwrap_or(Amount::ZERO),
+            quote.unit.clone(),
+            quote.state(),
+            quote.expiry,
+            NoAdditionalFields {},
+        )
     }
 }
 
 impl From<&MeltQuote> for MeltQuoteBolt11Response<QuoteId> {
     fn from(melt_quote: &MeltQuote) -> MeltQuoteBolt11Response<QuoteId> {
-        MeltQuoteBolt11Response {
-            quote: melt_quote.id.clone(),
-            payment_preimage: None,
-            change: None,
-            state: melt_quote.state,
-            paid: Some(melt_quote.state == MeltQuoteState::Paid),
-            expiry: melt_quote.expiry,
-            amount: melt_quote.amount,
-            fee_reserve: melt_quote.fee_reserve,
-            request: None,
-            unit: Some(melt_quote.unit.clone()),
-        }
+        use cashu::nut05::MeltQuoteResponse;
+        use cashu::Bolt11MeltResponseFields;
+        
+        MeltQuoteResponse::new(
+            melt_quote.id.clone(),
+            melt_quote.amount,
+            melt_quote.unit.clone(),
+            melt_quote.state,
+            melt_quote.expiry,
+            Bolt11MeltResponseFields {
+                fee_reserve: melt_quote.fee_reserve,
+                payment_preimage: None,
+                change: None,
+            },
+        )
     }
 }
 
 impl From<MeltQuote> for MeltQuoteBolt11Response<QuoteId> {
     fn from(melt_quote: MeltQuote) -> MeltQuoteBolt11Response<QuoteId> {
-        let paid = melt_quote.state == MeltQuoteState::Paid;
-        MeltQuoteBolt11Response {
-            quote: melt_quote.id.clone(),
-            amount: melt_quote.amount,
-            fee_reserve: melt_quote.fee_reserve,
-            paid: Some(paid),
-            state: melt_quote.state,
-            expiry: melt_quote.expiry,
-            payment_preimage: melt_quote.payment_preimage,
-            change: None,
-            request: Some(melt_quote.request.to_string()),
-            unit: Some(melt_quote.unit.clone()),
-        }
+        use cashu::nut05::MeltQuoteResponse;
+        use cashu::Bolt11MeltResponseFields;
+        
+        MeltQuoteResponse::new(
+            melt_quote.id.clone(),
+            melt_quote.amount,
+            melt_quote.unit.clone(),
+            melt_quote.state,
+            melt_quote.expiry,
+            Bolt11MeltResponseFields {
+                fee_reserve: melt_quote.fee_reserve,
+                payment_preimage: melt_quote.payment_preimage,
+                change: None,
+            },
+        )
     }
 }
 

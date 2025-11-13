@@ -12,3 +12,6 @@ Cargo.lock
 .aider*
 **/postgres_data/
 **/.env
+nuts/
+logs/
+docs/CUSTOM_PAYMENT_METHODS_REFACTORING.md

@@ -112,12 +112,14 @@ pub async fn mint_test_proofs(mint: &Mint, amount: Amount) -> Result<Proofs, Err
     // Just use fund_mint_with_proofs which creates proofs via swap
     let mint_quote: MintQuoteBolt11Response<_> = mint
         .get_mint_quote(
-            MintQuoteBolt11Request {
+            MintQuoteBolt11Request::new(
                 amount,
-                unit: CurrencyUnit::Sat,
-                description: None,
-                pubkey: None,
-            }
+                CurrencyUnit::Sat,
+                crate::nuts::Bolt11MintRequestFields {
+                    description: None,
+                    pubkey: None,
+                },
+            )
             .into(),
         )
         .await?

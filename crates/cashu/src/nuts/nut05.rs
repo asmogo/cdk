@@ -630,3 +630,11 @@ mod tests {
         }
     }
 }
+
+// Add From implementation for QuoteId -> String conversion
+#[cfg(feature = "mint")]
+impl<M: MeltQuoteResponseFields + Clone> From<MeltQuoteResponse<QuoteId, M>> for MeltQuoteResponse<String, M> {
+    fn from(value: MeltQuoteResponse<QuoteId, M>) -> Self {
+        value.to_string_id()
+    }
+}

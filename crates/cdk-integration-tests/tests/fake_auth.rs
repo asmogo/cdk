@@ -92,12 +92,14 @@ async fn test_quote_status_without_auth() {
 async fn test_mint_without_auth() {
     let client = HttpClient::new(MintUrl::from_str(MINT_URL).expect("Valid mint url"), None);
     {
-        let request = MintQuoteBolt11Request {
-            unit: CurrencyUnit::Sat,
-            amount: 10.into(),
-            description: None,
-            pubkey: None,
-        };
+        let request = MintQuoteBolt11Request::new(
+            10.into(),
+            CurrencyUnit::Sat,
+            cdk::nuts::Bolt11MintRequestFields {
+                description: None,
+                pubkey: None,
+            },
+        );
 
         let quote_res = client.post_mint_quote(request).await;
 
@@ -173,11 +175,11 @@ async fn test_melt_without_auth() {
 
     // Test melt quote request
     {
-        let request = MeltQuoteBolt11Request {
-            request: create_fake_invoice(100, "".to_string()),
-            unit: CurrencyUnit::Sat,
-            options: None,
-        };
+        let request = MeltQuoteBolt11Request::new(
+            create_fake_invoice(100, "".to_string()).to_string(),
+            CurrencyUnit::Sat,
+            cdk::nuts::Bolt11MeltRequestFields { options: None },
+        );
 
         let quote_res = client.post_melt_quote(request).await;
 
@@ -190,11 +192,11 @@ async fn test_melt_without_auth() {
 
     // Test melt quote
     {
-        let request = MeltQuoteBolt11Request {
-            request: create_fake_invoice(100, "".to_string()),
-            unit: CurrencyUnit::Sat,
-            options: None,
-        };
+        let request = MeltQuoteBolt11Request::new(
+            create_fake_invoice(100, "".to_string()).to_string(),
+            CurrencyUnit::Sat,
+            cdk::nuts::Bolt11MeltRequestFields { options: None },
+        );
 
         let quote_res = client.post_melt_quote(request).await;
 
@@ -571,12 +573,14 @@ async fn test_melt_with_invalid_auth() {
 
         let _auth_token = AuthToken::BlindAuth(BlindAuthToken::new(invalid_auth_proof));
 
-        let request = MintQuoteBolt11Request {
-            unit: CurrencyUnit::Sat,
-            amount: 10.into(),
-            description: None,
-            pubkey: None,
-        };
+        let request = MintQuoteBolt11Request::new(
+            10.into(),
+            CurrencyUnit::Sat,
+            cdk::nuts::Bolt11MintRequestFields {
+                description: None,
+                pubkey: None,
+            },
+        );
 
         let quote_res = client.post_mint_quote(request).await;
 

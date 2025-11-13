@@ -51,12 +51,14 @@ impl Wallet {
 
         let secret_key = SecretKey::generate();
 
-        let mint_request = MintQuoteBolt12Request {
-            amount,
-            unit: self.unit.clone(),
-            description,
-            pubkey: secret_key.public_key(),
-        };
+        let mint_request = MintQuoteBolt12Request::new(
+            amount.unwrap_or(Amount::ZERO),
+            self.unit.clone(),
+            crate::nuts::Bolt12MintRequestFields {
+                description,
+                pubkey: secret_key.public_key(),
+            },
+        );
 
         let quote_res = self.client.post_mint_bolt12_quote(mint_request).await?;
 
@@ -67,7 +69,7 @@ impl Wallet {
             amount,
             unit.clone(),
             quote_res.request,
-            quote_res.expiry.unwrap_or(0),
+            quote_res.expiry,
             Some(secret_key),
         );
 
@@ -111,7 +113,7 @@ impl Wallet {
                 // The mint will tell us how much can be minted
                 let state = self.mint_bolt12_quote_state(quote_id).await?;
 
-                state.amount_paid - state.amount_issued
+                state.method_fields.amount_paid - state.method_fields.amount_issued
             }
         };
 
@@ -251,8 +253,8 @@ impl Wallet {
         match self.localstore.get_mint_quote(quote_id).await? {
             Some(quote) => {
                 let mut quote = quote;
-                quote.amount_issued = response.amount_issued;
-                quote.amount_paid = response.amount_paid;
+                quote.amount_issued = response.method_fields.amount_issued;
+                quote.amount_paid = response.method_fields.amount_paid;
 
                 self.localstore.add_mint_quote(quote).await?;
             }

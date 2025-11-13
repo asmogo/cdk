@@ -75,12 +75,14 @@ impl Wallet {
 
         let secret_key = SecretKey::generate();
 
-        let request = MintQuoteBolt11Request {
+        let request = MintQuoteBolt11Request::new(
             amount,
-            unit: unit.clone(),
-            description,
-            pubkey: Some(secret_key.public_key()),
-        };
+            unit.clone(),
+            crate::nuts::Bolt11MintRequestFields {
+                description,
+                pubkey: Some(secret_key.public_key()),
+            },
+        );
 
         let quote_res = self.client.post_mint_quote(request).await?;
 
@@ -91,7 +93,7 @@ impl Wallet {
             Some(amount),
             unit,
             quote_res.request,
-            quote_res.expiry.unwrap_or(0),
+            quote_res.expiry,
             Some(secret_key),
         );
 

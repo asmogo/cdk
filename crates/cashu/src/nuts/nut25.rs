@@ -6,9 +6,7 @@ use super::payment_method::{
     MeltQuoteMethodFields, MeltQuoteResponseFields, MintQuoteMethodFields,
     MintQuoteResponseFields,
 };
-use super::{CurrencyUnit, MeltOptions, PublicKey};
-#[cfg(feature = "mint")]
-use crate::quote_id::QuoteId;
+use super::{MeltOptions, PublicKey};
 use crate::Amount;
 
 /// NUT18 Error
@@ -25,87 +23,14 @@ pub enum Error {
     PublickeyUndefined,
 }
 
-/// Mint quote request [NUT-24]
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "swagger", derive(utoipa::ToSchema))]
-pub struct MintQuoteBolt12Request {
-    /// Amount
-    pub amount: Option<Amount>,
-    /// Unit wallet would like to pay with
-    pub unit: CurrencyUnit,
-    /// Memo to create the invoice with
-    pub description: Option<String>,
-    /// Pubkey
-    pub pubkey: PublicKey,
-}
+/// Bolt12 mint quote request
+pub type MintQuoteBolt12Request = super::nut04::MintQuoteRequest<Bolt12MintRequestFields>;
 
-/// Mint quote response [NUT-24]
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "swagger", derive(utoipa::ToSchema))]
-#[serde(bound = "Q: Serialize + for<'a> Deserialize<'a>")]
-pub struct MintQuoteBolt12Response<Q> {
-    /// Quote Id
-    pub quote: Q,
-    /// Payment request to fulfil
-    pub request: String,
-    /// Amount
-    pub amount: Option<Amount>,
-    /// Unit wallet would like to pay with
-    pub unit: CurrencyUnit,
-    /// Unix timestamp until the quote is valid
-    pub expiry: Option<u64>,
-    /// Pubkey
-    pub pubkey: PublicKey,
-    /// Amount that has been paid
-    pub amount_paid: Amount,
-    /// Amount that has been issued
-    pub amount_issued: Amount,
-}
+/// Bolt12 mint quote response
+pub type MintQuoteBolt12Response<Q> = super::nut04::MintQuoteResponse<Q, Bolt12MintResponseFields>;
 
-#[cfg(feature = "mint")]
-impl<Q: ToString> MintQuoteBolt12Response<Q> {
-    /// Convert the MintQuote with a quote type Q to a String
-    pub fn to_string_id(&self) -> MintQuoteBolt12Response<String> {
-        MintQuoteBolt12Response {
-            quote: self.quote.to_string(),
-            request: self.request.clone(),
-            amount: self.amount,
-            unit: self.unit.clone(),
-            expiry: self.expiry,
-            pubkey: self.pubkey,
-            amount_paid: self.amount_paid,
-            amount_issued: self.amount_issued,
-        }
-    }
-}
-
-#[cfg(feature = "mint")]
-impl From<MintQuoteBolt12Response<QuoteId>> for MintQuoteBolt12Response<String> {
-    fn from(value: MintQuoteBolt12Response<QuoteId>) -> Self {
-        Self {
-            quote: value.quote.to_string(),
-            request: value.request,
-            expiry: value.expiry,
-            amount_paid: value.amount_paid,
-            amount_issued: value.amount_issued,
-            pubkey: value.pubkey,
-            amount: value.amount,
-            unit: value.unit,
-        }
-    }
-}
-
-/// Melt quote request [NUT-18]
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "swagger", derive(utoipa::ToSchema))]
-pub struct MeltQuoteBolt12Request {
-    /// Bolt12 invoice to be paid
-    pub request: String,
-    /// Unit wallet would like to pay with
-    pub unit: CurrencyUnit,
-    /// Payment Options
-    pub options: Option<MeltOptions>,
-}
+/// Bolt12 melt quote request
+pub type MeltQuoteBolt12Request = super::nut05::MeltQuoteRequest<Bolt12MeltRequestFields>;
 
 // ============================================================================
 // Generic Payment Method Field Implementations for Bolt12
@@ -262,12 +187,12 @@ impl MeltQuoteResponseFields for Bolt12MeltResponseFields {
 mod tests {
     use super::*;
     use crate::nuts::nut04::MintQuoteRequest;
-    use crate::nuts::nut05::MeltQuoteRequest;
+    use crate::CurrencyUnit;
 
     #[test]
     fn test_bolt12_mint_request_fields_json_compat() {
-        // Test that the new generic type produces the same JSON as the old type
-        let amount = Some(Amount::from(1000u64));
+        // Test that the generic type serializes correctly
+        let amount = Amount::from(1000u64);
         let unit = CurrencyUnit::Sat;
         let description = Some("test".to_string());
         let pubkey = PublicKey::from_slice(&[
@@ -276,30 +201,22 @@ mod tests {
         ])
         .unwrap();
 
-        // Old type
-        let old_request = MintQuoteBolt12Request {
+        // Generic type (now MintQuoteBolt12Request is an alias to this)
+        let request = MintQuoteRequest::new(
             amount,
-            unit: unit.clone(),
-            description: description.clone(),
-            pubkey,
-        };
-
-        // New generic type
-        let new_request = MintQuoteRequest::new(
-            amount.unwrap(),
-            unit,
-            Bolt12MintRequestFields { description, pubkey },
+            unit.clone(),
+            Bolt12MintRequestFields {
+                description: description.clone(),
+                pubkey,
+            },
         );
 
-        // Both should serialize to identical JSON
-        let old_json = serde_json::to_value(&old_request).unwrap();
-        let new_json = serde_json::to_value(&new_request).unwrap();
-        
-        // Note: old type has optional amount at top level, new type has required amount
-        // So we compare the fields that should match
-        assert_eq!(old_json["unit"], new_json["unit"]);
-        assert_eq!(old_json["description"], new_json["description"]);
-        assert_eq!(old_json["pubkey"], new_json["pubkey"]);
+        // Verify JSON structure
+        let json = serde_json::to_value(&request).unwrap();
+        assert_eq!(json["amount"], 1000);
+        assert_eq!(json["unit"], "sat");
+        assert_eq!(json["description"], "test");
+        assert!(json["pubkey"].is_string());
     }
 
     #[test]

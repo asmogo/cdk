@@ -71,10 +71,15 @@ pub use nut18::{
     TransportType,
 };
 pub use nut23::{
-    MeltOptions, MeltQuoteBolt11Request, MeltQuoteBolt11Response, MintQuoteBolt11Request,
-    MintQuoteBolt11Response, QuoteState as MintQuoteState,
+    Bolt11MeltRequestFields, Bolt11MeltResponseFields, Bolt11MintRequestFields,
+    Bolt11MintResponseFields, MeltOptions, MeltQuoteBolt11Request, MeltQuoteBolt11Response,
+    MintQuoteBolt11Request, MintQuoteBolt11Response, QuoteState as MintQuoteState,
 };
-pub use nut25::{MeltQuoteBolt12Request, MintQuoteBolt12Request, MintQuoteBolt12Response};
+pub use nut25::{
+    Bolt12MeltRequestFields, Bolt12MeltResponseFields, Bolt12MintRequestFields,
+    Bolt12MintResponseFields, MeltQuoteBolt12Request, MintQuoteBolt12Request,
+    MintQuoteBolt12Response,
+};
 pub use nut_custom::{
     NoAdditionalFields, SimpleMeltQuoteRequest, SimpleMeltQuoteResponse, SimpleMintQuoteRequest,
     SimpleMintQuoteResponse,

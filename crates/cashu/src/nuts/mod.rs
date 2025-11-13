@@ -8,7 +8,6 @@ pub mod nut02;
 pub mod nut03;
 pub mod nut04;
 pub mod nut05;
-pub mod payment_method;
 pub mod nut06;
 pub mod nut07;
 pub mod nut08;
@@ -27,6 +26,7 @@ pub mod nut20;
 pub mod nut23;
 pub mod nut25;
 pub mod nut_custom;
+pub mod payment_method;
 
 #[cfg(feature = "auth")]
 mod auth;
@@ -76,9 +76,8 @@ pub use nut23::{
 };
 pub use nut25::{MeltQuoteBolt12Request, MintQuoteBolt12Request, MintQuoteBolt12Response};
 pub use nut_custom::{
-    MeltQuoteCustomRequest, MeltQuoteCustomResponse, MintQuoteCustomRequest,
-    MintQuoteCustomResponse, NoAdditionalFields, SimpleMeltQuoteRequest, SimpleMeltQuoteResponse,
-    SimpleMintQuoteRequest, SimpleMintQuoteResponse,
+    NoAdditionalFields, SimpleMeltQuoteRequest, SimpleMeltQuoteResponse, SimpleMintQuoteRequest,
+    SimpleMintQuoteResponse,
 };
 pub use payment_method::{
     IncomingPaymentMethodData, MeltQuoteMethodFields, MeltQuoteResponseFields,

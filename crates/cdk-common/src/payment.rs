@@ -6,13 +6,13 @@ use std::pin::Pin;
 use async_trait::async_trait;
 use cashu::util::hex;
 use cashu::{Bolt11Invoice, MeltOptions, NoAdditionalFields};
-use serde_json::Value;
 #[cfg(feature = "prometheus")]
 use cdk_prometheus::METRICS;
 use futures::Stream;
 use lightning::offers::offer::Offer;
 use lightning_invoice::ParseOrSemanticError;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use thiserror::Error;
 
 use crate::mint::MeltPaymentRequest;
@@ -410,20 +410,16 @@ impl TryFrom<crate::mint::MeltQuote> for OutgoingPaymentOptions {
                     },
                 )))
             }
-            MeltPaymentRequest::Custom {
-                method,
-                request,
-                data: _, // Ignore deprecated HashMap data
-            } => Ok(OutgoingPaymentOptions::Custom(Box::new(
-                CustomOutgoingPaymentOptions {
+            MeltPaymentRequest::Custom { method, request } => Ok(OutgoingPaymentOptions::Custom(
+                Box::new(CustomOutgoingPaymentOptions {
                     method,
                     request,
                     max_fee_amount: Some(melt_quote.fee_reserve),
                     timeout_secs: None,
-                    data: NoAdditionalFields, // Use NoAdditionalFields instead of deprecated HashMap
+                    data: NoAdditionalFields,
                     melt_options: melt_quote.options,
-                },
-            ))),
+                }),
+            )),
         }
     }
 }

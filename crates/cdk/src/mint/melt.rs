@@ -9,7 +9,7 @@ use cdk_common::payment::{
     OutgoingPaymentOptions,
 };
 use cdk_common::quote_id::QuoteId;
-use cdk_common::{MeltOptions, MeltQuoteBolt12Request, MeltQuoteCustomRequest, NoAdditionalFields};
+use cdk_common::{MeltOptions, MeltQuoteBolt12Request, NoAdditionalFields, SimpleMeltQuoteRequest};
 #[cfg(feature = "prometheus")]
 use cdk_prometheus::METRICS;
 use lightning::offers::offer::Offer;
@@ -121,7 +121,9 @@ impl Mint {
             MeltQuoteRequest::Bolt12(bolt12_request) => {
                 self.get_melt_bolt12_quote_impl(&bolt12_request).await
             }
-            MeltQuoteRequest::Custom(request) => self.get_melt_custom_quote_impl(&request).await,
+            MeltQuoteRequest::Custom { method, request } => {
+                self.get_melt_custom_quote_impl(&request, &method).await
+            }
         }
     }
 
@@ -342,43 +344,37 @@ impl Mint {
     #[instrument(skip_all)]
     async fn get_melt_custom_quote_impl(
         &self,
-        melt_request: &MeltQuoteCustomRequest,
+        melt_request: &SimpleMeltQuoteRequest,
+        method: &str,
     ) -> Result<MeltQuoteBolt11Response<QuoteId>, Error> {
         #[cfg(feature = "prometheus")]
         METRICS.inc_in_flight_requests("get_melt_custom_quote");
 
-        let MeltQuoteCustomRequest {
-            request,
-            unit,
-            data,
-            method,
-        } = melt_request;
+        let SimpleMeltQuoteRequest { request, unit, .. } = melt_request;
 
         let ln = self
             .payment_processors
             .get(&PaymentProcessorKey::new(
                 unit.clone(),
-                PaymentMethod::from(method.as_str()),
+                PaymentMethod::from(method),
             ))
             .ok_or_else(|| {
                 tracing::info!("Could not get payment processor for {}, {} ", unit, method);
                 Error::UnsupportedUnit
             })?;
 
-        // Note: Ignoring deprecated HashMap data from MeltQuoteCustomRequest
-        // Custom payment methods should use the trait-based approach going forward
         let custom_options =
             OutgoingPaymentOptions::Custom(Box::new(CustomOutgoingPaymentOptions {
                 method: method.to_string(),
                 request: request.clone(),
                 max_fee_amount: None,
                 timeout_secs: None,
-                data: NoAdditionalFields, // Using NoAdditionalFields - deprecated HashMap data ignored
+                data: NoAdditionalFields,
                 melt_options: None,
             }));
 
         let payment_quote = ln
-            .get_payment_quote(&melt_request.unit, custom_options)
+            .get_payment_quote(unit, custom_options)
             .await
             .map_err(|err| {
                 tracing::error!(
@@ -401,14 +397,12 @@ impl Mint {
             return Err(Error::UnitMismatch);
         }
 
-        // For custom methods, we don't validate amount limits upfront since
-        // the payment processor handles method-specific validation
         self.check_melt_request_acceptable(
             payment_quote.amount,
             unit.clone(),
-            PaymentMethod::from(method.as_str()),
+            PaymentMethod::from(method),
             request.clone(),
-            None, // Custom methods don't use options
+            None,
         )
         .await?;
 
@@ -418,15 +412,14 @@ impl Mint {
             MeltPaymentRequest::Custom {
                 method: method.to_string(),
                 request: request.clone(),
-                data: data.clone(),
             },
             unit.clone(),
             payment_quote.amount,
             payment_quote.fee,
             unix_time() + melt_ttl,
             payment_quote.request_lookup_id.clone(),
-            None, // Custom methods don't use options
-            PaymentMethod::from(method.as_str()),
+            None,
+            PaymentMethod::from(method),
         );
 
         tracing::debug!(

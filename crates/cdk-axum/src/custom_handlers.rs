@@ -18,6 +18,7 @@ use cdk::nuts::{
     MintQuoteBolt12Response, MintRequest, MintResponse, SimpleMeltQuoteRequest,
     SimpleMintQuoteRequest, SimpleMintQuoteResponse,
 };
+use cdk_common::melt::MeltQuoteRequest;
 use serde_json::Value;
 use tracing::instrument;
 
@@ -266,9 +267,14 @@ pub async fn post_melt_custom_quote(
                     into_response(cdk::Error::InvalidPaymentMethod)
                 })?;
 
+            let melt_request = MeltQuoteRequest::Custom {
+                method: method.clone(),
+                request: custom_request,
+            };
+
             state
                 .mint
-                .get_melt_quote(custom_request.into())
+                .get_melt_quote(melt_request)
                 .await
                 .map_err(into_response)?
         }

@@ -199,19 +199,18 @@ impl Wallet {
             .await?;
         Ok(quote.into())
     }
-    /// Get a quote for a bolt12 mint
+    /// Get a quote for a custom payment method mint
     pub async fn mint_quote_unified(
         &self,
         amount: Option<Amount>,
-        request: Option<String>,
+        payment_method: String,
         description: Option<String>,
     ) -> Result<MintQuote, FfiError> {
         let quote = self
             .inner
             .mint_quote_unified(
                 amount.map(Into::into),
-                cdk::nuts::PaymentMethod::Custom("stripe".to_string()),
-                request.unwrap(),
+                cdk::nuts::PaymentMethod::Custom(payment_method),
                 description,
             )
             .await?;
@@ -271,9 +270,10 @@ impl Wallet {
         let quote = self.inner.melt_bolt12_quote(request, cdk_options).await?;
         Ok(quote.into())
     }
-    /// Get a quote for a bolt12 melt
+    /// Get a quote for a custom payment method melt
     pub async fn melt_quote_unified(
         &self,
+        payment_method: String,
         request: String,
         options: Option<MeltOptions>,
     ) -> Result<MeltQuote, FfiError> {
@@ -281,7 +281,7 @@ impl Wallet {
         let quote = self
             .inner
             .melt_quote_unified(
-                cdk::nuts::PaymentMethod::Custom("stripe".to_string()),
+                cdk::nuts::PaymentMethod::Custom(payment_method),
                 request,
                 cdk_options,
             )

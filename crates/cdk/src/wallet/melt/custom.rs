@@ -2,7 +2,9 @@ use cdk_common::wallet::MeltQuote;
 use cdk_common::PaymentMethod;
 use tracing::instrument;
 
-use crate::nuts::{MeltOptions, NoAdditionalFields, SimpleMeltQuoteRequest, SimpleMeltQuoteResponse};
+use crate::nuts::{
+    MeltOptions, NoAdditionalFields, SimpleMeltQuoteRequest, SimpleMeltQuoteResponse,
+};
 use crate::{Amount, Error, Wallet};
 
 impl Wallet {
@@ -23,7 +25,10 @@ impl Wallet {
             unit: self.unit.clone(),
             method_fields: NoAdditionalFields {},
         };
-        let quote_res = self.client.post_melt_custom_quote(method, quote_request).await?;
+        let quote_res = self
+            .client
+            .post_melt_custom_quote(method, quote_request)
+            .await?;
 
         let quote = MeltQuote {
             id: quote_res.quote,
@@ -33,7 +38,7 @@ impl Wallet {
             fee_reserve: Amount::ZERO, // SimpleMeltQuoteResponse doesn't include fee_reserve
             state: quote_res.state,
             expiry: quote_res.expiry, // expiry is now u64, not Option<u64>
-            payment_preimage: None, // SimpleMeltQuoteResponse doesn't include payment_preimage
+            payment_preimage: None,   // SimpleMeltQuoteResponse doesn't include payment_preimage
             payment_method: PaymentMethod::Custom(method.to_string()),
         };
 

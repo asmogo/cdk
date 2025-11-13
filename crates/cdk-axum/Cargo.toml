@@ -23,6 +23,7 @@ axum = { workspace = true, features = ["ws"] }
 cdk = { workspace = true, features = [
     "mint",
 ]}
+cdk-common = { workspace = true }
 tokio.workspace = true
 tracing.workspace = true
 utoipa = { workspace = true, optional = true }

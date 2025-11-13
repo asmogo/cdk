@@ -21,9 +21,9 @@ use crate::mint_url::MintUrl;
 use crate::nuts::nut22::MintAuthRequest;
 use crate::nuts::{
     AuthToken, CheckStateRequest, CheckStateResponse, Id, KeySet, KeysResponse, KeysetResponse,
-    MeltQuoteBolt11Request, MeltQuoteBolt11Response, MeltRequest, MintInfo,
-    MintQuoteBolt11Request, MintQuoteBolt11Response, MintRequest, MintResponse, RestoreRequest,
-    RestoreResponse, SimpleMeltQuoteRequest, SimpleMeltQuoteResponse, SimpleMintQuoteRequest,
+    MeltQuoteBolt11Request, MeltQuoteBolt11Response, MeltRequest, MintInfo, MintQuoteBolt11Request,
+    MintQuoteBolt11Response, MintRequest, MintResponse, RestoreRequest, RestoreResponse,
+    SimpleMeltQuoteRequest, SimpleMeltQuoteResponse, SimpleMintQuoteRequest,
     SimpleMintQuoteResponse, SwapRequest, SwapResponse,
 };
 #[cfg(feature = "auth")]
@@ -584,9 +584,7 @@ where
         method: &str,
         request: SimpleMeltQuoteRequest,
     ) -> Result<SimpleMeltQuoteResponse<String>, Error> {
-        let url = self
-            .mint_url
-            .join_paths(&["v1", "melt", "quote", method])?;
+        let url = self.mint_url.join_paths(&["v1", "melt", "quote", method])?;
 
         #[cfg(feature = "auth")]
         let auth_token = self

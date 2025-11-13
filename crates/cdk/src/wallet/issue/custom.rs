@@ -7,8 +7,8 @@ use crate::amount::SplitTarget;
 use crate::dhke::construct_proofs;
 use crate::nuts::nut00::ProofsMethods;
 use crate::nuts::{
-    nut12, MintRequest, NoAdditionalFields, PaymentMethod, PreMintSecrets,
-    SimpleMintQuoteRequest, SpendingConditions, State,
+    nut12, MintRequest, NoAdditionalFields, PaymentMethod, PreMintSecrets, SimpleMintQuoteRequest,
+    SpendingConditions, State,
 };
 use crate::types::ProofInfo;
 use crate::util::unix_time;
@@ -21,7 +21,6 @@ impl Wallet {
         &self,
         amount: Option<Amount>,
         method: &str,
-        request: String,
         description: Option<String>,
     ) -> Result<MintQuote, Error> {
         let mint_url = self.mint_url.clone();
@@ -61,7 +60,10 @@ impl Wallet {
             method_fields: NoAdditionalFields {},
         };
 
-        let quote_res = self.client.post_mint_custom_quote(method, mint_request).await?;
+        let quote_res = self
+            .client
+            .post_mint_custom_quote(method, mint_request)
+            .await?;
 
         let quote = MintQuote::new(
             quote_res.quote,
@@ -69,7 +71,7 @@ impl Wallet {
             PaymentMethod::Custom(method.to_string()),
             Some(amount),
             unit.clone(),
-            request,
+            quote_res.request,
             quote_res.expiry, // expiry is now u64, not Option<u64>
             Some(secret_key),
         );

@@ -749,8 +749,6 @@ pub enum MeltPaymentRequest {
         method: String,
         /// Payment request string
         request: String,
-        /// Method-specific data (flattened fields as HashMap)
-        data: std::collections::HashMap<String, serde_json::Value>,
     },
 }
 

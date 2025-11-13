@@ -10,8 +10,8 @@ use async_trait::async_trait;
 use bip39::Mnemonic;
 use cashu::quote_id::QuoteId;
 use cashu::{
-    MeltQuoteBolt12Request, SimpleMeltQuoteRequest, SimpleMeltQuoteResponse,
-    MintQuoteBolt12Request, MintQuoteBolt12Response, SimpleMintQuoteRequest,
+    MeltQuoteBolt12Request, MintQuoteBolt12Request, MintQuoteBolt12Response,
+    SimpleMeltQuoteRequest, SimpleMeltQuoteResponse, SimpleMintQuoteRequest,
     SimpleMintQuoteResponse,
 };
 use cdk::amount::SplitTarget;
@@ -213,6 +213,7 @@ impl MintConnector for DirectMintConnection {
     /// Mint Quote for Custom Payment Method
     async fn post_mint_custom_quote(
         &self,
+        _method: &str,
         _request: SimpleMintQuoteRequest,
     ) -> Result<SimpleMintQuoteResponse<String>, Error> {
         // Custom payment methods not implemented in test mock
@@ -222,6 +223,7 @@ impl MintConnector for DirectMintConnection {
     /// Melt Quote for Custom Payment Method
     async fn post_melt_custom_quote(
         &self,
+        _method: &str,
         _request: SimpleMeltQuoteRequest,
     ) -> Result<SimpleMeltQuoteResponse<String>, Error> {
         // Custom payment methods not implemented in test mock

@@ -24,8 +24,6 @@ jobs:
       - name: Get flake hash
         id: flake-hash
         run: echo "hash=$(sha256sum flake.lock | cut -d' ' -f1 | cut -c1-8)" >> $GITHUB_OUTPUT
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v17
       - name: Nix Cache
         uses: DeterminateSystems/magic-nix-cache-action@main
         with:
@@ -62,8 +60,6 @@ jobs:
       - name: Get flake hash
         id: flake-hash
         run: echo "hash=$(sha256sum flake.lock | cut -d' ' -f1 | cut -c1-8)" >> $GITHUB_OUTPUT
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v17
       - name: Nix Cache
         uses: DeterminateSystems/magic-nix-cache-action@main
         with:
@@ -163,8 +159,6 @@ jobs:
       - name: Get flake hash
         id: flake-hash
         run: echo "hash=$(sha256sum flake.lock | cut -d' ' -f1 | cut -c1-8)" >> $GITHUB_OUTPUT
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v17
       - name: Nix Cache
         uses: DeterminateSystems/magic-nix-cache-action@main
         with:
@@ -202,8 +196,6 @@ jobs:
       - name: Get flake hash
         id: flake-hash
         run: echo "hash=$(sha256sum flake.lock | cut -d' ' -f1 | cut -c1-8)" >> $GITHUB_OUTPUT
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v17
       - name: Nix Cache
         uses: DeterminateSystems/magic-nix-cache-action@main
         with:
@@ -238,8 +230,6 @@ jobs:
       - name: Get flake hash
         id: flake-hash
         run: echo "hash=$(sha256sum flake.lock | cut -d' ' -f1 | cut -c1-8)" >> $GITHUB_OUTPUT
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v17
       - name: Nix Cache
         uses: DeterminateSystems/magic-nix-cache-action@main
         with:
@@ -274,8 +264,6 @@ jobs:
       - name: Get flake hash
         id: flake-hash
         run: echo "hash=$(sha256sum flake.lock | cut -d' ' -f1 | cut -c1-8)" >> $GITHUB_OUTPUT
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v17
       - name: Nix Cache
         uses: DeterminateSystems/magic-nix-cache-action@main
         with:
@@ -313,8 +301,6 @@ jobs:
       - name: Get flake hash
         id: flake-hash
         run: echo "hash=$(sha256sum flake.lock | cut -d' ' -f1 | cut -c1-8)" >> $GITHUB_OUTPUT
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v17
       - name: Nix Cache
         uses: DeterminateSystems/magic-nix-cache-action@main
         with:
@@ -356,8 +342,6 @@ jobs:
       - name: Get flake hash
         id: flake-hash
         run: echo "hash=$(sha256sum flake.lock | cut -d' ' -f1 | cut -c1-8)" >> $GITHUB_OUTPUT
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v17
       - name: Nix Cache
         uses: DeterminateSystems/magic-nix-cache-action@main
         with:
@@ -394,8 +378,6 @@ jobs:
       - name: Get flake hash
         id: flake-hash
         run: echo "hash=$(sha256sum flake.lock | cut -d' ' -f1 | cut -c1-8)" >> $GITHUB_OUTPUT
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v17
       - name: Nix Cache
         uses: DeterminateSystems/magic-nix-cache-action@main
         with:
@@ -426,8 +408,6 @@ jobs:
       - name: Get flake hash
         id: flake-hash
         run: echo "hash=$(sha256sum flake.lock | cut -d' ' -f1 | cut -c1-8)" >> $GITHUB_OUTPUT
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v17
       - name: Nix Cache
         uses: DeterminateSystems/magic-nix-cache-action@main
         with:
@@ -462,8 +442,6 @@ jobs:
       - name: Get flake hash
         id: flake-hash
         run: echo "hash=$(sha256sum flake.lock | cut -d' ' -f1 | cut -c1-8)" >> $GITHUB_OUTPUT
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v17
       - name: Nix Cache
         uses: DeterminateSystems/magic-nix-cache-action@main
         with:
@@ -487,8 +465,6 @@ jobs:
       - name: Get flake hash
         id: flake-hash
         run: echo "hash=$(sha256sum flake.lock | cut -d' ' -f1 | cut -c1-8)" >> $GITHUB_OUTPUT
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v17
       - name: Nix Cache
         uses: DeterminateSystems/magic-nix-cache-action@main
         with:

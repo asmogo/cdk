@@ -49,8 +49,6 @@ impl Wallet {
         request: String,
         options: Option<MeltOptions>,
     ) -> Result<MeltQuote, Error> {
-        self.refresh_keysets().await?;
-
         let invoice = Bolt11Invoice::from_str(&request)?;
 
         let quote_request = MeltQuoteBolt11Request::new(
@@ -244,10 +242,16 @@ impl Wallet {
         };
 
         let active_keys = self
-            .localstore
-            .get_keys(&active_keyset_id)
+            .metadata_cache
+            .load(&self.localstore, &self.client, {
+                let ttl = self.metadata_cache_ttl.read();
+                *ttl
+            })
             .await?
-            .ok_or(Error::NoActiveKeyset)?;
+            .keys
+            .get(&active_keyset_id)
+            .ok_or(Error::NoActiveKeyset)?
+            .clone();
 
         let change_proofs = match change {
             Some(change) => {
@@ -414,7 +418,7 @@ impl Wallet {
         let available_proofs = self.get_unspent_proofs().await?;
 
         let active_keyset_ids = self
-            .refresh_keysets()
+            .get_mint_keysets()
             .await?
             .into_iter()
             .map(|k| k.id)

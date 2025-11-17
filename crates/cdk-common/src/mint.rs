@@ -50,7 +50,7 @@ impl FromStr for OperationKind {
             "swap" => Ok(OperationKind::Swap),
             "mint" => Ok(OperationKind::Mint),
             "melt" => Ok(OperationKind::Melt),
-            _ => Err(Error::Custom(format!("Invalid operation kind: {}", value))),
+            _ => Err(Error::Custom(format!("Invalid operation kind: {value}"))),
         }
     }
 }
@@ -81,7 +81,7 @@ impl FromStr for SwapSagaState {
         match value.as_str() {
             "setup_complete" => Ok(SwapSagaState::SetupComplete),
             "signed" => Ok(SwapSagaState::Signed),
-            _ => Err(Error::Custom(format!("Invalid swap saga state: {}", value))),
+            _ => Err(Error::Custom(format!("Invalid swap saga state: {value}"))),
         }
     }
 }
@@ -280,7 +280,7 @@ impl Operation {
             "mint" => Ok(Self::Mint(uuid)),
             "melt" => Ok(Self::Melt(uuid)),
             "swap" => Ok(Self::Swap(uuid)),
-            _ => Err(Error::Custom(format!("Invalid operation kind: {}", kind))),
+            _ => Err(Error::Custom(format!("Invalid operation kind: {kind}"))),
         }
     }
 }

@@ -15,3 +15,8 @@ Cargo.lock
 nuts/
 logs/
 docs/CUSTOM_PAYMENT_METHODS_REFACTORING.md
+
+# Mutation testing artifacts
+mutants.out/
+mutants-*.log
+.mutants.lock

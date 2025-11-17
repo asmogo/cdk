@@ -7,14 +7,11 @@ use axum::response::{IntoResponse, Response};
 use cdk::error::{ErrorCode, ErrorResponse};
 #[cfg(feature = "auth")]
 use cdk::nuts::nut21::{Method, ProtectedEndpoint, RoutePath};
-use cdk::nuts::{
-    CheckStateRequest, CheckStateResponse, Id, KeysResponse, KeysetResponse, MintInfo,
-    RestoreRequest, RestoreResponse, SwapRequest, SwapResponse,
-};
+use cdk::nuts::{CheckStateRequest, CheckStateResponse, Id, KeysResponse, KeysetResponse, MeltQuoteBolt11Request, MeltQuoteBolt11Response, MeltRequest, MintInfo, MintRequest, MintResponse, RestoreRequest, RestoreResponse, SwapRequest, SwapResponse};
 use cdk::util::unix_time;
 use paste::paste;
 use tracing::instrument;
-
+use cdk::mint::QuoteId;
 #[cfg(feature = "auth")]
 use crate::auth::AuthHeader;
 use crate::ws::main_websocket;
@@ -261,7 +258,7 @@ pub(crate) async fn post_mint_bolt11(
             .mint
             .verify_auth(
                 auth.into(),
-                &ProtectedEndpoint::new(Method::Post, RoutePath::MintBolt11),
+                &ProtectedEndpoint::new(Method::Post, RoutePath::Mint("bolt11".to_owned())),
             )
             .await
             .map_err(into_response)?;
@@ -302,7 +299,7 @@ pub(crate) async fn post_melt_bolt11_quote(
             .mint
             .verify_auth(
                 auth.into(),
-                &ProtectedEndpoint::new(Method::Post, RoutePath::MeltQuoteBolt11),
+                &ProtectedEndpoint::new(Method::Post, RoutePath::Mint("bolt11".to_owned())),
             )
             .await
             .map_err(into_response)?;
@@ -344,7 +341,7 @@ pub(crate) async fn get_check_melt_bolt11_quote(
             .mint
             .verify_auth(
                 auth.into(),
-                &ProtectedEndpoint::new(Method::Get, RoutePath::MeltQuoteBolt11),
+                &ProtectedEndpoint::new(Method::Get, RoutePath::Mint("bolt11".to_owned())),
             )
             .await
             .map_err(into_response)?;
@@ -388,7 +385,7 @@ pub(crate) async fn post_melt_bolt11(
             .mint
             .verify_auth(
                 auth.into(),
-                &ProtectedEndpoint::new(Method::Post, RoutePath::MeltBolt11),
+                &ProtectedEndpoint::new(Method::Post, RoutePath::Mint("bolt11".to_owned())),
             )
             .await
             .map_err(into_response)?;

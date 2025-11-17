@@ -9,10 +9,7 @@ use cdk_common::payment::{
     OutgoingPaymentOptions,
 };
 use cdk_common::quote_id::QuoteId;
-use cdk_common::{
-    Bolt11Invoice, GenericMeltQuoteRequest, MeltOptions, MeltQuoteBolt12Request,
-    SpendingConditionVerification,
-};
+use cdk_common::{Bolt11Invoice, GenericMeltQuoteRequest, MeltOptions, MeltQuoteBolt12Request, MeltQuoteState, SpendingConditionVerification};
 #[cfg(feature = "prometheus")]
 use cdk_prometheus::METRICS;
 use lightning::offers::offer::Offer;
@@ -647,17 +644,10 @@ impl Mint {
         debug_assert!(quote.state == MeltQuoteState::Pending);
 
         // Return immediately with the quote in PENDING state
-        Ok(MeltQuoteBolt11Response {
-            quote: quote_id,
-            amount: quote.amount,
+        Ok(MeltQuoteBolt11Response::new(quote_id, quote.amount, quote.unit, quote.state, quote.expiry, crate::nuts::Bolt11MeltResponseFields {
             fee_reserve: quote.fee_reserve,
-            state: quote.state,
-            paid: Some(false),
-            expiry: quote.expiry,
-            payment_preimage: None,
+            payment_preimage: quote.payment_preimage,
             change: None,
-            request: Some(quote.request.to_string()),
-            unit: Some(quote.unit),
-        })
+        }))
     }
 }

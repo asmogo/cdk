@@ -3,8 +3,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use super::payment_method::{
-    MeltQuoteMethodFields, MeltQuoteResponseFields, MintQuoteMethodFields,
-    MintQuoteResponseFields,
+    MeltQuoteMethodFields, MeltQuoteResponseFields, MintQuoteMethodFields, MintQuoteResponseFields,
 };
 use super::{MeltOptions, PublicKey};
 use crate::Amount;
@@ -262,7 +261,7 @@ mod tests {
         let invalid_response = Bolt12MintResponseFields {
             pubkey,
             amount_paid: Amount::from(900u64),
-            amount_issued: Amount::from(1000u64),  // More than paid!
+            amount_issued: Amount::from(1000u64), // More than paid!
         };
         assert!(MintQuoteResponseFields::validate(&invalid_response).is_err());
 

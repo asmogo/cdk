@@ -559,7 +559,9 @@ mod tests {
 
 // Add From implementation for QuoteId -> String conversion
 #[cfg(feature = "mint")]
-impl<M: MintQuoteResponseFields + Clone> From<MintQuoteResponse<QuoteId, M>> for MintQuoteResponse<String, M> {
+impl<M: MintQuoteResponseFields + Clone> From<MintQuoteResponse<QuoteId, M>>
+    for MintQuoteResponse<String, M>
+{
     fn from(value: MintQuoteResponse<QuoteId, M>) -> Self {
         value.to_string_id()
     }

@@ -81,8 +81,8 @@ pub use nut25::{
     MintQuoteBolt12Response,
 };
 pub use nut_custom::{
-    NoAdditionalFields, SimpleMeltQuoteRequest, SimpleMeltQuoteResponse, SimpleMintQuoteRequest,
-    SimpleMintQuoteResponse,
+    GenericMeltQuoteRequest, GenericMeltQuoteResponse, GenericMintQuoteRequest,
+    GenericMintQuoteResponse, NoAdditionalFields,
 };
 pub use payment_method::{
     IncomingPaymentMethodData, MeltQuoteMethodFields, MeltQuoteResponseFields,

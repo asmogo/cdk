@@ -9,9 +9,7 @@
 //! [`MintQuoteResponseFields`] traits on your own types, then use the generic
 //! [`MintQuoteRequest`] and [`MintQuoteResponse`] types from [`crate::nuts::nut04`].
 //!
-//! For simple custom methods that don't need additional fields, use the type aliases:
-//! - [`SimpleMintQuoteRequest`] - Request with no additional fields
-//! - [`SimpleMintQuoteResponse`] - Response with no additional fields
+//! For custom methods that don't need additional fields, pass an empty map for the method data.
 //!
 //! ## Field Naming Conventions
 //!
@@ -23,6 +21,7 @@
 use super::payment_method::{
     MeltQuoteMethodFields, MeltQuoteResponseFields, MintQuoteMethodFields, MintQuoteResponseFields,
 };
+use serde_json::{Map as JsonMap, Value as JsonValue};
 
 /// Zero-sized marker type for custom payment methods that don't require additional fields
 ///
@@ -80,48 +79,73 @@ impl MeltQuoteResponseFields for NoAdditionalFields {
     }
 }
 
-/// Type alias for simple custom mint quote requests with no additional fields
+impl MintQuoteMethodFields for JsonMap<String, JsonValue> {
+    fn validate(&self) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+impl MintQuoteResponseFields for JsonMap<String, JsonValue> {
+    fn validate(&self) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+impl MeltQuoteMethodFields for JsonMap<String, JsonValue> {
+    fn validate(&self) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+impl MeltQuoteResponseFields for JsonMap<String, JsonValue> {
+    fn validate(&self) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+/// Type alias for generic custom mint quote requests with arbitrary flattened fields
 ///
-/// This is a convenience type alias for [`MintQuoteRequest`] with [`NoAdditionalFields`].
-/// Use this for custom payment methods that don't require any method-specific fields
-/// beyond the standard NUT-04 fields.
+/// This is a convenience type alias for [`MintQuoteRequest`] with a [`serde_json::Map`]
+/// providing method-specific data that is flattened into the top-level JSON object.
 ///
 /// ## Example
 ///
 /// ```rust,ignore
 /// use crate::nuts::nut04::MintQuoteRequest;
-/// use crate::nuts::nut_custom::SimpleMintQuoteRequest;
+/// use crate::nuts::nut_custom::GenericMintQuoteRequest;
 /// use crate::nuts::CurrencyUnit;
 /// use crate::Amount;
+/// use serde_json::json;
 ///
-/// let request = SimpleMintQuoteRequest::new(
+/// let mut data = serde_json::Map::new();
+/// data.insert("description".to_string(), json!("Payment"));
+/// let request = GenericMintQuoteRequest::new(
 ///     Amount::from(1000),
 ///     CurrencyUnit::Sat,
-///     NoAdditionalFields,
+///     data,
 /// );
 /// ```
-pub type SimpleMintQuoteRequest = crate::nuts::nut04::MintQuoteRequest<NoAdditionalFields>;
+pub type GenericMintQuoteRequest = crate::nuts::nut04::MintQuoteRequest<JsonMap<String, JsonValue>>;
 
-/// Type alias for simple custom mint quote responses with no additional fields
+/// Type alias for generic custom mint quote responses with arbitrary flattened fields
 ///
-/// This is a convenience type alias for [`MintQuoteResponse`] with [`NoAdditionalFields`].
-/// Use this for custom payment methods that don't require any method-specific fields
-/// beyond the standard NUT-04 fields.
-pub type SimpleMintQuoteResponse<Q> = crate::nuts::nut04::MintQuoteResponse<Q, NoAdditionalFields>;
+/// This is a convenience type alias for [`MintQuoteResponse`] with a [`serde_json::Map`]
+/// providing method-specific data that is flattened into the top-level JSON object.
+pub type GenericMintQuoteResponse<Q> =
+    crate::nuts::nut04::MintQuoteResponse<Q, JsonMap<String, JsonValue>>;
 
-/// Type alias for simple custom melt quote requests with no additional fields
+/// Type alias for generic custom melt quote requests with arbitrary flattened fields
 ///
-/// This is a convenience type alias for [`MeltQuoteRequest`] with [`NoAdditionalFields`].
-/// Use this for custom payment methods that don't require any method-specific fields
-/// beyond the standard NUT-05 fields.
-pub type SimpleMeltQuoteRequest = crate::nuts::nut05::MeltQuoteRequest<NoAdditionalFields>;
+/// This is a convenience type alias for [`MeltQuoteRequest`] with a [`serde_json::Map`]
+/// providing method-specific data that is flattened into the top-level JSON object.
+pub type GenericMeltQuoteRequest = crate::nuts::nut05::MeltQuoteRequest<JsonMap<String, JsonValue>>;
 
-/// Type alias for simple custom melt quote responses with no additional fields
+/// Type alias for generic custom melt quote responses with arbitrary flattened fields
 ///
-/// This is a convenience type alias for [`MeltQuoteResponse`] with [`NoAdditionalFields`].
-/// Use this for custom payment methods that don't require any method-specific fields
-/// beyond the standard NUT-05 fields.
-pub type SimpleMeltQuoteResponse<Q> = crate::nuts::nut05::MeltQuoteResponse<Q, NoAdditionalFields>;
+/// This is a convenience type alias for [`MeltQuoteResponse`] with a [`serde_json::Map`]
+/// providing method-specific data that is flattened into the top-level JSON object.
+pub type GenericMeltQuoteResponse<Q> =
+    crate::nuts::nut05::MeltQuoteResponse<Q, JsonMap<String, JsonValue>>;
 
 #[cfg(test)]
 mod tests {
@@ -130,22 +154,30 @@ mod tests {
     use crate::Amount;
 
     #[test]
-    fn test_simple_mint_quote_request() {
-        let request =
-            SimpleMintQuoteRequest::new(Amount::from(1000), CurrencyUnit::Sat, NoAdditionalFields);
+    fn test_generic_mint_quote_request() {
+        let mut data = JsonMap::new();
+        data.insert(
+            "description".to_string(),
+            JsonValue::String("Test".to_string()),
+        );
+        let request = GenericMintQuoteRequest::new(Amount::from(1000), CurrencyUnit::Sat, data);
         assert_eq!(request.amount, Amount::from(1000));
         assert_eq!(request.unit, CurrencyUnit::Sat);
+        assert!(request.method_fields.contains_key("description"));
     }
 
     #[test]
-    fn test_simple_melt_quote_request() {
-        let request = SimpleMeltQuoteRequest::new(
+    fn test_generic_melt_quote_request() {
+        let mut data = JsonMap::new();
+        data.insert("memo".to_string(), JsonValue::String("Test".to_string()));
+        let request = GenericMeltQuoteRequest::new(
             "custom://payment/123".to_string(),
             CurrencyUnit::Sat,
-            NoAdditionalFields,
+            data,
         );
         assert_eq!(request.request, "custom://payment/123");
         assert_eq!(request.unit, CurrencyUnit::Sat);
+        assert!(request.method_fields.contains_key("memo"));
     }
 
     #[test]

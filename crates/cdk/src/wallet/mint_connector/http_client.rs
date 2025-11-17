@@ -20,12 +20,13 @@ use crate::mint_url::MintUrl;
 #[cfg(feature = "auth")]
 use crate::nuts::nut22::MintAuthRequest;
 use crate::nuts::{
-    AuthToken, CheckStateRequest, CheckStateResponse, Id, KeySet, KeysResponse, KeysetResponse,
-    MeltQuoteBolt11Request, MeltQuoteBolt11Response, MeltRequest, MintInfo, MintQuoteBolt11Request,
-    MintQuoteBolt11Response, MintRequest, MintResponse, RestoreRequest, RestoreResponse,
-    SimpleMeltQuoteRequest, SimpleMeltQuoteResponse, SimpleMintQuoteRequest,
-    SimpleMintQuoteResponse, SwapRequest, SwapResponse,
+    AuthToken, CheckStateRequest, CheckStateResponse, GenericMeltQuoteRequest,
+    GenericMeltQuoteResponse, GenericMintQuoteRequest, GenericMintQuoteResponse, Id, KeySet,
+    KeysResponse, KeysetResponse, MeltQuoteBolt11Request, MeltQuoteBolt11Response, MeltRequest,
+    MintInfo, MintQuoteBolt11Request, MintQuoteBolt11Response, MintRequest, MintResponse,
+    RestoreRequest, RestoreResponse, SwapRequest, SwapResponse,
 };
+
 #[cfg(feature = "auth")]
 use crate::wallet::auth::{AuthMintConnector, AuthWallet};
 
@@ -561,8 +562,8 @@ where
     async fn post_mint_custom_quote(
         &self,
         method: &str,
-        request: SimpleMintQuoteRequest,
-    ) -> Result<SimpleMintQuoteResponse<String>, Error> {
+        request: GenericMintQuoteRequest,
+    ) -> Result<GenericMintQuoteResponse<String>, Error> {
         let url = self.mint_url.join_paths(&["v1", "mint", "quote", method])?;
 
         #[cfg(feature = "auth")]
@@ -582,8 +583,8 @@ where
     async fn post_melt_custom_quote(
         &self,
         method: &str,
-        request: SimpleMeltQuoteRequest,
-    ) -> Result<SimpleMeltQuoteResponse<String>, Error> {
+        request: GenericMeltQuoteRequest,
+    ) -> Result<GenericMeltQuoteResponse<String>, Error> {
         let url = self.mint_url.join_paths(&["v1", "melt", "quote", method])?;
 
         #[cfg(feature = "auth")]
@@ -603,7 +604,7 @@ where
         &self,
         method: &str,
         quote_id: &str,
-    ) -> Result<SimpleMintQuoteResponse<String>, Error> {
+    ) -> Result<GenericMintQuoteResponse<String>, Error> {
         let url = self
             .mint_url
             .join_paths(&["v1", "mint", "quote", method, quote_id])?;
@@ -624,7 +625,7 @@ where
         &self,
         method: &str,
         quote_id: &str,
-    ) -> Result<SimpleMeltQuoteResponse<String>, Error> {
+    ) -> Result<GenericMeltQuoteResponse<String>, Error> {
         let url = self
             .mint_url
             .join_paths(&["v1", "melt", "quote", method, quote_id])?;
@@ -645,7 +646,7 @@ where
         &self,
         method: String,
         request: MeltRequest<String>,
-    ) -> Result<SimpleMeltQuoteResponse<String>, Error> {
+    ) -> Result<GenericMeltQuoteResponse<String>, Error> {
         #[cfg(feature = "auth")]
         let auth_token = self
             .get_auth_token(Method::Post, RoutePath::Melt(method.clone()))

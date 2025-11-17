@@ -137,7 +137,7 @@ impl From<cdk::nuts::MintQuoteBolt11Response<String>> for MintQuoteBolt11Respons
             request: response.request,
             state: response.state.into(),
             expiry: Some(response.expiry),
-            amount: Some(response.amount.into()),  // amount is at top level in MintQuoteResponse
+            amount: Some(response.amount.into()), // amount is at top level in MintQuoteResponse
             unit: Some(response.unit.into()),
             pubkey: response.method_fields.pubkey.map(|p| p.to_string()),
         }
@@ -174,7 +174,7 @@ impl From<cdk::nuts::MeltQuoteBolt11Response<String>> for MeltQuoteBolt11Respons
             state: response.state.into(),
             expiry: response.expiry,
             payment_preimage: response.method_fields.payment_preimage,
-            request: None,  // MeltQuoteResponse doesn't have request field at top level
+            request: None, // MeltQuoteResponse doesn't have request field at top level
             unit: Some(response.unit.into()),
         }
     }

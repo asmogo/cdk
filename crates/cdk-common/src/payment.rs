@@ -6,6 +6,7 @@ use std::pin::Pin;
 use async_trait::async_trait;
 use cashu::util::hex;
 use cashu::{Bolt11Invoice, MeltOptions, NoAdditionalFields};
+use serde_json::{Map as JsonMap, Value as JsonValue};
 #[cfg(feature = "prometheus")]
 use cdk_prometheus::METRICS;
 use futures::Stream;
@@ -259,7 +260,7 @@ pub enum IncomingPaymentOptions {
     /// BOLT12 payment request options
     Bolt12(Box<Bolt12IncomingPaymentOptions>),
     /// Custom payment method options
-    Custom(Box<CustomIncomingPaymentOptions>),
+    Custom(Box<CustomIncomingPaymentOptions<JsonMap<String, JsonValue>>>),
 }
 
 /// Options for BOLT11 outgoing payments
@@ -378,7 +379,7 @@ pub enum OutgoingPaymentOptions {
     /// BOLT12 payment options
     Bolt12(Box<Bolt12OutgoingPaymentOptions>),
     /// Custom payment method options
-    Custom(Box<CustomOutgoingPaymentOptions>),
+    Custom(Box<CustomOutgoingPaymentOptions<JsonMap<String, JsonValue>>>),
 }
 
 impl TryFrom<crate::mint::MeltQuote> for OutgoingPaymentOptions {
@@ -416,7 +417,7 @@ impl TryFrom<crate::mint::MeltQuote> for OutgoingPaymentOptions {
                     request,
                     max_fee_amount: Some(melt_quote.fee_reserve),
                     timeout_secs: None,
-                    data: NoAdditionalFields,
+                    data: JsonMap::new(),
                     melt_options: melt_quote.options,
                 }),
             )),

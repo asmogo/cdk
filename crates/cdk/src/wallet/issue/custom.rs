@@ -1,14 +1,15 @@
 use cdk_common::nut04::MintMethodOptions;
 use cdk_common::wallet::{MintQuote, Transaction, TransactionDirection};
 use cdk_common::{Proofs, SecretKey};
+use serde_json::Map as JsonMap;
 use tracing::instrument;
 
 use crate::amount::SplitTarget;
 use crate::dhke::construct_proofs;
 use crate::nuts::nut00::ProofsMethods;
 use crate::nuts::{
-    nut12, MintRequest, NoAdditionalFields, PaymentMethod, PreMintSecrets, SimpleMintQuoteRequest,
-    SpendingConditions, State,
+    nut12, GenericMintQuoteRequest, MintRequest, PaymentMethod, PreMintSecrets, SpendingConditions,
+    State,
 };
 use crate::types::ProofInfo;
 use crate::util::unix_time;
@@ -51,13 +52,13 @@ impl Wallet {
 
         let amount = amount.ok_or(Error::AmountUndefined)?;
 
-        // Spec-compliant request with no additional fields
+        // Spec-compliant request using arbitrary method fields; currently empty map
         // Note: Method is specified in the URL path per NUT-05, not in request body
         // The 'request' parameter is stored locally and will be returned in the response
-        let mint_request = SimpleMintQuoteRequest {
+        let mint_request = GenericMintQuoteRequest {
             amount,
             unit: self.unit.clone(),
-            method_fields: NoAdditionalFields {},
+            method_fields: JsonMap::new(),
         };
 
         let quote_res = self

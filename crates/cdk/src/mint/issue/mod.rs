@@ -6,11 +6,12 @@ use cdk_common::payment::{
 use cdk_common::quote_id::QuoteId;
 use cdk_common::util::unix_time;
 use cdk_common::{
-    database, ensure_cdk, Amount, CurrencyUnit, Error, MintQuoteBolt11Request,
-    MintQuoteBolt11Response, MintQuoteBolt12Request, MintQuoteBolt12Response, MintQuoteState,
-    MintRequest, MintResponse, NoAdditionalFields, NotificationPayload, PaymentMethod, PublicKey,
-    SimpleMintQuoteRequest, SimpleMintQuoteResponse,
+    database, ensure_cdk, Amount, CurrencyUnit, Error, GenericMintQuoteRequest,
+    GenericMintQuoteResponse, MintQuoteBolt11Request, MintQuoteBolt11Response,
+    MintQuoteBolt12Request, MintQuoteBolt12Response, MintQuoteState, MintRequest, MintResponse,
+    NotificationPayload, PaymentMethod, PublicKey,
 };
+
 #[cfg(feature = "prometheus")]
 use cdk_prometheus::METRICS;
 use tracing::instrument;
@@ -36,7 +37,7 @@ pub enum MintQuoteRequest {
         /// Payment method name (e.g., "paypal", "venmo")
         method: String,
         /// Generic request data
-        request: SimpleMintQuoteRequest,
+        request: GenericMintQuoteRequest,
     },
 }
 
@@ -88,12 +89,12 @@ impl MintQuoteRequest {
     ///
     /// For Bolt11 requests, this returns the optional pubkey.
     /// For Bolt12 requests, this returns `Some(pubkey)` as the pubkey is required.
-    /// For Custom requests, this returns None (SimpleMintQuoteRequest doesn't support pubkey).
+    /// For Custom requests, this returns None (generic requests don't support pubkey).
     pub fn pubkey(&self) -> Option<PublicKey> {
         match self {
             MintQuoteRequest::Bolt11(request) => request.method_fields.pubkey,
             MintQuoteRequest::Bolt12(request) => Some(request.method_fields.pubkey),
-            MintQuoteRequest::Custom { .. } => None, // SimpleMintQuoteRequest doesn't support pubkey
+            MintQuoteRequest::Custom { .. } => None,
         }
     }
 }
@@ -113,7 +114,7 @@ pub enum MintQuoteResponse {
         /// Payment method name
         method: String,
         /// Generic response data
-        response: SimpleMintQuoteResponse<QuoteId>,
+        response: GenericMintQuoteResponse<QuoteId>,
     },
 }
 
@@ -151,7 +152,7 @@ impl TryFrom<MintQuote> for MintQuoteResponse {
             Ok(MintQuoteResponse::Bolt12(bolt12_response))
         } else {
             let method = quote.payment_method.to_string();
-            let custom_response = SimpleMintQuoteResponse::from(quote);
+            let custom_response = GenericMintQuoteResponse::from(quote);
             Ok(MintQuoteResponse::Custom {
                 method,
                 response: custom_response,
@@ -310,9 +311,9 @@ impl Mint {
 
                     let custom_options = CustomIncomingPaymentOptions {
                         method,
-                        description: None, // SimpleMintQuoteRequest doesn't support description
+                        description: None,
                         amount: request.amount,
-                        data: NoAdditionalFields, // SimpleMintQuoteRequest doesn't support additional data
+                        data: request.method_fields.clone(),
                         unix_expiry: Some(quote_expiry),
                     };
 

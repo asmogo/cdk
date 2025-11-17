@@ -9,10 +9,14 @@ use cdk_common::payment::{
     OutgoingPaymentOptions,
 };
 use cdk_common::quote_id::QuoteId;
-use cdk_common::{Bolt11Invoice, MeltOptions, MeltQuoteBolt12Request, NoAdditionalFields, SimpleMeltQuoteRequest};
+use cdk_common::{
+    Bolt11Invoice, GenericMeltQuoteRequest, MeltOptions,
+    MeltQuoteBolt12Request,
+};
 #[cfg(feature = "prometheus")]
 use cdk_prometheus::METRICS;
 use lightning::offers::offer::Offer;
+use serde_json::Map as JsonMap;
 use tracing::instrument;
 
 use super::{
@@ -20,7 +24,6 @@ use super::{
     PaymentMethod,
 };
 use crate::amount::to_unit;
-use crate::nuts::MeltQuoteState;
 use crate::types::PaymentProcessorKey;
 use crate::util::unix_time;
 use crate::{ensure_cdk, Amount, Error};
@@ -153,7 +156,7 @@ impl Mint {
 
         let invoice = Bolt11Invoice::from_str(&melt_request.request)
             .map_err(|_| Error::InvalidPaymentRequest)?;
-        
+
         let bolt11 = Bolt11OutgoingPaymentOptions {
             bolt11: invoice.clone(),
             max_fee_amount: None,
@@ -342,13 +345,13 @@ impl Mint {
     #[instrument(skip_all)]
     async fn get_melt_custom_quote_impl(
         &self,
-        melt_request: &SimpleMeltQuoteRequest,
+        melt_request: &GenericMeltQuoteRequest,
         method: &str,
     ) -> Result<MeltQuoteBolt11Response<QuoteId>, Error> {
         #[cfg(feature = "prometheus")]
         METRICS.inc_in_flight_requests("get_melt_custom_quote");
 
-        let SimpleMeltQuoteRequest { request, unit, .. } = melt_request;
+        let GenericMeltQuoteRequest { request, unit, .. } = melt_request;
 
         let ln = self
             .payment_processors
@@ -367,7 +370,7 @@ impl Mint {
                 request: request.clone(),
                 max_fee_amount: None,
                 timeout_secs: None,
-                data: NoAdditionalFields,
+                data: JsonMap::new(),
                 melt_options: None,
             }));
 

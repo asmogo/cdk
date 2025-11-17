@@ -8,8 +8,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use super::payment_method::{
-    MeltQuoteMethodFields, MeltQuoteResponseFields, MintQuoteMethodFields,
-    MintQuoteResponseFields,
+    MeltQuoteMethodFields, MeltQuoteResponseFields, MintQuoteMethodFields, MintQuoteResponseFields,
 };
 use super::{BlindSignature, Mpp, PublicKey};
 use crate::Amount;
@@ -145,9 +144,9 @@ impl MeltQuoteBolt11Request {
     /// in the request for an amountless bolt11 or in MPP option.
     pub fn amount_msat(&self) -> Result<Amount, Error> {
         // Parse the invoice from the request string
-        let invoice = Bolt11Invoice::from_str(&self.request)
-            .map_err(|_| Error::InvalidAmountRequest)?;
-        
+        let invoice =
+            Bolt11Invoice::from_str(&self.request).map_err(|_| Error::InvalidAmountRequest)?;
+
         match &self.method_fields.options {
             None => Ok(invoice
                 .amount_milli_satoshis()
@@ -366,13 +365,13 @@ mod tests {
     fn test_bolt11_melt_request_fields_serialization() {
         // Test that Bolt11MeltRequestFields serializes correctly
         let request_str = "lnbc100n1pnvpufspp5djn8hrq49r8cghwye9kqw752qjncwyfnrprhprpqk43mwcy4yfsqdq5g9kxy7fqd9h8vmmfvdjscqzzsxqyz5vqsp5uhpjt36rj75pl7jq2sshaukzfkt7uulj456s4mh7uy7l6vx7lvxs9qxpqysgqedwz08acmqwtk8g4vkwm2w78suwt2qyzz6jkkwcgrjm3r3hs6fskyhvud4fan3keru7emjm8ygqpcrwtlmhfjfmer3afs5hhwamgr4cqtactdq".to_string();
-        
+
         let mpp_options = Some(MeltOptions::Mpp {
             mpp: Mpp {
                 amount: Amount::from(1000u64),
             },
         });
-        
+
         // New generic type with MPP
         let new_request = MeltQuoteRequest::new(
             request_str.clone(),
@@ -383,13 +382,13 @@ mod tests {
         );
 
         let json = serde_json::to_value(&new_request).unwrap();
-        
+
         // Verify all required fields are present
         assert_eq!(json["unit"], "sat");
         assert_eq!(json["request"], request_str);
         // With flatten, the MPP fields are at top level
         assert_eq!(json["mpp"]["amount"], 1000);
-        
+
         // Test deserialization round-trip
         let deserialized: MeltQuoteRequest<Bolt11MeltRequestFields> =
             serde_json::from_value(json).unwrap();

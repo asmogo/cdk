@@ -125,13 +125,13 @@ impl MintPayment for PaymentProcessorClient {
         let mut inner = self.inner.clone();
 
         let proto_options = match options {
-            // todo -- add support for custom options in payment processor
             CdkIncomingPaymentOptions::Custom(opts) => IncomingPaymentOptions {
-                options: Some(super::incoming_payment_options::Options::Bolt11(
-                    super::Bolt11IncomingPaymentOptions {
+                options: Some(super::incoming_payment_options::Options::Custom(
+                    super::CustomIncomingPaymentOptions {
                         description: opts.description,
-                        amount: opts.amount.into(),
+                        amount: Some(opts.amount.into()),
                         unix_expiry: opts.unix_expiry,
+                        data: Some(serde_json::to_string(&opts.data).unwrap_or_default()),
                     },
                 )),
             },
@@ -204,12 +204,20 @@ impl MintPayment for PaymentProcessorClient {
             cdk_common::payment::OutgoingPaymentOptions::Bolt12(opts) => opts.melt_options,
         };
 
+        let proto_data = match &options {
+            cdk_common::payment::OutgoingPaymentOptions::Custom(opts) => {
+                Some(serde_json::to_string(&opts.data).unwrap_or_default())
+            }
+            _ => None,
+        };
+
         let response = inner
             .get_payment_quote(Request::new(PaymentQuoteRequest {
                 request: proto_request,
                 unit: unit.to_string(),
                 options: proto_options.map(Into::into),
                 request_type: request_type.into(),
+                data: proto_data,
             }))
             .await
             .map_err(|err| {
@@ -237,6 +245,7 @@ impl MintPayment for PaymentProcessorClient {
                             max_fee_amount: opts.max_fee_amount.map(Into::into),
                             timeout_secs: opts.timeout_secs,
                             melt_options: opts.melt_options.map(Into::into),
+                            data: Some(serde_json::to_string(&opts.data).unwrap_or_default()),
                         },
                     )),
                 }

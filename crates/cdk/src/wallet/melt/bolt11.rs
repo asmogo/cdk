@@ -10,8 +10,8 @@ use tracing::instrument;
 use crate::amount::to_unit;
 use crate::dhke::construct_proofs;
 use crate::nuts::{
-    CurrencyUnit, MeltOptions, MeltQuoteBolt11Request, MeltQuoteBolt11Response, MeltRequest,
-    PreMintSecrets, Proofs, ProofsMethods, SimpleMeltQuoteResponse, State,
+    CurrencyUnit, GenericMeltQuoteResponse, MeltOptions, MeltQuoteBolt11Request,
+    MeltQuoteBolt11Response, MeltRequest, PreMintSecrets, Proofs, ProofsMethods, State,
 };
 use crate::types::{Melted, ProofInfo};
 use crate::util::unix_time;
@@ -199,7 +199,7 @@ impl Wallet {
 
         enum MeltResponseWrapper {
             Bolt11(MeltQuoteBolt11Response<String>),
-            Custom(SimpleMeltQuoteResponse<String>),
+            Custom(GenericMeltQuoteResponse<String>),
         }
 
         let melt_response_wrapper = match &quote_info.payment_method {

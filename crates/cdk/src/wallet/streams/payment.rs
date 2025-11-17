@@ -154,7 +154,8 @@ impl<'a> PaymentStream<'a> {
                                 }
                             }
                             NotificationPayload::MintQuoteBolt12Response(info) => {
-                                let to_be_issued = info.method_fields.amount_paid - info.method_fields.amount_issued;
+                                let to_be_issued = info.method_fields.amount_paid
+                                    - info.method_fields.amount_issued;
                                 if to_be_issued > Amount::ZERO {
                                     return Poll::Ready(Some(Ok((info.quote, Some(to_be_issued)))));
                                 }

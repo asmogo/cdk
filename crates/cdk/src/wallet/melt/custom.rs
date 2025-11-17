@@ -3,7 +3,7 @@ use cdk_common::PaymentMethod;
 use tracing::instrument;
 
 use crate::nuts::{
-    MeltOptions, NoAdditionalFields, SimpleMeltQuoteRequest, SimpleMeltQuoteResponse,
+    GenericMeltQuoteRequest, GenericMeltQuoteResponse, MeltOptions,
 };
 use crate::{Amount, Error, Wallet};
 
@@ -20,10 +20,10 @@ impl Wallet {
 
         // Spec-compliant request with no additional fields
         // Note: Method is specified in the URL path per NUT-05, not in request body
-        let quote_request = SimpleMeltQuoteRequest {
+        let quote_request = GenericMeltQuoteRequest {
             request: request.clone(),
             unit: self.unit.clone(),
-            method_fields: NoAdditionalFields {},
+            method_fields: serde_json::Map::new(),
         };
         let quote_res = self
             .client
@@ -35,10 +35,10 @@ impl Wallet {
             amount: quote_res.amount,
             request,
             unit: self.unit.clone(),
-            fee_reserve: Amount::ZERO, // SimpleMeltQuoteResponse doesn't include fee_reserve
+            fee_reserve: Amount::ZERO,
             state: quote_res.state,
             expiry: quote_res.expiry, // expiry is now u64, not Option<u64>
-            payment_preimage: None,   // SimpleMeltQuoteResponse doesn't include payment_preimage
+            payment_preimage: None,
             payment_method: PaymentMethod::Custom(method.to_string()),
         };
 
@@ -53,7 +53,7 @@ impl Wallet {
         &self,
         method: &str,
         quote_id: &str,
-    ) -> Result<SimpleMeltQuoteResponse<String>, Error> {
+    ) -> Result<GenericMeltQuoteResponse<String>, Error> {
         let response = self
             .client
             .get_melt_custom_quote_status(method, quote_id)

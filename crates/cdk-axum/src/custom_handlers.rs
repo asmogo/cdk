@@ -13,11 +13,12 @@ use cdk::mint::QuoteId;
 #[cfg(feature = "auth")]
 use cdk::nuts::nut21::{Method, ProtectedEndpoint, RoutePath};
 use cdk::nuts::{
-    MeltQuoteBolt11Request, MeltQuoteBolt11Response, MeltQuoteBolt12Request,
-    MintQuoteBolt11Request, MintQuoteBolt11Response, MintQuoteBolt12Request,
-    MintQuoteBolt12Response, MintRequest, MintResponse, SimpleMeltQuoteRequest,
-    SimpleMintQuoteRequest, SimpleMintQuoteResponse,
+    GenericMeltQuoteRequest, GenericMintQuoteRequest, MeltQuoteBolt11Request,
+    MeltQuoteBolt11Response, MeltQuoteBolt12Request, MintQuoteBolt11Request,
+    MintQuoteBolt11Response, MintQuoteBolt12Request, MintQuoteBolt12Response, MintRequest,
+    MintResponse,
 };
+
 use cdk_common::melt::MeltQuoteRequest;
 use serde_json::Value;
 use tracing::instrument;
@@ -88,7 +89,7 @@ pub async fn post_mint_custom_quote(
         }
         _ => {
             // Deserialize spec-compliant request with no additional fields
-            let custom_request: SimpleMintQuoteRequest =
+            let custom_request: GenericMintQuoteRequest =
                 serde_json::from_value(payload).map_err(|e| {
                     tracing::error!("Failed to parse custom mint quote request: {}", e);
                     into_response(cdk::Error::InvalidPaymentMethod)
@@ -108,17 +109,7 @@ pub async fn post_mint_custom_quote(
             // Return the spec-compliant response
             match response {
                 cdk::mint::MintQuoteResponse::Custom { response, .. } => {
-                    // Response should be SimpleMintQuoteResponse<QuoteId>
-                    let typed_response: SimpleMintQuoteResponse<QuoteId> =
-                        serde_json::from_value(serde_json::to_value(&response).map_err(|e| {
-                            tracing::error!("Failed to serialize custom response: {}", e);
-                            into_response(cdk::Error::InvalidPaymentMethod)
-                        })?)
-                        .map_err(|e| {
-                            tracing::error!("Failed to deserialize custom response: {}", e);
-                            into_response(cdk::Error::InvalidPaymentMethod)
-                        })?;
-                    Ok(Json(typed_response).into_response())
+                    Ok(Json(response).into_response())
                 }
                 _ => Err(into_response(cdk::Error::InvalidPaymentMethod)),
             }
@@ -259,9 +250,9 @@ pub async fn post_melt_custom_quote(
                 .map_err(into_response)?
         }
         _ => {
-            // Deserialize spec-compliant request with no additional fields
+            // Deserialize spec-compliant request with arbitrary method fields
             // Note: Method is in URL path per NUT-05, not in request body
-            let custom_request: SimpleMeltQuoteRequest =
+            let custom_request: GenericMeltQuoteRequest =
                 serde_json::from_value(payload).map_err(|e| {
                     tracing::error!("Failed to parse custom melt quote request: {}", e);
                     into_response(cdk::Error::InvalidPaymentMethod)

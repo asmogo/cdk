@@ -1,5 +1,8 @@
 //! Melt types
-use cashu::{MeltQuoteBolt11Request, MeltQuoteBolt12Request, SimpleMeltQuoteRequest};
+use cashu::{
+    GenericMeltQuoteRequest, MeltQuoteBolt11Request,
+    MeltQuoteBolt12Request,
+};
 
 /// Melt quote request enum for different types of quotes
 ///
@@ -19,7 +22,7 @@ pub enum MeltQuoteRequest {
         /// Payment method name (e.g., "paypal", "venmo")
         method: String,
         /// Generic request data
-        request: SimpleMeltQuoteRequest,
+        request: GenericMeltQuoteRequest,
     },
 }
 
@@ -35,6 +38,6 @@ impl From<MeltQuoteBolt12Request> for MeltQuoteRequest {
     }
 }
 
-// Note: SimpleMeltQuoteRequest cannot be directly converted to MeltQuoteRequest
+// Note: GenericMeltQuoteRequest cannot be directly converted to MeltQuoteRequest
 // because the method parameter is required and must come from the URL path (per NUT-05).
 // Handlers should construct MeltQuoteRequest::Custom manually with both method and request.

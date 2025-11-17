@@ -12,6 +12,7 @@ use cashu::{
 };
 use lightning::offers::offer::Offer;
 use serde::{Deserialize, Serialize};
+use serde_json::Map as JsonMap;
 use tracing::instrument;
 use uuid::Uuid;
 
@@ -621,7 +622,7 @@ impl From<MintQuote> for MintQuoteBolt11Response<QuoteId> {
     fn from(mint_quote: crate::mint::MintQuote) -> MintQuoteBolt11Response<QuoteId> {
         use cashu::nut04::MintQuoteResponse;
         use cashu::Bolt11MintResponseFields;
-        
+
         MintQuoteResponse::new(
             mint_quote.id.clone(),
             mint_quote.request.clone(),
@@ -640,7 +641,7 @@ impl From<MintQuote> for MintQuoteBolt11Response<String> {
     fn from(quote: MintQuote) -> Self {
         use cashu::nut04::MintQuoteResponse;
         use cashu::Bolt11MintResponseFields;
-        
+
         MintQuoteResponse::new(
             quote.id.to_string(),
             quote.request.clone(),
@@ -661,7 +662,7 @@ impl TryFrom<crate::mint::MintQuote> for MintQuoteBolt12Response<QuoteId> {
     fn try_from(mint_quote: crate::mint::MintQuote) -> Result<Self, Self::Error> {
         use cashu::nut04::MintQuoteResponse;
         use cashu::Bolt12MintResponseFields;
-        
+
         Ok(MintQuoteResponse::new(
             mint_quote.id.clone(),
             mint_quote.request.clone(),
@@ -684,7 +685,7 @@ impl TryFrom<MintQuote> for MintQuoteBolt12Response<String> {
     fn try_from(quote: MintQuote) -> Result<Self, Self::Error> {
         use cashu::nut04::MintQuoteResponse;
         use cashu::Bolt12MintResponseFields;
-        
+
         Ok(MintQuoteResponse::new(
             quote.id.to_string(),
             quote.request.clone(),
@@ -701,11 +702,10 @@ impl TryFrom<MintQuote> for MintQuoteBolt12Response<String> {
     }
 }
 
-impl From<crate::mint::MintQuote> for crate::nuts::SimpleMintQuoteResponse<QuoteId> {
+impl From<crate::mint::MintQuote> for crate::nuts::GenericMintQuoteResponse<QuoteId> {
     fn from(mint_quote: crate::mint::MintQuote) -> Self {
         use cashu::nut04::MintQuoteResponse;
-        use cashu::NoAdditionalFields;
-        
+
         MintQuoteResponse::new(
             mint_quote.id.clone(),
             mint_quote.request.clone(),
@@ -713,16 +713,15 @@ impl From<crate::mint::MintQuote> for crate::nuts::SimpleMintQuoteResponse<Quote
             mint_quote.unit.clone(),
             mint_quote.state(),
             mint_quote.expiry,
-            NoAdditionalFields {},
+            JsonMap::new(),
         )
     }
 }
 
-impl From<MintQuote> for crate::nuts::SimpleMintQuoteResponse<String> {
+impl From<MintQuote> for crate::nuts::GenericMintQuoteResponse<String> {
     fn from(quote: MintQuote) -> Self {
         use cashu::nut04::MintQuoteResponse;
-        use cashu::NoAdditionalFields;
-        
+
         MintQuoteResponse::new(
             quote.id.to_string(),
             quote.request.clone(),
@@ -730,7 +729,7 @@ impl From<MintQuote> for crate::nuts::SimpleMintQuoteResponse<String> {
             quote.unit.clone(),
             quote.state(),
             quote.expiry,
-            NoAdditionalFields {},
+            JsonMap::new(),
         )
     }
 }
@@ -739,7 +738,7 @@ impl From<&MeltQuote> for MeltQuoteBolt11Response<QuoteId> {
     fn from(melt_quote: &MeltQuote) -> MeltQuoteBolt11Response<QuoteId> {
         use cashu::nut05::MeltQuoteResponse;
         use cashu::Bolt11MeltResponseFields;
-        
+
         MeltQuoteResponse::new(
             melt_quote.id.clone(),
             melt_quote.amount,
@@ -759,7 +758,7 @@ impl From<MeltQuote> for MeltQuoteBolt11Response<QuoteId> {
     fn from(melt_quote: MeltQuote) -> MeltQuoteBolt11Response<QuoteId> {
         use cashu::nut05::MeltQuoteResponse;
         use cashu::Bolt11MeltResponseFields;
-        
+
         MeltQuoteResponse::new(
             melt_quote.id.clone(),
             melt_quote.amount,

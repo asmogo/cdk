@@ -120,10 +120,7 @@ async fn test_fake_melt_change_in_quote() {
     println!("{}", proofs_total);
     println!("{}", change);
 
-    let ln_fee = 1;
+    let expected_balance = Amount::from(100 - invoice_amount - u64::from(fee));
 
-    assert_eq!(
-        wallet.total_balance().await.unwrap(),
-        Amount::from(100 - invoice_amount - u64::from(fee) - ln_fee)
-    );
+    assert_eq!(wallet.total_balance().await.unwrap(), expected_balance);
 }

@@ -2,9 +2,7 @@ use cdk_common::wallet::MeltQuote;
 use cdk_common::PaymentMethod;
 use tracing::instrument;
 
-use crate::nuts::{
-    GenericMeltQuoteRequest, GenericMeltQuoteResponse, MeltOptions,
-};
+use crate::nuts::{GenericMeltQuoteRequest, GenericMeltQuoteResponse, MeltOptions};
 use crate::{Amount, Error, Wallet};
 
 impl Wallet {

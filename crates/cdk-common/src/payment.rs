@@ -6,7 +6,6 @@ use std::pin::Pin;
 use async_trait::async_trait;
 use cashu::util::hex;
 use cashu::{Bolt11Invoice, MeltOptions, NoAdditionalFields};
-use serde_json::{Map as JsonMap, Value as JsonValue};
 #[cfg(feature = "prometheus")]
 use cdk_prometheus::METRICS;
 use futures::Stream;
@@ -14,6 +13,7 @@ use lightning::offers::offer::Offer;
 use lightning_invoice::ParseOrSemanticError;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use serde_json::{Map as JsonMap, Value as JsonValue};
 use thiserror::Error;
 
 use crate::mint::MeltPaymentRequest;

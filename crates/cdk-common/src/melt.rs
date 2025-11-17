@@ -1,8 +1,5 @@
 //! Melt types
-use cashu::{
-    GenericMeltQuoteRequest, MeltQuoteBolt11Request,
-    MeltQuoteBolt12Request,
-};
+use cashu::{GenericMeltQuoteRequest, MeltQuoteBolt11Request, MeltQuoteBolt12Request};
 
 /// Melt quote request enum for different types of quotes
 ///

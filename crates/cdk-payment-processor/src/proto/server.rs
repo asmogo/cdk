@@ -7,9 +7,9 @@ use std::time::Duration;
 
 use cdk_common::payment::{IncomingPaymentOptions, MintPayment};
 use cdk_common::CurrencyUnit;
-use serde_json::Map as JsonMap;
 use futures::{Stream, StreamExt};
 use lightning::offers::offer::Offer;
+use serde_json::Map as JsonMap;
 use tokio::sync::{mpsc, Notify};
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, Instant};

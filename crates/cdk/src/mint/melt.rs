@@ -9,10 +9,7 @@ use cdk_common::payment::{
     OutgoingPaymentOptions,
 };
 use cdk_common::quote_id::QuoteId;
-use cdk_common::{
-    Bolt11Invoice, GenericMeltQuoteRequest, MeltOptions,
-    MeltQuoteBolt12Request,
-};
+use cdk_common::{Bolt11Invoice, GenericMeltQuoteRequest, MeltOptions, MeltQuoteBolt12Request};
 #[cfg(feature = "prometheus")]
 use cdk_prometheus::METRICS;
 use lightning::offers::offer::Offer;

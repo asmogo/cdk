@@ -327,8 +327,8 @@ async fn test_regtest_bolt12_mint_extra() -> Result<()> {
 
     let state = wallet.mint_bolt12_quote_state(&mint_quote.id).await?;
 
-    assert_eq!(state.amount_paid, Amount::ZERO);
-    assert_eq!(state.amount_issued, Amount::ZERO);
+    assert_eq!(state.method_fields.amount_paid, Amount::ZERO);
+    assert_eq!(state.method_fields.amount_issued, Amount::ZERO);
 
     let active_keyset_id = wallet.fetch_active_keyset().await?.id;
 
@@ -348,9 +348,9 @@ async fn test_regtest_bolt12_mint_extra() -> Result<()> {
 
     let state = wallet.mint_bolt12_quote_state(&mint_quote.id).await?;
 
-    assert_eq!(payment, state.amount_paid);
-    assert_eq!(state.amount_paid, (pay_amount_msats / 1_000).into());
-    assert_eq!(state.amount_issued, Amount::ZERO);
+    assert_eq!(payment, state.method_fields.amount_paid);
+    assert_eq!(state.method_fields.amount_paid, (pay_amount_msats / 1_000).into());
+    assert_eq!(state.method_fields.amount_issued, Amount::ZERO);
 
     let fee_and_amounts = (0, ((0..32).map(|x| 2u64.pow(x)).collect::<Vec<_>>())).into();
 

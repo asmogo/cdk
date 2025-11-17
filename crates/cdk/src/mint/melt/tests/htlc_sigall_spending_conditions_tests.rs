@@ -5,13 +5,14 @@
 
 use std::str::FromStr;
 
-use crate::test_helpers::nut10::{
-    create_test_hash_and_preimage, create_test_keypair, unzip3, TestMintHelper,
-};
 use cdk_common::dhke::construct_proofs;
 use cdk_common::melt::MeltQuoteRequest;
 use cdk_common::nuts::{Conditions, SigFlag, SpendingConditions};
 use cdk_common::{Amount, Bolt11MeltRequestFields, SpendingConditionVerification};
+
+use crate::test_helpers::nut10::{
+    create_test_hash_and_preimage, create_test_keypair, unzip3, TestMintHelper,
+};
 
 /// Test: HTLC SIG_ALL requiring preimage and one signature
 ///

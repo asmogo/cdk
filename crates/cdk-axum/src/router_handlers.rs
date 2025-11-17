@@ -1,7 +1,3 @@
-#[cfg(feature = "auth")]
-use crate::auth::AuthHeader;
-use crate::ws::main_websocket;
-use crate::MintState;
 use anyhow::Result;
 use axum::extract::ws::WebSocketUpgrade;
 use axum::extract::{Json, Path, State};
@@ -11,12 +7,17 @@ use cdk::error::{ErrorCode, ErrorResponse};
 #[cfg(feature = "auth")]
 use cdk::nuts::nut21::{Method, ProtectedEndpoint, RoutePath};
 use cdk::nuts::{
-    CheckStateRequest, CheckStateResponse, Id, KeysResponse, KeysetResponse, MintInfo, RestoreRequest,
-    RestoreResponse, SwapRequest, SwapResponse,
+    CheckStateRequest, CheckStateResponse, Id, KeysResponse, KeysetResponse, MintInfo,
+    RestoreRequest, RestoreResponse, SwapRequest, SwapResponse,
 };
 use cdk::util::unix_time;
 use paste::paste;
 use tracing::instrument;
+
+#[cfg(feature = "auth")]
+use crate::auth::AuthHeader;
+use crate::ws::main_websocket;
+use crate::MintState;
 
 /// Macro to add cache to endpoint
 #[macro_export]

@@ -286,7 +286,7 @@ impl CdkPaymentProcessor for PaymentProcessorServer {
                     .data
                     .as_ref()
                     .and_then(|s| serde_json::from_str(s).ok())
-                    .unwrap_or_else(JsonMap::new);
+                    .unwrap_or_default();
 
                 cdk_common::payment::OutgoingPaymentOptions::Custom(Box::new(
                     cdk_common::payment::CustomOutgoingPaymentOptions {

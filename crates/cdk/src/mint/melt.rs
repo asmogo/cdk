@@ -158,7 +158,7 @@ impl Mint {
             bolt11: invoice.clone(),
             max_fee_amount: None,
             timeout_secs: None,
-            melt_options: options.clone(),
+            melt_options: *options,
         };
 
         let payment_quote = ln
@@ -208,7 +208,7 @@ impl Mint {
             payment_quote.fee,
             unix_time() + melt_ttl,
             payment_quote.request_lookup_id.clone(),
-            options.clone(),
+            *options,
             PaymentMethod::from("bolt11"),
         );
 

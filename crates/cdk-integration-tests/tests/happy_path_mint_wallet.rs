@@ -411,13 +411,13 @@ async fn test_fake_melt_change_in_quote() {
 
     let melt_response = client.post_melt(melt_request).await.unwrap();
 
-    assert!(melt_response.change.is_some());
+    assert!(melt_response.method_fields.change.is_some());
 
     let check = wallet.melt_quote_status(&melt_quote.id).await.unwrap();
-    let mut melt_change = melt_response.change.unwrap();
+    let mut melt_change = melt_response.method_fields.change.unwrap();
     melt_change.sort_by(|a, b| a.amount.cmp(&b.amount));
 
-    let mut check = check.change.unwrap();
+    let mut check = check.method_fields.change.unwrap();
     check.sort_by(|a, b| a.amount.cmp(&b.amount));
 
     assert_eq!(melt_change, check);

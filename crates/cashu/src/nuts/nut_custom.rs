@@ -7,7 +7,7 @@
 //!
 //! For custom payment methods, implement the [`MintQuoteMethodFields`] and
 //! [`MintQuoteResponseFields`] traits on your own types, then use the generic
-//! [`MintQuoteRequest`] and [`MintQuoteResponse`] types from [`crate::nuts::nut04`].
+//! [`MintQuoteRequest`](crate::nuts::nut04::MintQuoteRequest) and [`MintQuoteResponse`](crate::nuts::nut04::MintQuoteResponse) types from [`crate::nuts::nut04`].
 //!
 //! For custom methods that don't need additional fields, pass an empty map for the method data.
 //!
@@ -106,7 +106,7 @@ impl MeltQuoteResponseFields for JsonMap<String, JsonValue> {
 
 /// Type alias for generic custom mint quote requests with arbitrary flattened fields
 ///
-/// This is a convenience type alias for [`MintQuoteRequest`] with a [`serde_json::Map`]
+/// This is a convenience type alias for [`MintQuoteRequest`](crate::nuts::nut04::MintQuoteRequest) with a [`serde_json::Map`]
 /// providing method-specific data that is flattened into the top-level JSON object.
 ///
 /// ## Example
@@ -130,20 +130,20 @@ pub type GenericMintQuoteRequest = crate::nuts::nut04::MintQuoteRequest<JsonMap<
 
 /// Type alias for generic custom mint quote responses with arbitrary flattened fields
 ///
-/// This is a convenience type alias for [`MintQuoteResponse`] with a [`serde_json::Map`]
+/// This is a convenience type alias for [`MintQuoteResponse`](crate::nuts::nut04::MintQuoteResponse) with a [`serde_json::Map`]
 /// providing method-specific data that is flattened into the top-level JSON object.
 pub type GenericMintQuoteResponse<Q> =
     crate::nuts::nut04::MintQuoteResponse<Q, JsonMap<String, JsonValue>>;
 
 /// Type alias for generic custom melt quote requests with arbitrary flattened fields
 ///
-/// This is a convenience type alias for [`MeltQuoteRequest`] with a [`serde_json::Map`]
+/// This is a convenience type alias for [`MeltQuoteRequest`](crate::nuts::nut05::MeltQuoteRequest) with a [`serde_json::Map`]
 /// providing method-specific data that is flattened into the top-level JSON object.
 pub type GenericMeltQuoteRequest = crate::nuts::nut05::MeltQuoteRequest<JsonMap<String, JsonValue>>;
 
 /// Type alias for generic custom melt quote responses with arbitrary flattened fields
 ///
-/// This is a convenience type alias for [`MeltQuoteResponse`] with a [`serde_json::Map`]
+/// This is a convenience type alias for [`MeltQuoteResponse`](crate::nuts::nut05::MeltQuoteResponse) with a [`serde_json::Map`]
 /// providing method-specific data that is flattened into the top-level JSON object.
 pub type GenericMeltQuoteResponse<Q> =
     crate::nuts::nut05::MeltQuoteResponse<Q, JsonMap<String, JsonValue>>;

@@ -12,8 +12,7 @@ use futures::Stream;
 use lightning::offers::offer::Offer;
 use lightning_invoice::ParseOrSemanticError;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use serde_json::{Map as JsonMap, Value as JsonValue};
+use serde_json::{Map as JsonMap, Value, Value as JsonValue};
 use thiserror::Error;
 
 use crate::mint::MeltPaymentRequest;

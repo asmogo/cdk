@@ -18,7 +18,6 @@ use cdk::nuts::{
     MintQuoteBolt11Response, MintQuoteBolt12Request, MintQuoteBolt12Response, MintRequest,
     MintResponse,
 };
-
 use cdk_common::melt::MeltQuoteRequest;
 use serde_json::Value;
 use tracing::instrument;

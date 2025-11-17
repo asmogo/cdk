@@ -18,10 +18,11 @@
 //! - PayPal fields: `paypal_transaction_id`, `paypal_payer_email`, etc.
 //! - Venmo fields: `venmo_user_id`, `venmo_payment_url`, etc.
 
+use serde_json::{Map as JsonMap, Value as JsonValue};
+
 use super::payment_method::{
     MeltQuoteMethodFields, MeltQuoteResponseFields, MintQuoteMethodFields, MintQuoteResponseFields,
 };
-use serde_json::{Map as JsonMap, Value as JsonValue};
 
 /// Zero-sized marker type for custom payment methods that don't require additional fields
 ///

@@ -11,7 +11,6 @@ use cdk_common::{
     MintQuoteBolt12Request, MintQuoteBolt12Response, MintQuoteState, MintRequest, MintResponse,
     NotificationPayload, PaymentMethod, PublicKey,
 };
-
 #[cfg(feature = "prometheus")]
 use cdk_prometheus::METRICS;
 use tracing::instrument;

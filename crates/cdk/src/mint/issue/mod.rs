@@ -6,9 +6,9 @@ use cdk_common::payment::{
 use cdk_common::quote_id::QuoteId;
 use cdk_common::util::unix_time;
 use cdk_common::{
-    database, ensure_cdk, Amount, CurrencyUnit, Error, MintQuoteBolt11Request,
-    MintQuoteBolt11Response, MintQuoteBolt12Request, MintQuoteBolt12Response,
-    MintQuoteCustomRequest, MintQuoteCustomResponse, MintQuoteState, MintRequest, MintResponse,
+    database, ensure_cdk, Amount, CurrencyUnit, Error, GenericMintQuoteRequest,
+    GenericMintQuoteResponse, MintQuoteBolt11Request, MintQuoteBolt11Response,
+    MintQuoteBolt12Request, MintQuoteBolt12Response, MintQuoteState, MintRequest, MintResponse,
     NotificationPayload, PaymentMethod, PublicKey,
 };
 #[cfg(feature = "prometheus")]
@@ -36,7 +36,7 @@ pub enum MintQuoteRequest {
         /// Payment method name (e.g., "paypal", "venmo")
         method: String,
         /// Generic request data
-        request: MintQuoteCustomRequest,
+        request: GenericMintQuoteRequest,
     },
 }
 
@@ -61,7 +61,7 @@ impl MintQuoteRequest {
     pub fn amount(&self) -> Option<Amount> {
         match self {
             MintQuoteRequest::Bolt11(request) => Some(request.amount),
-            MintQuoteRequest::Bolt12(request) => request.amount,
+            MintQuoteRequest::Bolt12(request) => Some(request.amount),
             MintQuoteRequest::Custom { request, .. } => Some(request.amount),
         }
     }
@@ -88,12 +88,12 @@ impl MintQuoteRequest {
     ///
     /// For Bolt11 requests, this returns the optional pubkey.
     /// For Bolt12 requests, this returns `Some(pubkey)` as the pubkey is required.
-    /// For Custom requests, this returns the optional pubkey.
+    /// For Custom requests, this returns None (generic requests don't support pubkey).
     pub fn pubkey(&self) -> Option<PublicKey> {
         match self {
-            MintQuoteRequest::Bolt11(request) => request.pubkey,
-            MintQuoteRequest::Bolt12(request) => Some(request.pubkey),
-            MintQuoteRequest::Custom { request, .. } => request.pubkey,
+            MintQuoteRequest::Bolt11(request) => request.method_fields.pubkey,
+            MintQuoteRequest::Bolt12(request) => Some(request.method_fields.pubkey),
+            MintQuoteRequest::Custom { .. } => None,
         }
     }
 }
@@ -113,7 +113,7 @@ pub enum MintQuoteResponse {
         /// Payment method name
         method: String,
         /// Generic response data
-        response: MintQuoteCustomResponse<QuoteId>,
+        response: GenericMintQuoteResponse<QuoteId>,
     },
 }
 
@@ -151,7 +151,7 @@ impl TryFrom<MintQuote> for MintQuoteResponse {
             Ok(MintQuoteResponse::Bolt12(bolt12_response))
         } else {
             let method = quote.payment_method.to_string();
-            let custom_response = MintQuoteCustomResponse::try_from(quote)?;
+            let custom_response = GenericMintQuoteResponse::from(quote);
             Ok(MintQuoteResponse::Custom {
                 method,
                 response: custom_response,
@@ -163,15 +163,15 @@ impl TryFrom<MintQuote> for MintQuoteResponse {
 impl From<MintQuoteResponse> for MintQuoteBolt11Response<String> {
     fn from(response: MintQuoteResponse) -> Self {
         match response {
-            MintQuoteResponse::Bolt11(bolt11_response) => MintQuoteBolt11Response {
-                quote: bolt11_response.quote.to_string(),
-                state: bolt11_response.state,
-                request: bolt11_response.request,
-                expiry: bolt11_response.expiry,
-                pubkey: bolt11_response.pubkey,
-                amount: bolt11_response.amount,
-                unit: bolt11_response.unit,
-            },
+            MintQuoteResponse::Bolt11(bolt11_response) => MintQuoteBolt11Response::new(
+                bolt11_response.quote.to_string(),
+                bolt11_response.request.clone(),
+                bolt11_response.amount,
+                bolt11_response.unit.clone(),
+                bolt11_response.state,
+                bolt11_response.expiry,
+                bolt11_response.method_fields.clone(),
+            ),
             _ => panic!("Expected Bolt11 response"),
         }
     }
@@ -276,7 +276,7 @@ impl Mint {
 
                     let settings = ln.get_settings().await?;
 
-                    let description = bolt11_request.description;
+                    let description = bolt11_request.method_fields.description.clone();
 
                     if let Some(ref bolt11_settings) = settings.bolt11 {
                         if description.is_some() && !bolt11_settings.invoice_description {
@@ -294,7 +294,7 @@ impl Mint {
                     IncomingPaymentOptions::Bolt11(bolt11_options)
                 }
                 MintQuoteRequest::Bolt12(bolt12_request) => {
-                    let description = bolt12_request.description;
+                    let description = bolt12_request.method_fields.description.clone();
 
                     let bolt12_options = Bolt12IncomingPaymentOptions {
                         description,
@@ -310,9 +310,9 @@ impl Mint {
 
                     let custom_options = CustomIncomingPaymentOptions {
                         method,
-                        description: request.description,
+                        description: None,
                         amount: request.amount,
-                        data: request.data,
+                        data: request.method_fields.clone(),
                         unix_expiry: Some(quote_expiry),
                     };
 

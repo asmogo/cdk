@@ -26,6 +26,7 @@ pub mod nut20;
 pub mod nut23;
 pub mod nut25;
 pub mod nut_custom;
+pub mod payment_method;
 
 #[cfg(feature = "auth")]
 mod auth;
@@ -48,14 +49,18 @@ pub use nut02::{Id, KeySet, KeySetInfo, KeysetResponse};
 #[cfg(feature = "wallet")]
 pub use nut03::PreSwap;
 pub use nut03::{SwapRequest, SwapResponse};
-pub use nut04::{MintMethodSettings, MintRequest, MintResponse, Settings as NUT04Settings};
+pub use nut04::{
+    MintMethodSettings, MintQuoteRequest, MintQuoteResponse, MintRequest, MintResponse,
+    Settings as NUT04Settings,
+};
 pub use nut05::{
-    MeltMethodSettings, MeltRequest, QuoteState as MeltQuoteState, Settings as NUT05Settings,
+    MeltMethodSettings, MeltQuoteRequest, MeltQuoteResponse, MeltRequest,
+    QuoteState as MeltQuoteState, Settings as NUT05Settings,
 };
 pub use nut06::{ContactInfo, MintInfo, MintVersion, Nuts};
 pub use nut07::{CheckStateRequest, CheckStateResponse, ProofState, State};
 pub use nut09::{RestoreRequest, RestoreResponse};
-pub use nut10::{Kind, Secret as Nut10Secret, SecretData};
+pub use nut10::{Kind, Secret as Nut10Secret, SecretData, SpendingConditionVerification};
 pub use nut11::{Conditions, P2PKWitness, SigFlag, SpendingConditions};
 pub use nut12::{BlindSignatureDleq, ProofDleq};
 pub use nut14::HTLCWitness;
@@ -66,8 +71,20 @@ pub use nut18::{
     TransportType,
 };
 pub use nut23::{
-    MeltOptions, MeltQuoteBolt11Request, MeltQuoteBolt11Response, MintQuoteBolt11Request,
-    MintQuoteBolt11Response, QuoteState as MintQuoteState,
+    Bolt11MeltRequestFields, Bolt11MeltResponseFields, Bolt11MintRequestFields,
+    Bolt11MintResponseFields, MeltOptions, MeltQuoteBolt11Request, MeltQuoteBolt11Response,
+    MintQuoteBolt11Request, MintQuoteBolt11Response, QuoteState as MintQuoteState,
 };
-pub use nut25::{MeltQuoteBolt12Request, MintQuoteBolt12Request, MintQuoteBolt12Response};
-pub use nut_custom::{MeltQuoteCustomRequest, MintQuoteCustomRequest, MintQuoteCustomResponse};
+pub use nut25::{
+    Bolt12MeltRequestFields, Bolt12MeltResponseFields, Bolt12MintRequestFields,
+    Bolt12MintResponseFields, MeltQuoteBolt12Request, MintQuoteBolt12Request,
+    MintQuoteBolt12Response,
+};
+pub use nut_custom::{
+    GenericMeltQuoteRequest, GenericMeltQuoteResponse, GenericMintQuoteRequest,
+    GenericMintQuoteResponse, NoAdditionalFields,
+};
+pub use payment_method::{
+    IncomingPaymentMethodData, MeltQuoteMethodFields, MeltQuoteResponseFields,
+    MintQuoteMethodFields, MintQuoteResponseFields, OutgoingPaymentMethodData,
+};

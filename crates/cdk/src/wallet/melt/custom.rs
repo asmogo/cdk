@@ -2,8 +2,8 @@ use cdk_common::wallet::MeltQuote;
 use cdk_common::PaymentMethod;
 use tracing::instrument;
 
-use crate::nuts::{MeltOptions, MeltQuoteCustomRequest};
-use crate::{Error, Wallet};
+use crate::nuts::{GenericMeltQuoteRequest, GenericMeltQuoteResponse, MeltOptions};
+use crate::{Amount, Error, Wallet};
 
 impl Wallet {
     /// Melt Quote for Custom Payment Method
@@ -16,28 +16,58 @@ impl Wallet {
     ) -> Result<MeltQuote, Error> {
         self.refresh_keysets().await?;
 
-        let quote_request = MeltQuoteCustomRequest {
-            method: method.to_string(),
+        // Spec-compliant request with no additional fields
+        // Note: Method is specified in the URL path per NUT-05, not in request body
+        let quote_request = GenericMeltQuoteRequest {
             request: request.clone(),
             unit: self.unit.clone(),
-            data: serde_json::Value::Null, // Can be extended for method-specific data
+            method_fields: serde_json::Map::new(),
         };
-        let quote_res = self.client.post_melt_custom_quote(quote_request).await?;
+        let quote_res = self
+            .client
+            .post_melt_custom_quote(method, quote_request)
+            .await?;
 
         let quote = MeltQuote {
             id: quote_res.quote,
             amount: quote_res.amount,
             request,
             unit: self.unit.clone(),
-            fee_reserve: quote_res.fee_reserve,
+            fee_reserve: Amount::ZERO,
             state: quote_res.state,
-            expiry: quote_res.expiry,
-            payment_preimage: quote_res.payment_preimage,
+            expiry: quote_res.expiry, // expiry is now u64, not Option<u64>
+            payment_preimage: None,
             payment_method: PaymentMethod::Custom(method.to_string()),
         };
 
         self.localstore.add_melt_quote(quote.clone()).await?;
 
         Ok(quote)
+    }
+
+    /// Melt Quote Status for Custom Payment Method
+    #[instrument(skip(self, quote_id))]
+    pub async fn melt_custom_quote_status(
+        &self,
+        method: &str,
+        quote_id: &str,
+    ) -> Result<GenericMeltQuoteResponse<String>, Error> {
+        let response = self
+            .client
+            .get_melt_custom_quote_status(method, quote_id)
+            .await?;
+
+        match self.localstore.get_melt_quote(quote_id).await? {
+            Some(quote) => {
+                let mut quote = quote;
+                quote.state = response.state;
+                self.localstore.add_melt_quote(quote).await?;
+            }
+            None => {
+                tracing::info!("Quote melt {} unknown", quote_id);
+            }
+        }
+
+        Ok(response)
     }
 }

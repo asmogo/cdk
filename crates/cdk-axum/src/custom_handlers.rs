@@ -13,11 +13,12 @@ use cdk::mint::QuoteId;
 #[cfg(feature = "auth")]
 use cdk::nuts::nut21::{Method, ProtectedEndpoint, RoutePath};
 use cdk::nuts::{
-    MeltQuoteBolt11Request, MeltQuoteBolt11Response, MeltQuoteBolt12Request,
-    MeltQuoteCustomRequest, MintQuoteBolt11Request, MintQuoteBolt11Response,
-    MintQuoteBolt12Request, MintQuoteBolt12Response, MintQuoteCustomRequest, MintRequest,
+    GenericMeltQuoteRequest, GenericMintQuoteRequest, MeltQuoteBolt11Request,
+    MeltQuoteBolt11Response, MeltQuoteBolt12Request, MintQuoteBolt11Request,
+    MintQuoteBolt11Response, MintQuoteBolt12Request, MintQuoteBolt12Response, MintRequest,
     MintResponse,
 };
+use cdk_common::melt::MeltQuoteRequest;
 use serde_json::Value;
 use tracing::instrument;
 
@@ -86,9 +87,10 @@ pub async fn post_mint_custom_quote(
             Ok(Json(response).into_response())
         }
         _ => {
-            let custom_request: MintQuoteCustomRequest =
+            // Deserialize spec-compliant request with no additional fields
+            let custom_request: GenericMintQuoteRequest =
                 serde_json::from_value(payload).map_err(|e| {
-                    tracing::error!("Failed to parse custom request: {}", e);
+                    tracing::error!("Failed to parse custom mint quote request: {}", e);
                     into_response(cdk::Error::InvalidPaymentMethod)
                 })?;
 
@@ -103,6 +105,7 @@ pub async fn post_mint_custom_quote(
                 .await
                 .map_err(into_response)?;
 
+            // Return the spec-compliant response
             match response {
                 cdk::mint::MintQuoteResponse::Custom { response, .. } => {
                     Ok(Json(response).into_response())
@@ -246,15 +249,22 @@ pub async fn post_melt_custom_quote(
                 .map_err(into_response)?
         }
         _ => {
-            let custom_request: MeltQuoteCustomRequest =
+            // Deserialize spec-compliant request with arbitrary method fields
+            // Note: Method is in URL path per NUT-05, not in request body
+            let custom_request: GenericMeltQuoteRequest =
                 serde_json::from_value(payload).map_err(|e| {
-                    tracing::error!("Failed to parse custom melt request: {}", e);
+                    tracing::error!("Failed to parse custom melt quote request: {}", e);
                     into_response(cdk::Error::InvalidPaymentMethod)
                 })?;
 
+            let melt_request = MeltQuoteRequest::Custom {
+                method: method.clone(),
+                request: custom_request,
+            };
+
             state
                 .mint
-                .get_melt_quote(custom_request.into())
+                .get_melt_quote(melt_request)
                 .await
                 .map_err(into_response)?
         }

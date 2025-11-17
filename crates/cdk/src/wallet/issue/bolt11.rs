@@ -53,8 +53,6 @@ impl Wallet {
         let mint_url = self.mint_url.clone();
         let unit = self.unit.clone();
 
-        self.refresh_keysets().await?;
-
         // If we have a description, we check that the mint supports it.
         if description.is_some() {
             let settings = self
@@ -75,12 +73,14 @@ impl Wallet {
 
         let secret_key = SecretKey::generate();
 
-        let request = MintQuoteBolt11Request {
+        let request = MintQuoteBolt11Request::new(
             amount,
-            unit: unit.clone(),
-            description,
-            pubkey: Some(secret_key.public_key()),
-        };
+            unit.clone(),
+            crate::nuts::Bolt11MintRequestFields {
+                description,
+                pubkey: Some(secret_key.public_key()),
+            },
+        );
 
         let quote_res = self.client.post_mint_quote(request).await?;
 
@@ -91,7 +91,7 @@ impl Wallet {
             Some(amount),
             unit,
             quote_res.request,
-            quote_res.expiry.unwrap_or(0),
+            quote_res.expiry,
             Some(secret_key),
         );
 
@@ -197,8 +197,6 @@ impl Wallet {
         amount_split_target: SplitTarget,
         spending_conditions: Option<SpendingConditions>,
     ) -> Result<Proofs, Error> {
-        self.refresh_keysets().await?;
-
         let quote_info = self
             .localstore
             .get_mint_quote(quote_id)

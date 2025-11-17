@@ -22,11 +22,11 @@ impl Wallet {
         request: String,
         options: Option<MeltOptions>,
     ) -> Result<MeltQuote, Error> {
-        let quote_request = MeltQuoteBolt12Request {
-            request: request.clone(),
-            unit: self.unit.clone(),
-            options,
-        };
+        let quote_request = MeltQuoteBolt12Request::new(
+            request.clone(),
+            self.unit.clone(),
+            crate::nuts::Bolt12MeltRequestFields { options },
+        );
 
         let quote_res = self.client.post_melt_bolt12_quote(quote_request).await?;
 
@@ -54,10 +54,10 @@ impl Wallet {
             amount: quote_res.amount,
             request,
             unit: self.unit.clone(),
-            fee_reserve: quote_res.fee_reserve,
+            fee_reserve: quote_res.method_fields.fee_reserve,
             state: quote_res.state,
             expiry: quote_res.expiry,
-            payment_preimage: quote_res.payment_preimage,
+            payment_preimage: quote_res.method_fields.payment_preimage.clone(),
             payment_method: PaymentMethod::from("bolt12"),
         };
 

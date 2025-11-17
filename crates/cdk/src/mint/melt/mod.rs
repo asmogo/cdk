@@ -9,10 +9,14 @@ use cdk_common::payment::{
     OutgoingPaymentOptions,
 };
 use cdk_common::quote_id::QuoteId;
-use cdk_common::{MeltOptions, MeltQuoteBolt12Request, MeltQuoteCustomRequest};
+use cdk_common::{
+    Bolt11Invoice, GenericMeltQuoteRequest, MeltOptions, MeltQuoteBolt12Request, MeltQuoteState,
+    SpendingConditionVerification,
+};
 #[cfg(feature = "prometheus")]
 use cdk_prometheus::METRICS;
 use lightning::offers::offer::Offer;
+use serde_json::Map as JsonMap;
 use tracing::instrument;
 
 use super::{
@@ -20,13 +24,15 @@ use super::{
     PaymentMethod,
 };
 use crate::amount::to_unit;
-use crate::nuts::MeltQuoteState;
 use crate::types::PaymentProcessorKey;
 use crate::util::unix_time;
 use crate::{ensure_cdk, Amount, Error};
 
-mod melt_saga;
-pub(super) mod shared;
+pub(crate) mod melt_saga;
+pub(crate) mod shared;
+
+#[cfg(test)]
+mod tests;
 
 use melt_saga::MeltSaga;
 
@@ -121,7 +127,9 @@ impl Mint {
             MeltQuoteRequest::Bolt12(bolt12_request) => {
                 self.get_melt_bolt12_quote_impl(&bolt12_request).await
             }
-            MeltQuoteRequest::Custom(request) => self.get_melt_custom_quote_impl(&request).await,
+            MeltQuoteRequest::Custom { method, request } => {
+                self.get_melt_custom_quote_impl(&request, &method).await
+            }
         }
     }
 
@@ -133,12 +141,9 @@ impl Mint {
     ) -> Result<MeltQuoteBolt11Response<QuoteId>, Error> {
         #[cfg(feature = "prometheus")]
         METRICS.inc_in_flight_requests("get_melt_bolt11_quote");
-        let MeltQuoteBolt11Request {
-            request,
-            unit,
-            options,
-            ..
-        } = melt_request;
+        let request = &melt_request.request;
+        let unit = &melt_request.unit;
+        let options = &melt_request.method_fields.options;
 
         let ln = self
             .payment_processors
@@ -152,11 +157,14 @@ impl Mint {
                 Error::UnsupportedUnit
             })?;
 
+        let invoice = Bolt11Invoice::from_str(&melt_request.request)
+            .map_err(|_| Error::InvalidPaymentRequest)?;
+
         let bolt11 = Bolt11OutgoingPaymentOptions {
-            bolt11: melt_request.request.clone(),
+            bolt11: invoice.clone(),
             max_fee_amount: None,
             timeout_secs: None,
-            melt_options: melt_request.options,
+            melt_options: *options,
         };
 
         let payment_quote = ln
@@ -178,7 +186,7 @@ impl Mint {
                     METRICS.record_mint_operation("get_melt_bolt11_quote", false);
                     METRICS.record_error();
                 }
-                Error::UnsupportedUnit
+                err
             })?;
 
         if &payment_quote.unit != unit {
@@ -199,7 +207,7 @@ impl Mint {
 
         let quote = MeltQuote::new(
             MeltPaymentRequest::Bolt11 {
-                bolt11: request.clone(),
+                bolt11: invoice.clone(),
             },
             unit.clone(),
             payment_quote.amount,
@@ -232,11 +240,9 @@ impl Mint {
         &self,
         melt_request: &MeltQuoteBolt12Request,
     ) -> Result<MeltQuoteBolt11Response<QuoteId>, Error> {
-        let MeltQuoteBolt12Request {
-            request,
-            unit,
-            options,
-        } = melt_request;
+        let request = &melt_request.request;
+        let unit = &melt_request.unit;
+        let options = &melt_request.method_fields.options;
 
         let offer = Offer::from_str(request).map_err(|_| Error::InvalidPaymentRequest)?;
 
@@ -284,7 +290,7 @@ impl Mint {
                     err
                 );
 
-                Error::UnsupportedUnit
+                err
             })?;
 
         if &payment_quote.unit != unit {
@@ -342,23 +348,19 @@ impl Mint {
     #[instrument(skip_all)]
     async fn get_melt_custom_quote_impl(
         &self,
-        melt_request: &MeltQuoteCustomRequest,
+        melt_request: &GenericMeltQuoteRequest,
+        method: &str,
     ) -> Result<MeltQuoteBolt11Response<QuoteId>, Error> {
         #[cfg(feature = "prometheus")]
         METRICS.inc_in_flight_requests("get_melt_custom_quote");
 
-        let MeltQuoteCustomRequest {
-            request,
-            unit,
-            data,
-            method,
-        } = melt_request;
+        let GenericMeltQuoteRequest { request, unit, .. } = melt_request;
 
         let ln = self
             .payment_processors
             .get(&PaymentProcessorKey::new(
                 unit.clone(),
-                PaymentMethod::from(method.as_str()),
+                PaymentMethod::from(method),
             ))
             .ok_or_else(|| {
                 tracing::info!("Could not get payment processor for {}, {} ", unit, method);
@@ -371,12 +373,12 @@ impl Mint {
                 request: request.clone(),
                 max_fee_amount: None,
                 timeout_secs: None,
-                data: data.clone(),
+                data: JsonMap::new(),
                 melt_options: None,
             }));
 
         let payment_quote = ln
-            .get_payment_quote(&melt_request.unit, custom_options)
+            .get_payment_quote(unit, custom_options)
             .await
             .map_err(|err| {
                 tracing::error!(
@@ -399,14 +401,12 @@ impl Mint {
             return Err(Error::UnitMismatch);
         }
 
-        // For custom methods, we don't validate amount limits upfront since
-        // the payment processor handles method-specific validation
         self.check_melt_request_acceptable(
             payment_quote.amount,
             unit.clone(),
-            PaymentMethod::from(method.as_str()),
+            PaymentMethod::from(method),
             request.clone(),
-            None, // Custom methods don't use options
+            None,
         )
         .await?;
 
@@ -416,15 +416,14 @@ impl Mint {
             MeltPaymentRequest::Custom {
                 method: method.to_string(),
                 request: request.clone(),
-                data: data.clone(),
             },
             unit.clone(),
             payment_quote.amount,
             payment_quote.fee,
             unix_time() + melt_ttl,
             payment_quote.request_lookup_id.clone(),
-            None, // Custom methods don't use options
-            PaymentMethod::from(method.as_str()),
+            None,
+            PaymentMethod::from(method),
         );
 
         tracing::debug!(
@@ -498,18 +497,18 @@ impl Mint {
 
         let change = (!blind_signatures.is_empty()).then_some(blind_signatures);
 
-        let response = MeltQuoteBolt11Response {
-            quote: quote.id,
-            paid: Some(quote.state == MeltQuoteState::Paid),
-            state: quote.state,
-            expiry: quote.expiry,
-            amount: quote.amount,
-            fee_reserve: quote.fee_reserve,
-            payment_preimage: quote.payment_preimage,
-            change,
-            request: Some(quote.request.to_string()),
-            unit: Some(quote.unit.clone()),
-        };
+        let response = MeltQuoteBolt11Response::new(
+            quote.id,
+            quote.amount,
+            quote.unit.clone(),
+            quote.state,
+            quote.expiry,
+            crate::nuts::Bolt11MeltResponseFields {
+                fee_reserve: quote.fee_reserve,
+                payment_preimage: quote.payment_preimage,
+                change,
+            },
+        );
 
         #[cfg(feature = "prometheus")]
         {
@@ -535,6 +534,13 @@ impl Mint {
         &self,
         melt_request: &MeltRequest<QuoteId>,
     ) -> Result<MeltQuoteBolt11Response<QuoteId>, Error> {
+        // Verify spending conditions (NUT-10/NUT-11/NUT-14), i.e. P2PK
+        // and HTLC (including SIGALL)
+        melt_request.verify_spending_conditions()?;
+
+        // We don't need to check P2PK or HTLC again. It has all been checked above
+        // and the code doesn't reach here unless such verifications were satisfactory
+
         let verification = self.verify_inputs(melt_request.inputs()).await?;
 
         let init_saga = MeltSaga::new(
@@ -555,5 +561,103 @@ impl Mint {
 
         // Step 4: Finalize (TX2 - marks spent, issues change)
         payment_saga.finalize().await
+    }
+
+    /// Process melt asynchronously - returns immediately after setup with PENDING state
+    ///
+    /// This method is called when the client includes the `Prefer: respond-async` header.
+    /// It performs the setup phase (TX1) to validate and reserve proofs, then spawns a
+    /// background task to complete the payment and finalization phases.
+    pub async fn melt_async(
+        &self,
+        melt_request: &MeltRequest<QuoteId>,
+    ) -> Result<MeltQuoteBolt11Response<QuoteId>, Error> {
+        let verification = self.verify_inputs(melt_request.inputs()).await?;
+
+        let init_saga = MeltSaga::new(
+            std::sync::Arc::new(self.clone()),
+            self.localstore.clone(),
+            std::sync::Arc::clone(&self.pubsub_manager),
+        );
+
+        let setup_saga = init_saga.setup_melt(melt_request, verification).await?;
+
+        // Get the quote to return with PENDING state
+        let quote_id = melt_request.quote().clone();
+        let quote = self
+            .localstore
+            .get_melt_quote(&quote_id)
+            .await?
+            .ok_or(Error::UnknownQuote)?;
+
+        // Spawn background task to complete the melt operation
+        let melt_request_clone = melt_request.clone();
+        let quote_id_clone = quote_id.clone();
+        tokio::spawn(async move {
+            tracing::debug!(
+                "Starting background melt completion for quote: {}",
+                quote_id_clone
+            );
+
+            // Step 2: Attempt internal settlement
+            match setup_saga
+                .attempt_internal_settlement(&melt_request_clone)
+                .await
+            {
+                Ok((setup_saga, settlement)) => {
+                    // Step 3: Make payment
+                    match setup_saga.make_payment(settlement).await {
+                        Ok(payment_saga) => {
+                            // Step 4: Finalize
+                            match payment_saga.finalize().await {
+                                Ok(_) => {
+                                    tracing::info!(
+                                        "Background melt completed successfully for quote: {}",
+                                        quote_id_clone
+                                    );
+                                }
+                                Err(e) => {
+                                    tracing::error!(
+                                        "Failed to finalize melt for quote {}: {}",
+                                        quote_id_clone,
+                                        e
+                                    );
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!(
+                                "Failed to make payment for quote {}: {}",
+                                quote_id_clone,
+                                e
+                            );
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::error!(
+                        "Failed internal settlement for quote {}: {}",
+                        quote_id_clone,
+                        e
+                    );
+                }
+            }
+        });
+
+        debug_assert!(quote.state == MeltQuoteState::Pending);
+
+        // Return immediately with the quote in PENDING state
+        Ok(MeltQuoteBolt11Response::new(
+            quote_id,
+            quote.amount,
+            quote.unit,
+            quote.state,
+            quote.expiry,
+            crate::nuts::Bolt11MeltResponseFields {
+                fee_reserve: quote.fee_reserve,
+                payment_preimage: quote.payment_preimage,
+                change: None,
+            },
+        ))
     }
 }

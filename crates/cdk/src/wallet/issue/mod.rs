@@ -17,7 +17,6 @@ impl Wallet {
         &self,
         amount: Option<Amount>,
         method: PaymentMethod,
-        request: String,
         description: Option<String>,
     ) -> Result<MintQuote, Error> {
         match method {
@@ -31,7 +30,7 @@ impl Wallet {
                 self.mint_bolt12_quote(amount, description).await
             }
             PaymentMethod::Custom(custom_method) => {
-                self.mint_quote_custom(amount, &custom_method, request, description)
+                self.mint_quote_custom(amount, &custom_method, description)
                     .await
             }
         }

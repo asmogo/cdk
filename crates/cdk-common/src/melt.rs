@@ -1,5 +1,5 @@
 //! Melt types
-use cashu::{MeltQuoteBolt11Request, MeltQuoteBolt12Request, MeltQuoteCustomRequest};
+use cashu::{GenericMeltQuoteRequest, MeltQuoteBolt11Request, MeltQuoteBolt12Request};
 
 /// Melt quote request enum for different types of quotes
 ///
@@ -12,7 +12,15 @@ pub enum MeltQuoteRequest {
     /// Lightning Network BOLT12 offer request
     Bolt12(MeltQuoteBolt12Request),
     /// Custom payment method request
-    Custom(MeltQuoteCustomRequest),
+    ///
+    /// Per NUT-05, the method is specified in the URL path, not in the request body.
+    /// The method name is included here for routing and processing.
+    Custom {
+        /// Payment method name (e.g., "paypal", "venmo")
+        method: String,
+        /// Generic request data
+        request: GenericMeltQuoteRequest,
+    },
 }
 
 impl From<MeltQuoteBolt11Request> for MeltQuoteRequest {
@@ -27,8 +35,6 @@ impl From<MeltQuoteBolt12Request> for MeltQuoteRequest {
     }
 }
 
-impl From<MeltQuoteCustomRequest> for MeltQuoteRequest {
-    fn from(request: MeltQuoteCustomRequest) -> Self {
-        MeltQuoteRequest::Custom(request)
-    }
-}
+// Note: GenericMeltQuoteRequest cannot be directly converted to MeltQuoteRequest
+// because the method parameter is required and must come from the URL path (per NUT-05).
+// Handlers should construct MeltQuoteRequest::Custom manually with both method and request.

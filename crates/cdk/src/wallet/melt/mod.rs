@@ -80,7 +80,7 @@ impl Wallet {
                         metadata: HashMap::new(),
                         quote_id: Some(quote.id.clone()),
                         payment_request: Some(quote.request.clone()),
-                        payment_proof: response.payment_preimage.clone(),
+                        payment_proof: response.method_fields.payment_preimage.clone(),
                     })
                     .await?;
             }

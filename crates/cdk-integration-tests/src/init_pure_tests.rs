@@ -10,8 +10,9 @@ use async_trait::async_trait;
 use bip39::Mnemonic;
 use cashu::quote_id::QuoteId;
 use cashu::{
-    MeltQuoteBolt12Request, MeltQuoteCustomRequest, MintQuoteBolt12Request,
-    MintQuoteBolt12Response, MintQuoteCustomRequest, MintQuoteCustomResponse,
+    GenericMeltQuoteRequest, GenericMeltQuoteResponse, GenericMintQuoteRequest,
+    GenericMintQuoteResponse, MeltQuoteBolt12Request, MintQuoteBolt12Request,
+    MintQuoteBolt12Response,
 };
 use cdk::amount::SplitTarget;
 use cdk::cdk_database::{self, WalletDatabase};
@@ -212,8 +213,9 @@ impl MintConnector for DirectMintConnection {
     /// Mint Quote for Custom Payment Method
     async fn post_mint_custom_quote(
         &self,
-        _request: MintQuoteCustomRequest,
-    ) -> Result<MintQuoteCustomResponse<String>, Error> {
+        _method: &str,
+        _request: GenericMintQuoteRequest,
+    ) -> Result<GenericMintQuoteResponse<String>, Error> {
         // Custom payment methods not implemented in test mock
         Err(Error::UnsupportedPaymentMethod)
     }
@@ -221,8 +223,39 @@ impl MintConnector for DirectMintConnection {
     /// Melt Quote for Custom Payment Method
     async fn post_melt_custom_quote(
         &self,
-        _request: MeltQuoteCustomRequest,
-    ) -> Result<MeltQuoteBolt11Response<String>, Error> {
+        _method: &str,
+        _request: GenericMeltQuoteRequest,
+    ) -> Result<GenericMeltQuoteResponse<String>, Error> {
+        // Custom payment methods not implemented in test mock
+        Err(Error::UnsupportedPaymentMethod)
+    }
+
+    /// Mint Quote Status for Custom Payment Method
+    async fn get_mint_custom_quote_status(
+        &self,
+        _method: &str,
+        _quote_id: &str,
+    ) -> Result<GenericMintQuoteResponse<String>, Error> {
+        // Custom payment methods not implemented in test mock
+        Err(Error::UnsupportedPaymentMethod)
+    }
+
+    /// Melt Quote Status for Custom Payment Method
+    async fn get_melt_custom_quote_status(
+        &self,
+        _method: &str,
+        _quote_id: &str,
+    ) -> Result<GenericMeltQuoteResponse<String>, Error> {
+        // Custom payment methods not implemented in test mock
+        Err(Error::UnsupportedPaymentMethod)
+    }
+
+    /// Melt with Custom Payment Method
+    async fn post_melt_custom(
+        &self,
+        _method: String,
+        _request: MeltRequest<String>,
+    ) -> Result<GenericMeltQuoteResponse<String>, Error> {
         // Custom payment methods not implemented in test mock
         Err(Error::UnsupportedPaymentMethod)
     }

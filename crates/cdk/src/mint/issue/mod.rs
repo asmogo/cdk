@@ -1,14 +1,15 @@
 use cdk_common::mint::{MintQuote, Operation};
 use cdk_common::payment::{
-    Bolt11IncomingPaymentOptions, Bolt11Settings, Bolt12IncomingPaymentOptions,
+    Bolt11IncomingPaymentOptions, Bolt12IncomingPaymentOptions, CustomIncomingPaymentOptions,
     IncomingPaymentOptions, WaitPaymentResponse,
 };
 use cdk_common::quote_id::QuoteId;
 use cdk_common::util::unix_time;
 use cdk_common::{
-    database, ensure_cdk, Amount, CurrencyUnit, Error, MintQuoteBolt11Request,
-    MintQuoteBolt11Response, MintQuoteBolt12Request, MintQuoteBolt12Response, MintQuoteState,
-    MintRequest, MintResponse, NotificationPayload, PaymentMethod, PublicKey,
+    database, ensure_cdk, Amount, CurrencyUnit, Error, GenericMintQuoteRequest,
+    GenericMintQuoteResponse, MintQuoteBolt11Request, MintQuoteBolt11Response,
+    MintQuoteBolt12Request, MintQuoteBolt12Response, MintQuoteState, MintRequest, MintResponse,
+    NotificationPayload, PaymentMethod, PublicKey,
 };
 #[cfg(feature = "prometheus")]
 use cdk_prometheus::METRICS;
@@ -30,6 +31,13 @@ pub enum MintQuoteRequest {
     Bolt11(MintQuoteBolt11Request),
     /// Lightning Network BOLT12 offer request
     Bolt12(MintQuoteBolt12Request),
+    /// Custom payment method request
+    Custom {
+        /// Payment method name (e.g., "paypal", "venmo")
+        method: String,
+        /// Generic request data
+        request: GenericMintQuoteRequest,
+    },
 }
 
 impl From<MintQuoteBolt11Request> for MintQuoteRequest {
@@ -49,10 +57,12 @@ impl MintQuoteRequest {
     ///
     /// For Bolt11 requests, this returns `Some(amount)` as the amount is required.
     /// For Bolt12 requests, this returns the optional amount.
+    /// For Custom requests, this returns `Some(amount)` as the amount is required.
     pub fn amount(&self) -> Option<Amount> {
         match self {
             MintQuoteRequest::Bolt11(request) => Some(request.amount),
-            MintQuoteRequest::Bolt12(request) => request.amount,
+            MintQuoteRequest::Bolt12(request) => Some(request.amount),
+            MintQuoteRequest::Custom { request, .. } => Some(request.amount),
         }
     }
 
@@ -61,14 +71,16 @@ impl MintQuoteRequest {
         match self {
             MintQuoteRequest::Bolt11(request) => request.unit.clone(),
             MintQuoteRequest::Bolt12(request) => request.unit.clone(),
+            MintQuoteRequest::Custom { request, .. } => request.unit.clone(),
         }
     }
 
     /// Get the payment method for the mint quote request
     pub fn payment_method(&self) -> PaymentMethod {
         match self {
-            MintQuoteRequest::Bolt11(_) => PaymentMethod::Bolt11,
-            MintQuoteRequest::Bolt12(_) => PaymentMethod::Bolt12,
+            MintQuoteRequest::Bolt11(_) => PaymentMethod::from("bolt11"),
+            MintQuoteRequest::Bolt12(_) => PaymentMethod::from("bolt12"),
+            MintQuoteRequest::Custom { method, .. } => PaymentMethod::from(method.clone()),
         }
     }
 
@@ -76,10 +88,12 @@ impl MintQuoteRequest {
     ///
     /// For Bolt11 requests, this returns the optional pubkey.
     /// For Bolt12 requests, this returns `Some(pubkey)` as the pubkey is required.
+    /// For Custom requests, this returns None (generic requests don't support pubkey).
     pub fn pubkey(&self) -> Option<PublicKey> {
         match self {
-            MintQuoteRequest::Bolt11(request) => request.pubkey,
-            MintQuoteRequest::Bolt12(request) => Some(request.pubkey),
+            MintQuoteRequest::Bolt11(request) => request.method_fields.pubkey,
+            MintQuoteRequest::Bolt12(request) => Some(request.method_fields.pubkey),
+            MintQuoteRequest::Custom { .. } => None,
         }
     }
 }
@@ -94,6 +108,13 @@ pub enum MintQuoteResponse {
     Bolt11(MintQuoteBolt11Response<QuoteId>),
     /// Lightning Network BOLT12 offer response
     Bolt12(MintQuoteBolt12Response<QuoteId>),
+    /// Custom payment method response
+    Custom {
+        /// Payment method name
+        method: String,
+        /// Generic response data
+        response: GenericMintQuoteResponse<QuoteId>,
+    },
 }
 
 impl TryFrom<MintQuoteResponse> for MintQuoteBolt11Response<QuoteId> {
@@ -122,16 +143,19 @@ impl TryFrom<MintQuote> for MintQuoteResponse {
     type Error = Error;
 
     fn try_from(quote: MintQuote) -> Result<Self, Self::Error> {
-        match quote.payment_method {
-            PaymentMethod::Bolt11 => {
-                let bolt11_response: MintQuoteBolt11Response<QuoteId> = quote.into();
-                Ok(MintQuoteResponse::Bolt11(bolt11_response))
-            }
-            PaymentMethod::Bolt12 => {
-                let bolt12_response = MintQuoteBolt12Response::try_from(quote)?;
-                Ok(MintQuoteResponse::Bolt12(bolt12_response))
-            }
-            PaymentMethod::Custom(_) => Err(Error::InvalidPaymentMethod),
+        if quote.payment_method == "bolt11" {
+            let bolt11_response: MintQuoteBolt11Response<QuoteId> = quote.into();
+            Ok(MintQuoteResponse::Bolt11(bolt11_response))
+        } else if quote.payment_method == "bolt12" {
+            let bolt12_response = MintQuoteBolt12Response::try_from(quote)?;
+            Ok(MintQuoteResponse::Bolt12(bolt12_response))
+        } else {
+            let method = quote.payment_method.to_string();
+            let custom_response = GenericMintQuoteResponse::from(quote);
+            Ok(MintQuoteResponse::Custom {
+                method,
+                response: custom_response,
+            })
         }
     }
 }
@@ -139,15 +163,15 @@ impl TryFrom<MintQuote> for MintQuoteResponse {
 impl From<MintQuoteResponse> for MintQuoteBolt11Response<String> {
     fn from(response: MintQuoteResponse) -> Self {
         match response {
-            MintQuoteResponse::Bolt11(bolt11_response) => MintQuoteBolt11Response {
-                quote: bolt11_response.quote.to_string(),
-                state: bolt11_response.state,
-                request: bolt11_response.request,
-                expiry: bolt11_response.expiry,
-                pubkey: bolt11_response.pubkey,
-                amount: bolt11_response.amount,
-                unit: bolt11_response.unit,
-            },
+            MintQuoteResponse::Bolt11(bolt11_response) => MintQuoteBolt11Response::new(
+                bolt11_response.quote.to_string(),
+                bolt11_response.request.clone(),
+                bolt11_response.amount,
+                bolt11_response.unit.clone(),
+                bolt11_response.state,
+                bolt11_response.expiry,
+                bolt11_response.method_fields.clone(),
+            ),
             _ => panic!("Expected Bolt11 response"),
         }
     }
@@ -251,13 +275,14 @@ impl Mint {
                     let quote_expiry = unix_time() + mint_ttl;
 
                     let settings = ln.get_settings().await?;
-                    let settings: Bolt11Settings = serde_json::from_value(settings)?;
 
-                    let description = bolt11_request.description;
+                    let description = bolt11_request.method_fields.description.clone();
 
-                    if description.is_some() && !settings.invoice_description {
-                        tracing::error!("Backend does not support invoice description");
-                        return Err(Error::InvoiceDescriptionUnsupported);
+                    if let Some(ref bolt11_settings) = settings.bolt11 {
+                        if description.is_some() && !bolt11_settings.invoice_description {
+                            tracing::error!("Backend does not support invoice description");
+                            return Err(Error::InvoiceDescriptionUnsupported);
+                        }
                     }
 
                     let bolt11_options = Bolt11IncomingPaymentOptions {
@@ -269,7 +294,7 @@ impl Mint {
                     IncomingPaymentOptions::Bolt11(bolt11_options)
                 }
                 MintQuoteRequest::Bolt12(bolt12_request) => {
-                    let description = bolt12_request.description;
+                    let description = bolt12_request.method_fields.description.clone();
 
                     let bolt12_options = Bolt12IncomingPaymentOptions {
                         description,
@@ -278,6 +303,20 @@ impl Mint {
                     };
 
                     IncomingPaymentOptions::Bolt12(Box::new(bolt12_options))
+                }
+                MintQuoteRequest::Custom { method, request } => {
+                    let mint_ttl = self.quote_ttl().await?.mint_ttl;
+                    let quote_expiry = unix_time() + mint_ttl;
+
+                    let custom_options = CustomIncomingPaymentOptions {
+                        method,
+                        description: None,
+                        amount: request.amount,
+                        data: request.method_fields.clone(),
+                        unix_expiry: Some(quote_expiry),
+                    };
+
+                    IncomingPaymentOptions::Custom(Box::new(custom_options))
                 }
             };
 
@@ -318,18 +357,18 @@ impl Mint {
             tx.add_mint_quote(quote.clone()).await?;
             tx.commit().await?;
 
-            match payment_method {
-                PaymentMethod::Bolt11 => {
+            match payment_method.as_str() {
+                "bolt11" => {
                     let res: MintQuoteBolt11Response<QuoteId> = quote.clone().into();
                     self.pubsub_manager
                         .publish(NotificationPayload::MintQuoteBolt11Response(res));
                 }
-                PaymentMethod::Bolt12 => {
+                "bolt12" => {
                     let res: MintQuoteBolt12Response<QuoteId> = quote.clone().try_into()?;
                     self.pubsub_manager
                         .publish(NotificationPayload::MintQuoteBolt12Response(res));
                 }
-                PaymentMethod::Custom(_) => {}
+                _ => {}
             }
 
             quote.try_into()
@@ -503,9 +542,7 @@ impl Mint {
                 .await?
                 .ok_or(Error::UnknownQuote)?;
 
-            if quote.payment_method == PaymentMethod::Bolt11 {
-                self.check_mint_quote_paid(&mut quote).await?;
-            }
+            self.check_mint_quote_paid(&mut quote).await?;
 
             quote.try_into()
         }
@@ -552,10 +589,9 @@ impl Mint {
                 .get_mint_quote(&mint_request.quote)
                 .await?
                 .ok_or(Error::UnknownQuote)?;
+            self.check_mint_quote_paid(&mut mint_quote).await?;
 
-            if mint_quote.payment_method == PaymentMethod::Bolt11 {
-                self.check_mint_quote_paid(&mut mint_quote).await?;
-            }
+
         // get the blind signatures before having starting the db transaction, if there are any
         // rollbacks this blind_signatures will be lost, and the signature is stateless. It is not a
         // good idea to call an external service (which is really a trait, it could be anything
@@ -574,7 +610,7 @@ impl Mint {
                 return Err(Error::UnpaidQuote);
             }
             MintQuoteState::Issued => {
-                if mint_quote.payment_method == PaymentMethod::Bolt12
+                if mint_quote.payment_method == "bolt12"
                     && mint_quote.amount_paid() > mint_quote.amount_issued()
                 {
                     tracing::warn!("Mint quote should state should have been set to issued upon new payment. Something isn't right. Stopping mint");
@@ -585,13 +621,13 @@ impl Mint {
             MintQuoteState::Paid => (),
         }
 
-        if mint_quote.payment_method == PaymentMethod::Bolt12 && mint_quote.pubkey.is_none() {
+        if mint_quote.payment_method == "bolt12" && mint_quote.pubkey.is_none() {
             tracing::warn!("Bolt12 mint quote created without pubkey");
             return Err(Error::SignatureMissingOrInvalid);
         }
 
-        let mint_amount = match mint_quote.payment_method {
-            PaymentMethod::Bolt11 => {
+        let mint_amount = match mint_quote.payment_method.as_str() {
+            "bolt11" => {
                 let quote_amount = mint_quote.amount.ok_or(Error::AmountUndefined)?;
 
                 if quote_amount != mint_quote.amount_mintable() {
@@ -601,7 +637,7 @@ impl Mint {
 
                 quote_amount
             },
-            PaymentMethod::Bolt12 => {
+            "bolt12" => {
                 if mint_quote.amount_mintable() == Amount::ZERO{
                     tracing::error!(
                             "Quote state should not be issued if issued {} is => paid {}.",
@@ -613,7 +649,9 @@ impl Mint {
 
                 mint_quote.amount_mintable()
             }
-            _ => return Err(Error::UnsupportedPaymentMethod),
+            _ => {
+                mint_quote.amount_mintable()
+            }
         };
 
         // If the there is a public key provoided in mint quote request
@@ -634,7 +672,7 @@ impl Mint {
             }
         };
 
-        if mint_quote.payment_method == PaymentMethod::Bolt11 {
+        if mint_quote.payment_method == "bolt11" {
             // For bolt11 we enforce that mint amount == quote amount
             if outputs_amount != mint_amount {
                 return Err(Error::TransactionUnbalanced(

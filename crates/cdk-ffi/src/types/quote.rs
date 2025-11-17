@@ -136,10 +136,10 @@ impl From<cdk::nuts::MintQuoteBolt11Response<String>> for MintQuoteBolt11Respons
             quote: response.quote,
             request: response.request,
             state: response.state.into(),
-            expiry: response.expiry,
-            amount: response.amount.map(Into::into),
-            unit: response.unit.map(Into::into),
-            pubkey: response.pubkey.map(|p| p.to_string()),
+            expiry: Some(response.expiry),
+            amount: Some(response.amount.into()), // amount is at top level in MintQuoteResponse
+            unit: Some(response.unit.into()),
+            pubkey: response.method_fields.pubkey.map(|p| p.to_string()),
         }
     }
 }
@@ -170,12 +170,12 @@ impl From<cdk::nuts::MeltQuoteBolt11Response<String>> for MeltQuoteBolt11Respons
         Self {
             quote: response.quote,
             amount: response.amount.into(),
-            fee_reserve: response.fee_reserve.into(),
+            fee_reserve: response.method_fields.fee_reserve.into(),
             state: response.state.into(),
             expiry: response.expiry,
-            payment_preimage: response.payment_preimage,
-            request: response.request,
-            unit: response.unit.map(Into::into),
+            payment_preimage: response.method_fields.payment_preimage,
+            request: None, // MeltQuoteResponse doesn't have request field at top level
+            unit: Some(response.unit.into()),
         }
     }
 }
@@ -192,10 +192,12 @@ pub enum PaymentMethod {
 
 impl From<cdk::nuts::PaymentMethod> for PaymentMethod {
     fn from(method: cdk::nuts::PaymentMethod) -> Self {
-        match method {
-            cdk::nuts::PaymentMethod::Bolt11 => Self::Bolt11,
-            cdk::nuts::PaymentMethod::Bolt12 => Self::Bolt12,
-            cdk::nuts::PaymentMethod::Custom(s) => Self::Custom { method: s },
+        match method.as_str() {
+            "bolt11" => Self::Bolt11,
+            "bolt12" => Self::Bolt12,
+            s => Self::Custom {
+                method: s.to_string(),
+            },
         }
     }
 }
@@ -203,9 +205,9 @@ impl From<cdk::nuts::PaymentMethod> for PaymentMethod {
 impl From<PaymentMethod> for cdk::nuts::PaymentMethod {
     fn from(method: PaymentMethod) -> Self {
         match method {
-            PaymentMethod::Bolt11 => Self::Bolt11,
-            PaymentMethod::Bolt12 => Self::Bolt12,
-            PaymentMethod::Custom { method } => Self::Custom(method),
+            PaymentMethod::Bolt11 => Self::from("bolt11"),
+            PaymentMethod::Bolt12 => Self::from("bolt12"),
+            PaymentMethod::Custom { method } => Self::from(method),
         }
     }
 }

@@ -5,14 +5,14 @@ use std::pin::Pin;
 
 use async_trait::async_trait;
 use cashu::util::hex;
-use cashu::{Bolt11Invoice, MeltOptions};
+use cashu::{Bolt11Invoice, MeltOptions, NoAdditionalFields};
 #[cfg(feature = "prometheus")]
 use cdk_prometheus::METRICS;
 use futures::Stream;
 use lightning::offers::offer::Offer;
 use lightning_invoice::ParseOrSemanticError;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Map as JsonMap, Value, Value as JsonValue};
 use thiserror::Error;
 
 use crate::mint::MeltPaymentRequest;
@@ -173,13 +173,93 @@ pub struct Bolt12IncomingPaymentOptions {
     pub unix_expiry: Option<u64>,
 }
 
+/// Options for creating a custom incoming payment request
+///
+/// This type is generic over payment method-specific data fields, following the same
+/// trait-based pattern used for quote types. This provides compile-time type safety
+/// while maintaining JSON compatibility through serde's flatten mechanism.
+///
+/// ## Generic Type Parameter
+///
+/// - `T`: Type implementing [`IncomingPaymentMethodData`](cashu::IncomingPaymentMethodData)
+///   for payment method-specific fields. Defaults to [`NoAdditionalFields`] for methods
+///   that don't require additional data beyond the standard fields.
+///
+/// ## Architecture
+///
+/// The trait-based approach provides several benefits over HashMap-based arbitrary data:
+/// - **Type Safety**: Custom fields are validated at compile time
+/// - **IDE Support**: Better autocomplete and inline documentation
+/// - **JSON Compatibility**: Fields appear at top level via `#[serde(flatten)]`
+/// - **Migration Path**: Custom methods can evolve to official ones without breaking changes
+///
+/// ## Example with Additional Fields
+///
+/// ```rust,ignore
+/// use serde::{Deserialize, Serialize};
+/// use cdk_common::payment::CustomIncomingPaymentOptions;
+/// use cashu::IncomingPaymentMethodData;
+///
+/// #[derive(Debug, Clone, Serialize, Deserialize)]
+/// struct PayPalFields {
+///     paypal_return_url: String,
+/// }
+///
+/// impl IncomingPaymentMethodData for PayPalFields { }
+///
+/// let options = CustomIncomingPaymentOptions {
+///     method: "paypal".to_string(),
+///     description: Some("Payment".to_string()),
+///     amount: Amount::from(1000),
+///     data: PayPalFields {
+///         paypal_return_url: "https://example.com/return".to_string(),
+///     },
+///     unix_expiry: Some(1234567890),
+/// };
+/// ```
+///
+/// ## Example without Additional Fields
+///
+/// ```rust,ignore
+/// use cdk_common::payment::CustomIncomingPaymentOptions;
+/// use cashu::NoAdditionalFields;
+///
+/// let options = CustomIncomingPaymentOptions {
+///     method: "simple".to_string(),
+///     description: None,
+///     amount: Amount::from(1000),
+///     data: NoAdditionalFields,
+///     unix_expiry: Some(1234567890),
+/// };
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CustomIncomingPaymentOptions<T = NoAdditionalFields> {
+    /// Payment method name (e.g., "paypal", "venmo")
+    pub method: String,
+    /// Optional description for the payment request
+    pub description: Option<String>,
+    /// Amount for the payment request
+    pub amount: Amount,
+    /// Method-specific data fields (flattened into top-level JSON)
+    ///
+    /// These fields are serialized at the top level of the JSON object using
+    /// `#[serde(flatten)]`, allowing custom payment methods to add their own
+    /// fields while maintaining a flat JSON structure.
+    #[serde(flatten)]
+    pub data: T,
+    /// Optional expiry time as Unix timestamp in seconds
+    pub unix_expiry: Option<u64>,
+}
+
 /// Options for creating an incoming payment request
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IncomingPaymentOptions {
     /// BOLT11 payment request options
     Bolt11(Bolt11IncomingPaymentOptions),
     /// BOLT12 payment request options
     Bolt12(Box<Bolt12IncomingPaymentOptions>),
+    /// Custom payment method options
+    Custom(Box<CustomIncomingPaymentOptions<JsonMap<String, JsonValue>>>),
 }
 
 /// Options for BOLT11 outgoing payments
@@ -208,13 +288,97 @@ pub struct Bolt12OutgoingPaymentOptions {
     pub melt_options: Option<MeltOptions>,
 }
 
+/// Options for custom outgoing payments
+///
+/// This type is generic over payment method-specific data fields, following the same
+/// trait-based pattern used for quote types. This provides compile-time type safety
+/// while maintaining JSON compatibility through serde's flatten mechanism.
+///
+/// ## Generic Type Parameter
+///
+/// - `T`: Type implementing [`OutgoingPaymentMethodData`](cashu::OutgoingPaymentMethodData)
+///   for payment method-specific fields. Defaults to [`NoAdditionalFields`] for methods
+///   that don't require additional data beyond the standard fields.
+///
+/// ## Architecture
+///
+/// The trait-based approach provides several benefits over HashMap-based arbitrary data:
+/// - **Type Safety**: Custom fields are validated at compile time
+/// - **IDE Support**: Better autocomplete and inline documentation
+/// - **JSON Compatibility**: Fields appear at top level via `#[serde(flatten)]`
+/// - **Migration Path**: Custom methods can evolve to official ones without breaking changes
+///
+/// ## Example with Additional Fields
+///
+/// ```rust,ignore
+/// use serde::{Deserialize, Serialize};
+/// use cdk_common::payment::CustomOutgoingPaymentOptions;
+/// use cashu::OutgoingPaymentMethodData;
+///
+/// #[derive(Debug, Clone, Serialize, Deserialize)]
+/// struct PayPalFields {
+///     paypal_payer_email: String,
+/// }
+///
+/// impl OutgoingPaymentMethodData for PayPalFields { }
+///
+/// let options = CustomOutgoingPaymentOptions {
+///     method: "paypal".to_string(),
+///     request: "user@example.com".to_string(),
+///     max_fee_amount: Some(Amount::from(50)),
+///     timeout_secs: None,
+///     data: PayPalFields {
+///         paypal_payer_email: "sender@example.com".to_string(),
+///     },
+///     melt_options: None,
+/// };
+/// ```
+///
+/// ## Example without Additional Fields
+///
+/// ```rust,ignore
+/// use cdk_common::payment::CustomOutgoingPaymentOptions;
+/// use cashu::NoAdditionalFields;
+///
+/// let options = CustomOutgoingPaymentOptions {
+///     method: "simple".to_string(),
+///     request: "payment://request".to_string(),
+///     max_fee_amount: None,
+///     timeout_secs: None,
+///     data: NoAdditionalFields,
+///     melt_options: None,
+/// };
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CustomOutgoingPaymentOptions<T = NoAdditionalFields> {
+    /// Payment method name
+    pub method: String,
+    /// Payment request string (method-specific format)
+    pub request: String,
+    /// Maximum fee amount allowed for the payment
+    pub max_fee_amount: Option<Amount>,
+    /// Optional timeout in seconds
+    pub timeout_secs: Option<u64>,
+    /// Method-specific data fields (flattened into top-level JSON)
+    ///
+    /// These fields are serialized at the top level of the JSON object using
+    /// `#[serde(flatten)]`, allowing custom payment methods to add their own
+    /// fields while maintaining a flat JSON structure.
+    #[serde(flatten)]
+    pub data: T,
+    /// Melt options
+    pub melt_options: Option<MeltOptions>,
+}
+
 /// Options for creating an outgoing payment
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OutgoingPaymentOptions {
     /// BOLT11 payment options
     Bolt11(Box<Bolt11OutgoingPaymentOptions>),
     /// BOLT12 payment options
     Bolt12(Box<Bolt12OutgoingPaymentOptions>),
+    /// Custom payment method options
+    Custom(Box<CustomOutgoingPaymentOptions<JsonMap<String, JsonValue>>>),
 }
 
 impl TryFrom<crate::mint::MeltQuote> for OutgoingPaymentOptions {
@@ -246,6 +410,16 @@ impl TryFrom<crate::mint::MeltQuote> for OutgoingPaymentOptions {
                     },
                 )))
             }
+            MeltPaymentRequest::Custom { method, request } => Ok(OutgoingPaymentOptions::Custom(
+                Box::new(CustomOutgoingPaymentOptions {
+                    method,
+                    request,
+                    max_fee_amount: Some(melt_quote.fee_reserve),
+                    timeout_secs: None,
+                    data: JsonMap::new(),
+                    melt_options: melt_quote.options,
+                }),
+            )),
         }
     }
 }
@@ -271,7 +445,7 @@ pub trait MintPayment {
     }
 
     /// Base Settings
-    async fn get_settings(&self) -> Result<serde_json::Value, Self::Err>;
+    async fn get_settings(&self) -> Result<SettingsResponse, Self::Err>;
 
     /// Create a new invoice
     async fn create_incoming_payment_request(
@@ -396,30 +570,46 @@ pub struct PaymentQuoteResponse {
     pub state: MeltQuoteState,
 }
 
-/// Ln backend settings
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
+/// BOLT11 settings
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct Bolt11Settings {
-    /// MPP supported
+    /// Multi-part payment (MPP) supported
     pub mpp: bool,
-    /// Base unit of backend
-    pub unit: CurrencyUnit,
-    /// Invoice Description supported
-    pub invoice_description: bool,
-    /// Paying amountless invoices supported
+    /// Amountless invoice support
     pub amountless: bool,
-    /// Bolt12 supported
-    pub bolt12: bool,
+    /// Invoice description supported
+    pub invoice_description: bool,
 }
 
-impl TryFrom<Bolt11Settings> for Value {
-    type Error = crate::error::Error;
+/// BOLT12 settings
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct Bolt12Settings {
+    /// Amountless offer support
+    pub amountless: bool,
+}
 
-    fn try_from(value: Bolt11Settings) -> Result<Self, Self::Error> {
-        serde_json::to_value(value).map_err(|err| err.into())
+/// Payment processor settings response
+/// Mirrors the proto SettingsResponse structure
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SettingsResponse {
+    /// Base unit of backend
+    pub unit: String,
+    /// BOLT11 settings (None if not supported)
+    pub bolt11: Option<Bolt11Settings>,
+    /// BOLT12 settings (None if not supported)
+    pub bolt12: Option<Bolt12Settings>,
+    /// Custom payment methods settings (method name -> settings data)
+    #[serde(default)]
+    pub custom: std::collections::HashMap<String, String>,
+}
+
+impl From<SettingsResponse> for Value {
+    fn from(value: SettingsResponse) -> Self {
+        serde_json::to_value(value).unwrap_or(Value::Null)
     }
 }
 
-impl TryFrom<Value> for Bolt11Settings {
+impl TryFrom<Value> for SettingsResponse {
     type Error = crate::error::Error;
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
@@ -466,7 +656,7 @@ where
 {
     type Err = T::Err;
 
-    async fn get_settings(&self) -> Result<serde_json::Value, Self::Err> {
+    async fn get_settings(&self) -> Result<SettingsResponse, Self::Err> {
         let start = std::time::Instant::now();
         METRICS.inc_in_flight_requests("get_settings");
 

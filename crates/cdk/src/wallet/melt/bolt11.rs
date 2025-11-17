@@ -10,8 +10,8 @@ use tracing::instrument;
 use crate::amount::to_unit;
 use crate::dhke::construct_proofs;
 use crate::nuts::{
-    CurrencyUnit, MeltOptions, MeltQuoteBolt11Request, MeltQuoteBolt11Response, MeltRequest,
-    PreMintSecrets, Proofs, ProofsMethods, State,
+    CurrencyUnit, GenericMeltQuoteResponse, MeltOptions, MeltQuoteBolt11Request,
+    MeltQuoteBolt11Response, MeltRequest, PreMintSecrets, Proofs, ProofsMethods, State,
 };
 use crate::types::{Melted, ProofInfo};
 use crate::util::unix_time;
@@ -51,11 +51,11 @@ impl Wallet {
     ) -> Result<MeltQuote, Error> {
         let invoice = Bolt11Invoice::from_str(&request)?;
 
-        let quote_request = MeltQuoteBolt11Request {
-            request: invoice.clone(),
-            unit: self.unit.clone(),
-            options,
-        };
+        let quote_request = MeltQuoteBolt11Request::new(
+            invoice.to_string(),
+            self.unit.clone(),
+            crate::nuts::Bolt11MeltRequestFields { options },
+        );
 
         let quote_res = self.client.post_melt_quote(quote_request).await?;
 
@@ -82,11 +82,11 @@ impl Wallet {
             amount: quote_res.amount,
             request,
             unit: self.unit.clone(),
-            fee_reserve: quote_res.fee_reserve,
+            fee_reserve: quote_res.method_fields.fee_reserve,
             state: quote_res.state,
             expiry: quote_res.expiry,
-            payment_preimage: quote_res.payment_preimage,
-            payment_method: PaymentMethod::Bolt11,
+            payment_preimage: quote_res.method_fields.payment_preimage.clone(),
+            payment_method: PaymentMethod::from("bolt11"),
         };
 
         self.localstore.add_melt_quote(quote.clone()).await?;
@@ -195,23 +195,49 @@ impl Wallet {
             Some(premint_secrets.blinded_messages()),
         );
 
-        let melt_response = match quote_info.payment_method {
-            cdk_common::PaymentMethod::Bolt11 => {
+        enum MeltResponseWrapper {
+            Bolt11(MeltQuoteBolt11Response<String>),
+            Custom(GenericMeltQuoteResponse<String>),
+        }
+
+        let melt_response_wrapper = match &quote_info.payment_method {
+            cdk_common::PaymentMethod::Known(cdk_common::nut00::KnownMethod::Bolt11) => {
+                MeltResponseWrapper::Bolt11(
+                    self.try_proof_operation_or_reclaim(
+                        request.inputs().clone(),
+                        self.client.post_melt(request),
+                    )
+                    .await?,
+                )
+            }
+            cdk_common::PaymentMethod::Known(cdk_common::nut00::KnownMethod::Bolt12) => {
+                MeltResponseWrapper::Bolt11(
+                    self.try_proof_operation_or_reclaim(
+                        request.inputs().clone(),
+                        self.client.post_melt_bolt12(request),
+                    )
+                    .await?,
+                )
+            }
+            cdk_common::PaymentMethod::Custom(method) => MeltResponseWrapper::Custom(
                 self.try_proof_operation_or_reclaim(
                     request.inputs().clone(),
-                    self.client.post_melt(request),
+                    self.client.post_melt_custom(method.clone(), request),
                 )
-                .await?
-            }
-            cdk_common::PaymentMethod::Bolt12 => {
-                self.try_proof_operation_or_reclaim(
-                    request.inputs().clone(),
-                    self.client.post_melt_bolt12(request),
-                )
-                .await?
-            }
-            cdk_common::PaymentMethod::Custom(_) => {
-                return Err(Error::UnsupportedPaymentMethod);
+                .await?,
+            ),
+        };
+
+        // Extract common fields from either response type
+        let (change, payment_preimage, state) = match &melt_response_wrapper {
+            MeltResponseWrapper::Bolt11(response) => (
+                response.method_fields.change.clone(),
+                response.method_fields.payment_preimage.clone(),
+                response.state,
+            ),
+            MeltResponseWrapper::Custom(response) => {
+                // SimpleMeltQuoteResponse doesn't have payment_preimage field
+                (None, None, response.state)
             }
         };
 
@@ -227,7 +253,7 @@ impl Wallet {
             .ok_or(Error::NoActiveKeyset)?
             .clone();
 
-        let change_proofs = match melt_response.change {
+        let change_proofs = match change {
             Some(change) => {
                 let num_change_proof = change.len();
 
@@ -252,11 +278,9 @@ impl Wallet {
             None => None,
         };
 
-        let payment_preimage = melt_response.payment_preimage.clone();
-
         let melted = Melted::from_proofs(
-            melt_response.state,
-            melt_response.payment_preimage,
+            state,
+            payment_preimage.clone(),
             quote_info.amount,
             proofs.clone(),
             change_proofs.clone(),

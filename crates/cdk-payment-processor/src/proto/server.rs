@@ -9,7 +9,7 @@ use cdk_common::payment::{IncomingPaymentOptions, MintPayment};
 use cdk_common::CurrencyUnit;
 use futures::{Stream, StreamExt};
 use lightning::offers::offer::Offer;
-use serde_json::Value;
+use serde_json::Map as JsonMap;
 use tokio::sync::{mpsc, Notify};
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, Instant};
@@ -167,14 +167,23 @@ impl CdkPaymentProcessor for PaymentProcessorServer {
         &self,
         _request: Request<EmptyRequest>,
     ) -> Result<Response<SettingsResponse>, Status> {
-        let settings: Value = self
+        let settings = self
             .inner
             .get_settings()
             .await
             .map_err(|_| Status::internal("Could not get settings"))?;
 
         Ok(Response::new(SettingsResponse {
-            inner: settings.to_string(),
+            unit: settings.unit,
+            bolt11: settings.bolt11.map(|b| super::Bolt11Settings {
+                mpp: b.mpp,
+                amountless: b.amountless,
+                invoice_description: b.invoice_description,
+            }),
+            bolt12: settings.bolt12.map(|b| super::Bolt12Settings {
+                amountless: b.amountless,
+            }),
+            custom: settings.custom,
         }))
     }
 
@@ -193,6 +202,23 @@ impl CdkPaymentProcessor for PaymentProcessorServer {
             .options
             .ok_or_else(|| Status::invalid_argument("Missing options"))?
         {
+            incoming_payment_options::Options::Custom(opts) => {
+                let data = opts
+                    .data
+                    .as_ref()
+                    .and_then(|s| serde_json::from_str(s).ok())
+                    .unwrap_or_else(JsonMap::new);
+
+                IncomingPaymentOptions::Custom(Box::new(
+                    cdk_common::payment::CustomIncomingPaymentOptions {
+                        data,
+                        method: "".to_string(),
+                        description: opts.description,
+                        amount: opts.amount.unwrap_or(0).into(),
+                        unix_expiry: opts.unix_expiry,
+                    },
+                ))
+            }
             incoming_payment_options::Options::Bolt11(opts) => {
                 IncomingPaymentOptions::Bolt11(cdk_common::payment::Bolt11IncomingPaymentOptions {
                     description: opts.description,
@@ -254,6 +280,25 @@ impl CdkPaymentProcessor for PaymentProcessorServer {
                     },
                 ))
             }
+            OutgoingPaymentRequestType::Custom => {
+                // Custom payment method - pass request as-is with no validation
+                let data = request
+                    .data
+                    .as_ref()
+                    .and_then(|s| serde_json::from_str(s).ok())
+                    .unwrap_or_default();
+
+                cdk_common::payment::OutgoingPaymentOptions::Custom(Box::new(
+                    cdk_common::payment::CustomOutgoingPaymentOptions {
+                        method: String::new(), // Will be set from variant
+                        request: request.request.clone(),
+                        max_fee_amount: None,
+                        timeout_secs: None,
+                        data,
+                        melt_options: request.options.map(Into::into),
+                    },
+                ))
+            }
         };
 
         let payment_quote = self
@@ -307,6 +352,26 @@ impl CdkPaymentProcessor for PaymentProcessorServer {
                         offer,
                         max_fee_amount: opts.max_fee_amount.map(Into::into),
                         timeout_secs: opts.timeout_secs,
+                        melt_options: opts.melt_options.map(Into::into),
+                    }),
+                );
+
+                (CurrencyUnit::Msat, payment_options)
+            }
+            outgoing_payment_variant::Options::Custom(opts) => {
+                let data = opts
+                    .data
+                    .as_ref()
+                    .and_then(|s| serde_json::from_str(s).ok())
+                    .unwrap_or_else(JsonMap::new);
+
+                let payment_options = cdk_common::payment::OutgoingPaymentOptions::Custom(
+                    Box::new(cdk_common::payment::CustomOutgoingPaymentOptions {
+                        method: String::new(), // Method will be determined from context
+                        request: opts.offer,   // Reusing offer field for custom request string
+                        max_fee_amount: opts.max_fee_amount.map(Into::into),
+                        timeout_secs: opts.timeout_secs,
+                        data,
                         melt_options: opts.melt_options.map(Into::into),
                     }),
                 );

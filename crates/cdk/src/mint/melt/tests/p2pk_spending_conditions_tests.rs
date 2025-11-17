@@ -8,8 +8,7 @@ use std::str::FromStr;
 use cdk_common::dhke::construct_proofs;
 use cdk_common::melt::MeltQuoteRequest;
 use cdk_common::nuts::SpendingConditions;
-use cdk_common::Amount;
-use cdk_common::SpendingConditionVerification;
+use cdk_common::{Amount, Bolt11MeltRequestFields, SpendingConditionVerification};
 
 use crate::test_helpers::nut10::{create_test_keypair, unzip3, TestMintHelper};
 
@@ -85,9 +84,9 @@ async fn test_p2pk_basic_sig_inputs() {
     let bolt11 = cdk_common::Bolt11Invoice::from_str(bolt11_str).unwrap();
 
     let melt_quote_request = cdk_common::MeltQuoteBolt11Request {
-        request: bolt11,
+        request: bolt11_str.to_owned(),
         unit: cdk_common::CurrencyUnit::Sat,
-        options: None,
+        method_fields: Bolt11MeltRequestFields { options: None },
     };
 
     let melt_quote = mint

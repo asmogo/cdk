@@ -5,6 +5,7 @@ use cdk_common::amount::to_unit;
 use cdk_common::database::mint::MeltRequestInfo;
 use cdk_common::database::DynMintDatabase;
 use cdk_common::mint::{MeltSagaState, Operation, Saga};
+use cdk_common::nut00::KnownMethod;
 use cdk_common::nuts::MeltQuoteState;
 use cdk_common::{Amount, Error, ProofsMethods, PublicKey, QuoteId, State};
 #[cfg(feature = "prometheus")]
@@ -436,7 +437,7 @@ impl MeltSaga<SetupComplete> {
         // Mint quote has already been settled
         if (mint_quote.state() == cdk_common::nuts::MintQuoteState::Issued
             || mint_quote.state() == cdk_common::nuts::MintQuoteState::Paid)
-            && mint_quote.payment_method == crate::mint::PaymentMethod::Bolt11
+            && mint_quote.payment_method == crate::mint::PaymentMethod::Known(KnownMethod::Bolt11)
         {
             tx.rollback().await?;
             self.compensate_all().await?;
@@ -852,18 +853,18 @@ impl MeltSaga<PaymentConfirmed> {
             METRICS.record_mint_operation("melt_bolt11", true);
         }
 
-        let response = MeltQuoteBolt11Response {
-            amount: self.state_data.quote.amount,
-            paid: Some(true),
-            payment_preimage,
-            change,
-            quote: self.state_data.quote.id,
-            fee_reserve: self.state_data.quote.fee_reserve,
-            state: MeltQuoteState::Paid,
-            expiry: self.state_data.quote.expiry,
-            request: Some(self.state_data.quote.request.to_string()),
-            unit: Some(self.state_data.quote.unit.clone()),
-        };
+        let response = MeltQuoteBolt11Response::new(
+            self.state_data.quote.id,
+            self.state_data.quote.amount,
+            self.state_data.quote.unit.clone(),
+            MeltQuoteState::Paid,
+            self.state_data.quote.expiry,
+            crate::nuts::Bolt11MeltResponseFields {
+                fee_reserve: self.state_data.quote.fee_reserve,
+                payment_preimage,
+                change,
+            },
+        );
 
         Ok(response)
     }

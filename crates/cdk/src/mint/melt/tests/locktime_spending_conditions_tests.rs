@@ -8,7 +8,7 @@ use std::str::FromStr;
 use cdk_common::dhke::construct_proofs;
 use cdk_common::melt::MeltQuoteRequest;
 use cdk_common::nuts::{Conditions, SigFlag, SpendingConditions};
-use cdk_common::{Amount, SpendingConditionVerification};
+use cdk_common::{Amount, Bolt11MeltRequestFields, SpendingConditionVerification};
 
 use crate::test_helpers::nut10::{create_test_keypair, unzip3, TestMintHelper};
 use crate::util::unix_time;
@@ -93,12 +93,11 @@ async fn test_p2pk_post_locktime_anyone_can_spend() {
 
     // Step 5: Create a real melt quote
     let bolt11_str = "lnbc100n1pnvpufspp5djn8hrq49r8cghwye9kqw752qjncwyfnrprhprpqk43mwcy4yfsqdq5g9kxy7fqd9h8vmmfvdjscqzzsxqyz5vqsp5uhpjt36rj75pl7jq2sshaukzfkt7uulj456s4mh7uy7l6vx7lvxs9qxpqysgqedwz08acmqwtk8g4vkwm2w78suwt2qyzz6jkkwcgrjm3r3hs6fskyhvud4fan3keru7emjm8ygqpcrwtlmhfjfmer3afs5hhwamgr4cqtactdq";
-    let bolt11 = cdk_common::Bolt11Invoice::from_str(bolt11_str).unwrap();
 
     let melt_quote_request = cdk_common::MeltQuoteBolt11Request {
-        request: bolt11,
+        request: bolt11_str.to_owned(),
         unit: cdk_common::CurrencyUnit::Sat,
-        options: None,
+        method_fields: Bolt11MeltRequestFields { options: None },
     };
 
     let melt_quote = mint
@@ -212,12 +211,11 @@ async fn test_p2pk_before_locktime_requires_correct_key() {
 
     // Step 5: Create a real melt quote
     let bolt11_str = "lnbc100n1pnvpufspp5djn8hrq49r8cghwye9kqw752qjncwyfnrprhprpqk43mwcy4yfsqdq5g9kxy7fqd9h8vmmfvdjscqzzsxqyz5vqsp5uhpjt36rj75pl7jq2sshaukzfkt7uulj456s4mh7uy7l6vx7lvxs9qxpqysgqedwz08acmqwtk8g4vkwm2w78suwt2qyzz6jkkwcgrjm3r3hs6fskyhvud4fan3keru7emjm8ygqpcrwtlmhfjfmer3afs5hhwamgr4cqtactdq";
-    let bolt11 = cdk_common::Bolt11Invoice::from_str(bolt11_str).unwrap();
 
     let melt_quote_request = cdk_common::MeltQuoteBolt11Request {
-        request: bolt11,
+        request: bolt11_str.to_owned(),
         unit: cdk_common::CurrencyUnit::Sat,
-        options: None,
+        method_fields: Bolt11MeltRequestFields { options: None },
     };
 
     let melt_quote = mint

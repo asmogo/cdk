@@ -5,14 +5,13 @@
 
 use std::str::FromStr;
 
-use cdk_common::dhke::construct_proofs;
-use cdk_common::melt::MeltQuoteRequest;
-use cdk_common::nuts::{Conditions, SigFlag, SpendingConditions};
-use cdk_common::{Amount, SpendingConditionVerification};
-
 use crate::test_helpers::nut10::{
     create_test_hash_and_preimage, create_test_keypair, unzip3, TestMintHelper,
 };
+use cdk_common::dhke::construct_proofs;
+use cdk_common::melt::MeltQuoteRequest;
+use cdk_common::nuts::{Conditions, SigFlag, SpendingConditions};
+use cdk_common::{Amount, Bolt11MeltRequestFields, SpendingConditionVerification};
 
 /// Test: HTLC SIG_ALL requiring preimage and one signature
 ///
@@ -96,12 +95,11 @@ async fn test_htlc_sig_all_requiring_preimage_and_one_signature() {
 
     // Step 6: Create a real melt quote that we'll use for all tests
     let bolt11_str = "lnbc100n1pnvpufspp5djn8hrq49r8cghwye9kqw752qjncwyfnrprhprpqk43mwcy4yfsqdq5g9kxy7fqd9h8vmmfvdjscqzzsxqyz5vqsp5uhpjt36rj75pl7jq2sshaukzfkt7uulj456s4mh7uy7l6vx7lvxs9qxpqysgqedwz08acmqwtk8g4vkwm2w78suwt2qyzz6jkkwcgrjm3r3hs6fskyhvud4fan3keru7emjm8ygqpcrwtlmhfjfmer3afs5hhwamgr4cqtactdq";
-    let bolt11 = cdk_common::Bolt11Invoice::from_str(bolt11_str).unwrap();
 
     let melt_quote_request = cdk_common::MeltQuoteBolt11Request {
-        request: bolt11,
+        request: bolt11_str.to_owned(),
         unit: cdk_common::CurrencyUnit::Sat,
-        options: None,
+        method_fields: Bolt11MeltRequestFields { options: None },
     };
 
     let melt_quote = mint

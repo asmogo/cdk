@@ -444,7 +444,7 @@ async fn test_attempt_to_mint_unpaid() {
         .await
         .unwrap();
 
-    assert!(state.amount_paid == Amount::ZERO);
+    assert!(state.method_fields.amount_paid == Amount::ZERO);
 
     let proofs = wallet
         .mint_bolt12(&mint_quote.id, None, SplitTarget::default(), None)

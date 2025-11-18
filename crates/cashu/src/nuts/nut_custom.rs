@@ -1,11 +1,10 @@
 //! Custom Payment Methods
 //!
 //! This module defines generic request and response types for custom payment methods.
-//! Unlike Bolt11/Bolt12, custom payment methods use opaque JSON data that is passed
-//! directly to the payment processor without validation at the mint layer.
+//! Unlike Bolt11/Bolt12, custom payment methods rely on the method parameter and other
+//! explicit fields rather than arbitrary JSON data blobs.
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 use super::{CurrencyUnit, PublicKey};
 use crate::nut23::QuoteState;
@@ -16,7 +15,6 @@ use crate::Amount;
 /// Custom payment method mint quote request
 ///
 /// This is a generic request type that works for any custom payment method.
-/// The `data` field contains method-specific information as opaque JSON.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "swagger", derive(utoipa::ToSchema))]
 pub struct MintQuoteCustomRequest {
@@ -24,9 +22,6 @@ pub struct MintQuoteCustomRequest {
     pub amount: Amount,
     /// Currency unit
     pub unit: CurrencyUnit,
-    /// Method-specific data (opaque JSON)
-    #[serde(default)]
-    pub data: Value,
     /// Optional description
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
@@ -38,7 +33,6 @@ pub struct MintQuoteCustomRequest {
 /// Custom payment method mint quote response
 ///
 /// This is a generic response type for custom payment methods.
-/// The `data` field contains method-specific response data as opaque JSON.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "swagger", derive(utoipa::ToSchema))]
 #[serde(bound = "Q: Serialize + for<'a> Deserialize<'a>")]
@@ -58,9 +52,6 @@ pub struct MintQuoteCustomResponse<Q> {
     /// NUT-19 Pubkey
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pubkey: Option<PublicKey>,
-    /// Method-specific response data (opaque JSON)
-    #[serde(default)]
-    pub data: Value,
 }
 
 #[cfg(feature = "mint")]
@@ -75,7 +66,6 @@ impl<Q: ToString> MintQuoteCustomResponse<Q> {
             unit: self.unit.clone(),
             expiry: self.expiry,
             pubkey: self.pubkey,
-            data: self.data.clone(),
         }
     }
 }
@@ -91,7 +81,6 @@ impl From<MintQuoteCustomResponse<QuoteId>> for MintQuoteCustomResponse<String> 
             expiry: value.expiry,
             state: value.state,
             pubkey: value.pubkey,
-            data: value.data,
         }
     }
 }
@@ -108,9 +97,6 @@ pub struct MeltQuoteCustomRequest {
     pub request: String,
     /// Currency unit
     pub unit: CurrencyUnit,
-    /// Method-specific data (opaque JSON)
-    #[serde(default)]
-    pub data: Value,
 }
 
 // Note: For custom payment method melt quote responses, we reuse the standard

@@ -9,7 +9,7 @@ use cdk_common::payment::{
     OutgoingPaymentOptions,
 };
 use cdk_common::quote_id::QuoteId;
-use cdk_common::{MeltOptions, MeltQuoteBolt12Request, SpendingConditionVerification};
+use cdk_common::{MeltOptions, MeltQuoteBolt12Request, MeltQuoteCustomRequest, SpendingConditionVerification};
 #[cfg(feature = "prometheus")]
 use cdk_prometheus::METRICS;
 use lightning::offers::offer::Offer;
@@ -353,7 +353,6 @@ impl Mint {
         let MeltQuoteCustomRequest {
             request,
             unit,
-            data,
             method,
         } = melt_request;
 
@@ -374,7 +373,6 @@ impl Mint {
                 request: request.clone(),
                 max_fee_amount: None,
                 timeout_secs: None,
-                data: data.clone(),
                 melt_options: None,
             }));
 
@@ -419,7 +417,6 @@ impl Mint {
             MeltPaymentRequest::Custom {
                 method: method.to_string(),
                 request: request.clone(),
-                data: data.clone(),
             },
             unit.clone(),
             payment_quote.amount,

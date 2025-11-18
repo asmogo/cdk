@@ -5,14 +5,11 @@ use axum::http::request::Parts;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use cdk::error::{ErrorCode, ErrorResponse};
-use cdk::mint::QuoteId;
 #[cfg(feature = "auth")]
 use cdk::nuts::nut21::{Method, ProtectedEndpoint, RoutePath};
 use cdk::nuts::{
-    CheckStateRequest, CheckStateResponse, Id, KeysResponse, KeysetResponse,
-    MeltQuoteBolt11Request, MeltQuoteBolt11Response, MeltRequest, MintInfo, MintQuoteBolt11Request,
-    MintQuoteBolt11Response, MintRequest, MintResponse, RestoreRequest, RestoreResponse,
-    SwapRequest, SwapResponse,
+    CheckStateRequest, CheckStateResponse, Id, KeysResponse, KeysetResponse, MintInfo,
+    RestoreRequest, RestoreResponse, SwapRequest, SwapResponse,
 };
 use cdk::util::unix_time;
 use paste::paste;
@@ -214,89 +211,6 @@ pub(crate) async fn get_keysets(
     State(state): State<MintState>,
 ) -> Result<Json<KeysetResponse>, Response> {
     Ok(Json(state.mint.keysets()))
-}
-
-#[cfg_attr(feature = "swagger", utoipa::path(
-    post,
-    context_path = "/v1",
-    path = "/mint/quote/bolt11",
-    request_body(content = MintQuoteBolt11Request, description = "Request params", content_type = "application/json"),
-    responses(
-        (status = 200, description = "Successful response", body = MintQuoteBolt11Response<String>, content_type = "application/json"),
-        (status = 500, description = "Server error", body = ErrorResponse, content_type = "application/json")
-    )
-))]
-/// Request a quote for minting of new tokens
-///
-/// Request minting of new tokens. The mint responds with a Lightning invoice. This endpoint can be used for a Lightning invoice UX flow.
-#[instrument(skip_all, fields(amount = ?payload.amount))]
-pub(crate) async fn post_mint_bolt11_quote(
-    #[cfg(feature = "auth")] auth: AuthHeader,
-    State(state): State<MintState>,
-    Json(payload): Json<MintQuoteBolt11Request>,
-) -> Result<Json<MintQuoteBolt11Response<QuoteId>>, Response> {
-    #[cfg(feature = "auth")]
-    state
-        .mint
-        .verify_auth(
-            auth.into(),
-            &ProtectedEndpoint::new(Method::Post, RoutePath::MintQuoteBolt11),
-        )
-        .await
-        .map_err(into_response)?;
-
-    let quote = state
-        .mint
-        .get_mint_quote(payload.into())
-        .await
-        .map_err(into_response)?;
-
-    Ok(Json(quote.try_into().map_err(into_response)?))
-}
-
-#[cfg_attr(feature = "swagger", utoipa::path(
-    get,
-    context_path = "/v1",
-    path = "/mint/quote/bolt11/{quote_id}",
-    params(
-        ("quote_id" = String, description = "The quote ID"),
-    ),
-    responses(
-        (status = 200, description = "Successful response", body = MintQuoteBolt11Response<String>, content_type = "application/json"),
-        (status = 500, description = "Server error", body = ErrorResponse, content_type = "application/json")
-    )
-))]
-/// Get mint quote by ID
-///
-/// Get mint quote state.
-#[instrument(skip_all, fields(quote_id = ?quote_id))]
-pub(crate) async fn get_check_mint_bolt11_quote(
-    #[cfg(feature = "auth")] auth: AuthHeader,
-    State(state): State<MintState>,
-    Path(quote_id): Path<QuoteId>,
-) -> Result<Json<MintQuoteBolt11Response<QuoteId>>, Response> {
-    #[cfg(feature = "auth")]
-    {
-        state
-            .mint
-            .verify_auth(
-                auth.into(),
-                &ProtectedEndpoint::new(Method::Get, RoutePath::MintQuoteBolt11),
-            )
-            .await
-            .map_err(into_response)?;
-    }
-
-    let quote = state
-        .mint
-        .check_mint_quote(&quote_id)
-        .await
-        .map_err(|err| {
-            tracing::error!("Could not check mint quote {}: {}", quote_id, err);
-            into_response(err)
-        })?;
-
-    Ok(Json(quote.try_into().map_err(into_response)?))
 }
 
 #[instrument(skip_all)]

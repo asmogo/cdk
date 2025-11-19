@@ -18,18 +18,15 @@ use std::time::Duration;
 
 use anyhow::{bail, Result};
 use bip39::Mnemonic;
-use cashu::Amount;
 use cdk_integration_tests::cli::CommonArgs;
-use cdk_integration_tests::init_regtest::start_regtest_end;
 use cdk_integration_tests::shared;
-use cdk_ldk_node::CdkLdkNode;
 use cdk_mintd::config::LoggingConfig;
 use clap::Parser;
-use ldk_node::lightning::ln::msgs::SocketAddress;
+use fedimint_portalloc::port_alloc;
 use tokio::runtime::Runtime;
 use tokio::signal;
 use tokio::signal::unix::SignalKind;
-use tokio::sync::{oneshot, Notify};
+use tokio::sync::Notify;
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 
@@ -49,18 +46,6 @@ struct Args {
     /// Mint address (default: 127.0.0.1)
     #[arg(default_value = "127.0.0.1")]
     mint_addr: String,
-
-    /// CLN port (default: 8085)
-    #[arg(default_value_t = 8085)]
-    cln_port: u16,
-
-    /// LND port (default: 8087)
-    #[arg(default_value_t = 8087)]
-    lnd_port: u16,
-
-    /// LDK port (default: 8089)
-    #[arg(default_value_t = 8089)]
-    ldk_port: u16,
 }
 
 /// Start regtest CLN mint using the library
@@ -114,6 +99,7 @@ async fn start_cln_mint(
             None,
             None,
             vec![],
+            None,
         )
         .await
         {
@@ -180,6 +166,7 @@ async fn start_lnd_mint(
             None,
             None,
             vec![],
+            None,
         )
         .await
         {
@@ -197,10 +184,13 @@ async fn start_ldk_mint(
     port: u16,
     shutdown: Arc<Notify>,
     runtime: Option<std::sync::Arc<tokio::runtime::Runtime>>,
+    ldk_node: Option<std::sync::Arc<ldk_node::Node>>,
 ) -> Result<tokio::task::JoinHandle<()>> {
-    let ldk_work_dir = temp_dir.join("ldk_mint");
+    // IMPORTANT: Use the same directory as the regtest LDK node so we use the same node instance
+    // with all the pre-established channels
+    let ldk_work_dir = temp_dir.join("ldk");
 
-    // Create work directory for LDK mint
+    // Create work directory for LDK mint (may already exist from regtest setup)
     fs::create_dir_all(&ldk_work_dir)?;
 
     // Configure LDK node for regtest
@@ -217,7 +207,7 @@ async fn start_ldk_mint(
         esplora_url: None,
         storage_dir_path: Some(ldk_work_dir.to_string_lossy().to_string()),
         ldk_node_host: Some("127.0.0.1".to_string()),
-        ldk_node_port: Some(port + 10), // Use a different port for the LDK node P2P connections
+        ldk_node_port: Some(8092), // Use the same port as the regtest LDK node (not port + 10!)
         gossip_source_type: None,
         rgs_url: None,
         webserver_host: Some("127.0.0.1".to_string()),
@@ -247,6 +237,7 @@ async fn start_ldk_mint(
             None,
             runtime,
             vec![],
+            ldk_node, // existing_ldk_node
         )
         .await
         {
@@ -315,14 +306,26 @@ fn main() -> Result<()> {
 
         let temp_dir = shared::init_working_directory(&args.work_dir)?;
 
+        // Allocate ports
+        let base_port = port_alloc(10)?;
+        let cln_port = base_port;
+        let lnd_port = base_port + 2;
+        let ldk_port = base_port + 4;
+        let postgres_port = base_port + 6;
+
+        println!("Allocated ports: CLN={}, LND={}, LDK={}, PG={}",
+                 cln_port, lnd_port, ldk_port, postgres_port);
+
         // Write environment variables to a .env file in the temp_dir
-        let mint_url_1 = format!("http://{}:{}", args.mint_addr, args.cln_port);
-        let mint_url_2 = format!("http://{}:{}", args.mint_addr, args.lnd_port);
-        let mint_url_3 = format!("http://{}:{}", args.mint_addr, args.ldk_port);
+        let mint_url_1 = format!("http://{}:{}", args.mint_addr, cln_port);
+        let mint_url_2 = format!("http://{}:{}", args.mint_addr, lnd_port);
+        let mint_url_3 = format!("http://{}:{}", args.mint_addr, ldk_port);
+        let postgres_port_str = postgres_port.to_string();
         let env_vars: Vec<(&str, &str)> = vec![
             ("CDK_TEST_MINT_URL", &mint_url_1),
             ("CDK_TEST_MINT_URL_2", &mint_url_2),
             ("CDK_TEST_MINT_URL_3", &mint_url_3),
+            ("CDK_TEST_POSTGRES_PORT", &postgres_port_str),
         ];
 
         shared::write_env_file(&temp_dir, &env_vars)?;
@@ -332,69 +335,51 @@ fn main() -> Result<()> {
 
         let shutdown_regtest = shared::create_shutdown_handler();
         let shutdown_clone = shutdown_regtest.clone();
-        let (tx, rx) = oneshot::channel();
-
         let shutdown_clone_one = Arc::clone(&shutdown_clone);
 
-        let ldk_work_dir = temp_dir.join("ldk_mint");
-        let cdk_ldk = CdkLdkNode::new(
-            bitcoin::Network::Regtest,
-            cdk_ldk_node::ChainSource::BitcoinRpc(cdk_ldk_node::BitcoinRpcConfig {
-                host: "127.0.0.1".to_string(),
-                port: 18443,
-                user: "testuser".to_string(),
-                password: "testpass".to_string(),
-            }),
-            cdk_ldk_node::GossipSource::P2P,
-            ldk_work_dir.to_string_lossy().to_string(),
-            cdk_common::common::FeeReserve {
-                min_fee_reserve: Amount::ZERO,
-                percent_fee_reserve: 0.0,
-            },
-            vec![SocketAddress::TcpIpV4 {
-                addr: [127, 0, 0, 1],
-                port: 8092,
-            }],
-            Some(Arc::clone(&rt_clone)),
-        )?;
-
-        let inner_node = cdk_ldk.node();
-
-        let temp_dir_clone = temp_dir.clone();
-        let shutdown_clone_two = Arc::clone(&shutdown_clone);
-        tokio::spawn(async move {
-            start_regtest_end(&temp_dir_clone, tx, shutdown_clone_two, Some(inner_node))
-                .await
-                .expect("Error starting regtest");
-        });
-
-        match timeout(Duration::from_secs(300), rx).await {
-            Ok(k) => {
-                k?;
+        // Use start_regtest_with_access to get the regtest instance
+        let regtest = match timeout(
+            Duration::from_secs(300),
+            cdk_integration_tests::init_regtest::start_regtest_with_access(&temp_dir),
+        )
+        .await
+        {
+            Ok(Ok(regtest)) => {
                 tracing::info!("Regtest set up");
+                regtest
+            }
+            Ok(Err(e)) => {
+                tracing::error!("Error starting regtest: {:?}", e);
+                anyhow::bail!("Error starting regtest: {:?}", e);
             }
             Err(_) => {
                 tracing::error!("regtest setup timed out after 5 minutes");
                 anyhow::bail!("Could not set up regtest");
             }
-        }
+        };
 
-        println!("lnd port: {}", args.ldk_port);
+        // Get the LDK node from regtest to reuse it in the mint
+        // This ensures the mint uses the same node instance with established channels
+        tracing::info!("Getting regtest LDK node to inject into mint...");
+        let ldk_node = regtest.ldk_node().await?;
+
+        println!("lnd port: {}", ldk_port);
 
         // Start LND mint
-        let lnd_handle = start_lnd_mint(&temp_dir, args.lnd_port, shutdown_clone.clone()).await?;
+        let lnd_handle = start_lnd_mint(&temp_dir, lnd_port, shutdown_clone.clone()).await?;
 
-        // Start LDK mint
+        // Start LDK mint with the injected node
         let ldk_handle = start_ldk_mint(
             &temp_dir,
-            args.ldk_port,
+            ldk_port,
             shutdown_clone.clone(),
             Some(rt_clone),
+            Some(ldk_node),
         )
         .await?;
 
         // Start CLN mint
-        let cln_handle = start_cln_mint(&temp_dir, args.cln_port, shutdown_clone.clone()).await?;
+        let cln_handle = start_cln_mint(&temp_dir, cln_port, shutdown_clone.clone()).await?;
 
         let cancel_token = Arc::new(CancellationToken::new());
 
@@ -414,17 +399,17 @@ fn main() -> Result<()> {
 
         match tokio::try_join!(
             shared::wait_for_mint_ready_with_shutdown(
-                args.lnd_port,
+                lnd_port,
                 100,
                 Arc::clone(&cancel_token)
             ),
             shared::wait_for_mint_ready_with_shutdown(
-                args.ldk_port,
+                ldk_port,
                 100,
                 Arc::clone(&cancel_token)
             ),
             shared::wait_for_mint_ready_with_shutdown(
-                args.cln_port,
+                cln_port,
                 100,
                 Arc::clone(&cancel_token)
             ),
@@ -444,23 +429,23 @@ fn main() -> Result<()> {
         }
 
         println!("All regtest mints started successfully!");
-        println!("CLN mint: http://{}:{}", args.mint_addr, args.cln_port);
-        println!("LND mint: http://{}:{}", args.mint_addr, args.lnd_port);
-        println!("LDK mint: http://{}:{}", args.mint_addr, args.ldk_port);
-        shared::display_mint_info(args.cln_port, &temp_dir, &args.database_type); // Using CLN port for display
+        println!("CLN mint: http://{}:{}", args.mint_addr, cln_port);
+        println!("LND mint: http://{}:{}", args.mint_addr, lnd_port);
+        println!("LDK mint: http://{}:{}", args.mint_addr, ldk_port);
+        shared::display_mint_info(cln_port, &temp_dir, &args.database_type); // Using CLN port for display
         println!();
         println!("Environment variables set:");
         println!(
             "  CDK_TEST_MINT_URL=http://{}:{}",
-            args.mint_addr, args.cln_port
+            args.mint_addr, cln_port
         );
         println!(
             "  CDK_TEST_MINT_URL_2=http://{}:{}",
-            args.mint_addr, args.lnd_port
+            args.mint_addr, lnd_port
         );
         println!(
             "  CDK_TEST_MINT_URL_3=http://{}:{}",
-            args.mint_addr, args.ldk_port
+            args.mint_addr, ldk_port
         );
         println!("  CDK_ITESTS_DIR={}", temp_dir.display());
         println!();
@@ -523,6 +508,10 @@ fn main() -> Result<()> {
         if let Err(e) = tokio::try_join!(ldk_handle, cln_handle, lnd_handle) {
             eprintln!("Error waiting for mints to shut down: {e}");
         }
+
+        // Cleanup regtest environment
+        tracing::info!("Cleaning up regtest environment...");
+        regtest.fast_terminate().await;
 
         println!("All services shut down successfully");
 

@@ -5,7 +5,7 @@ CONTAINER_NAME="rust-test-pg"
 DB_USER="test"
 DB_PASS="test"
 DB_NAME="testdb"
-DB_PORT="5433"
+DB_PORT="${CDK_TEST_POSTGRES_PORT:-5433}"
 
 echo "Starting fresh PostgreSQL container..."
 docker run -d --rm \

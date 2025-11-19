@@ -22,6 +22,7 @@ use cdk_integration_tests::cli::CommonArgs;
 use cdk_integration_tests::shared;
 use cdk_mintd::config::LoggingConfig;
 use clap::Parser;
+use fedimint_portalloc::port_alloc;
 use tokio::runtime::Runtime;
 use tokio::signal;
 use tokio::signal::unix::SignalKind;
@@ -45,18 +46,6 @@ struct Args {
     /// Mint address (default: 127.0.0.1)
     #[arg(default_value = "127.0.0.1")]
     mint_addr: String,
-
-    /// CLN port (default: 8085)
-    #[arg(default_value_t = 8085)]
-    cln_port: u16,
-
-    /// LND port (default: 8087)
-    #[arg(default_value_t = 8087)]
-    lnd_port: u16,
-
-    /// LDK port (default: 8089)
-    #[arg(default_value_t = 8089)]
-    ldk_port: u16,
 }
 
 /// Start regtest CLN mint using the library
@@ -317,14 +306,26 @@ fn main() -> Result<()> {
 
         let temp_dir = shared::init_working_directory(&args.work_dir)?;
 
+        // Allocate ports
+        let base_port = port_alloc(10)?;
+        let cln_port = base_port;
+        let lnd_port = base_port + 2;
+        let ldk_port = base_port + 4;
+        let postgres_port = base_port + 6;
+
+        println!("Allocated ports: CLN={}, LND={}, LDK={}, PG={}",
+                 cln_port, lnd_port, ldk_port, postgres_port);
+
         // Write environment variables to a .env file in the temp_dir
-        let mint_url_1 = format!("http://{}:{}", args.mint_addr, args.cln_port);
-        let mint_url_2 = format!("http://{}:{}", args.mint_addr, args.lnd_port);
-        let mint_url_3 = format!("http://{}:{}", args.mint_addr, args.ldk_port);
+        let mint_url_1 = format!("http://{}:{}", args.mint_addr, cln_port);
+        let mint_url_2 = format!("http://{}:{}", args.mint_addr, lnd_port);
+        let mint_url_3 = format!("http://{}:{}", args.mint_addr, ldk_port);
+        let postgres_port_str = postgres_port.to_string();
         let env_vars: Vec<(&str, &str)> = vec![
             ("CDK_TEST_MINT_URL", &mint_url_1),
             ("CDK_TEST_MINT_URL_2", &mint_url_2),
             ("CDK_TEST_MINT_URL_3", &mint_url_3),
+            ("CDK_TEST_POSTGRES_PORT", &postgres_port_str),
         ];
 
         shared::write_env_file(&temp_dir, &env_vars)?;
@@ -362,15 +363,15 @@ fn main() -> Result<()> {
         tracing::info!("Getting regtest LDK node to inject into mint...");
         let ldk_node = regtest.ldk_node().await?;
 
-        println!("lnd port: {}", args.ldk_port);
+        println!("lnd port: {}", ldk_port);
 
         // Start LND mint
-        let lnd_handle = start_lnd_mint(&temp_dir, args.lnd_port, shutdown_clone.clone()).await?;
+        let lnd_handle = start_lnd_mint(&temp_dir, lnd_port, shutdown_clone.clone()).await?;
 
         // Start LDK mint with the injected node
         let ldk_handle = start_ldk_mint(
             &temp_dir,
-            args.ldk_port,
+            ldk_port,
             shutdown_clone.clone(),
             Some(rt_clone),
             Some(ldk_node),
@@ -378,7 +379,7 @@ fn main() -> Result<()> {
         .await?;
 
         // Start CLN mint
-        let cln_handle = start_cln_mint(&temp_dir, args.cln_port, shutdown_clone.clone()).await?;
+        let cln_handle = start_cln_mint(&temp_dir, cln_port, shutdown_clone.clone()).await?;
 
         let cancel_token = Arc::new(CancellationToken::new());
 
@@ -398,17 +399,17 @@ fn main() -> Result<()> {
 
         match tokio::try_join!(
             shared::wait_for_mint_ready_with_shutdown(
-                args.lnd_port,
+                lnd_port,
                 100,
                 Arc::clone(&cancel_token)
             ),
             shared::wait_for_mint_ready_with_shutdown(
-                args.ldk_port,
+                ldk_port,
                 100,
                 Arc::clone(&cancel_token)
             ),
             shared::wait_for_mint_ready_with_shutdown(
-                args.cln_port,
+                cln_port,
                 100,
                 Arc::clone(&cancel_token)
             ),
@@ -428,23 +429,23 @@ fn main() -> Result<()> {
         }
 
         println!("All regtest mints started successfully!");
-        println!("CLN mint: http://{}:{}", args.mint_addr, args.cln_port);
-        println!("LND mint: http://{}:{}", args.mint_addr, args.lnd_port);
-        println!("LDK mint: http://{}:{}", args.mint_addr, args.ldk_port);
-        shared::display_mint_info(args.cln_port, &temp_dir, &args.database_type); // Using CLN port for display
+        println!("CLN mint: http://{}:{}", args.mint_addr, cln_port);
+        println!("LND mint: http://{}:{}", args.mint_addr, lnd_port);
+        println!("LDK mint: http://{}:{}", args.mint_addr, ldk_port);
+        shared::display_mint_info(cln_port, &temp_dir, &args.database_type); // Using CLN port for display
         println!();
         println!("Environment variables set:");
         println!(
             "  CDK_TEST_MINT_URL=http://{}:{}",
-            args.mint_addr, args.cln_port
+            args.mint_addr, cln_port
         );
         println!(
             "  CDK_TEST_MINT_URL_2=http://{}:{}",
-            args.mint_addr, args.lnd_port
+            args.mint_addr, lnd_port
         );
         println!(
             "  CDK_TEST_MINT_URL_3=http://{}:{}",
-            args.mint_addr, args.ldk_port
+            args.mint_addr, ldk_port
         );
         println!("  CDK_ITESTS_DIR={}", temp_dir.display());
         println!();

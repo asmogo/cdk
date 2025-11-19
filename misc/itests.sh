@@ -50,8 +50,6 @@ export CDK_TEST_REGTEST=1
 # Create a temporary directory
 export CDK_ITESTS_DIR=$(mktemp -d)
 export CDK_ITESTS_MINT_ADDR="127.0.0.1"
-export CDK_ITESTS_MINT_PORT_0=8085
-export CDK_ITESTS_MINT_PORT_1=8087
 
 # Check if the temporary directory was created successfully
 if [[ ! -d "$CDK_ITESTS_DIR" ]]; then
@@ -110,7 +108,7 @@ REGTEST_START=$(date +%s)
 
 echo "Launching start_regtest_mints binary..."
 # Run the pre-built binary in background
-target/debug/start_regtest_mints --enable-logging "$CDK_MINTD_DATABASE" "$CDK_ITESTS_DIR" "$CDK_ITESTS_MINT_ADDR" "$CDK_ITESTS_MINT_PORT_0" "$CDK_ITESTS_MINT_PORT_1" &
+target/debug/start_regtest_mints --enable-logging "$CDK_MINTD_DATABASE" "$CDK_ITESTS_DIR" "$CDK_ITESTS_MINT_ADDR" &
 export CDK_REGTEST_PID=$!
 
 # Give it a moment to start - reduced from 5 to 2 seconds since we have better waiting mechanisms now
@@ -310,7 +308,7 @@ echo "  Completed in $((TEST_END - TEST_START))s"
 echo ""
 
 
-export CDK_TEST_MINT_URL="http://127.0.0.1:8089"
+export CDK_TEST_MINT_URL=$CDK_TEST_MINT_URL_3
  
 TIMEOUT=100
 START_TIME=$(date +%s)

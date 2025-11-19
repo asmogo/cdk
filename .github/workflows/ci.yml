@@ -204,16 +204,6 @@ jobs:
       - name: Get flake hash
         id: flake-hash
         run: echo "hash=$(sha256sum flake.lock | cut -d' ' -f1 | cut -c1-8)" >> $GITHUB_OUTPUT
-      - name: Free Disk Space (Ubuntu)
-        uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: false
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
-          swap-storage: true
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@v17
       - name: Nix Cache

@@ -211,8 +211,9 @@ impl WalletBuilder {
                 }
             }
         };
-
+        println!("client: ok");
         let metadata_cache_ttl = self.metadata_cache_ttl;
+        println!("metadata_cache_ttl: ok");
 
         let metadata_cache = self.metadata_cache.unwrap_or_else(|| {
             // Check if we already have a cache for this mint in the HashMap
@@ -223,9 +224,11 @@ impl WalletBuilder {
                 Arc::new(MintMetadataCache::new(mint_url.clone()))
             }
         });
-
+        println!("metadata_cache: ok");
         let metadata_for_loader = metadata_cache.clone();
         let localstore_for_loader = localstore.clone();
+        println!("localstore_for_loader: ok");
+
         spawn(async move {
             let _ = metadata_for_loader
                 .load_from_storage(&localstore_for_loader)
@@ -234,7 +237,7 @@ impl WalletBuilder {
                     tracing::warn!("Failed to load mint metadata from storage {err}");
                 });
         });
-
+        println!("localstore_for_loader: ok");
         Ok(Wallet {
             mint_url,
             unit,

@@ -294,7 +294,6 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v4
-<<<<<<< HEAD
       - name: Get flake hash
         id: flake-hash
         run: echo "hash=$(sha256sum flake.lock | cut -d' ' -f1 | cut -c1-8)" >> $GITHUB_OUTPUT
@@ -307,9 +306,6 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: "stable-${{ steps.flake-hash.outputs.hash }}"
->>>>>>> 0be5ed2e (chore: more self hosted)
-=======
->>>>>>> a3f81050 (chore: remove cache)
       - name: Check docs with strict warnings
         run: nix develop -i -L .#stable --command just docs-strict
 

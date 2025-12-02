@@ -294,7 +294,7 @@ jobs:
     name: "Strict Documentation Check"
     runs-on: self-hosted
     timeout-minutes: 30
-    needs: doc-tests
+    needs: docs
     steps:
       - name: checkout
         uses: actions/checkout@v4

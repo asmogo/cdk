@@ -30,7 +30,7 @@ jobs:
         with:
           name: cashudevkit
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          useDaemon: true
+          useDaemon: false
         continue-on-error: true
       - name: Cargo fmt
         run: nix develop -i -L --accept-flake-config .#stable --command cargo fmt --check
@@ -53,7 +53,7 @@ jobs:
         with:
           name: cashudevkit
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          useDaemon: true
+          useDaemon: false
         continue-on-error: true
       - name: Run example
         run: nix develop -i -L --accept-flake-config .#stable --command cargo r --example ${{ matrix.build-args }}
@@ -93,7 +93,7 @@ jobs:
         with:
           name: cashudevkit
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          useDaemon: true
+          useDaemon: false
         continue-on-error: true
       - name: Run clippy check
         run: nix build -L --accept-flake-config .#checks.x86_64-linux.${{ matrix.check }}
@@ -111,7 +111,7 @@ jobs:
         with:
           name: cashudevkit
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          useDaemon: true
+          useDaemon: false
         continue-on-error: true
       - name: Run workspace tests
         run: nix develop -i -L --accept-flake-config .#stable --command cargo test --workspace
@@ -132,7 +132,7 @@ jobs:
         with:
           name: cashudevkit
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          useDaemon: true
+          useDaemon: false
         continue-on-error: true
       - name: Test
         run: nix develop -i -L --accept-flake-config .#stable --command just itest ${{ matrix.database }}
@@ -153,7 +153,7 @@ jobs:
         with:
           name: cashudevkit
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          useDaemon: true
+          useDaemon: false
         continue-on-error: true
       - name: Test fake mint
         run: nix develop -i -L --accept-flake-config .#stable --command just fake-mint-itest ${{ matrix.database }}
@@ -174,7 +174,7 @@ jobs:
         with:
           name: cashudevkit
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          useDaemon: true
+          useDaemon: false
         continue-on-error: true
       - name: Test fake mint
         run: nix develop -i -L --accept-flake-config .#stable --command just test-pure ${{ matrix.database }}
@@ -199,7 +199,7 @@ jobs:
         with:
           name: cashudevkit
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          useDaemon: true
+          useDaemon: false
         continue-on-error: true
       - name: Test
         run: nix develop -i -L --accept-flake-config .#stable --command just itest-payment-processor ${{matrix.ln}}
@@ -273,7 +273,7 @@ jobs:
         with:
           name: cashudevkit
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          useDaemon: true
+          useDaemon: false
         continue-on-error: true
       - name: Start Keycloak with Backup
         run: |
@@ -303,7 +303,7 @@ jobs:
         with:
           name: cashudevkit
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          useDaemon: true
+          useDaemon: false
         continue-on-error: true
       - name: Run doc tests
         run: nix develop -i -L --accept-flake-config .#stable --command cargo test --doc
@@ -320,7 +320,7 @@ jobs:
         with:
           name: cashudevkit
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          useDaemon: true
+          useDaemon: false
         continue-on-error: true
       - name: Check docs with strict warnings
         run: nix develop -i -L --accept-flake-config .#stable --command just docs-strict
@@ -339,7 +339,7 @@ jobs:
         with:
           name: cashudevkit
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          useDaemon: true
+          useDaemon: false
         continue-on-error: true
       - name: Run FFI tests
         run: nix develop -i -L --accept-flake-config .#integration --command just ffi-test

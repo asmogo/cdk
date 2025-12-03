@@ -33,9 +33,9 @@ jobs:
           useDaemon: false
         continue-on-error: true
       - name: Cargo fmt
-        run: nix develop -i -L --accept-flake-config .#stable --command cargo fmt --check
+        run: nix develop -i -L .#stable --command cargo fmt --check
       - name: typos
-        run: nix develop -i -L --accept-flake-config .#stable --command typos
+        run: nix develop -i -L .#stable --command typos
 
   examples:
     name: "Run examples"
@@ -56,7 +56,7 @@ jobs:
           useDaemon: false
         continue-on-error: true
       - name: Run example
-        run: nix develop -i -L --accept-flake-config .#stable --command cargo r --example ${{ matrix.build-args }}
+        run: nix develop -i -L .#stable --command cargo r --example ${{ matrix.build-args }}
 
   # Discover clippy checks from flake - single source of truth
   discover-checks:
@@ -72,7 +72,7 @@ jobs:
         id: checks
         run: |
           # Get all check names except pre-commit-check
-          checks=$(nix eval --accept-flake-config .#checks.x86_64-linux --apply 'attrs: builtins.filter (n: n != "pre-commit-check") (builtins.attrNames attrs)' --json)
+          checks=$(nix eval .#checks.x86_64-linux --apply 'attrs: builtins.filter (n: n != "pre-commit-check") (builtins.attrNames attrs)' --json)
           echo "checks=$checks" >> $GITHUB_OUTPUT
           echo "Found checks: $checks"
 
@@ -96,7 +96,7 @@ jobs:
           useDaemon: false
         continue-on-error: true
       - name: Run clippy check
-        run: nix build -L --accept-flake-config .#checks.x86_64-linux.${{ matrix.check }}
+        run: nix build -L .#checks.x86_64-linux.${{ matrix.check }}
 
   # Run tests using nix develop (tests need to execute, not just build)
   tests:
@@ -114,7 +114,7 @@ jobs:
           useDaemon: false
         continue-on-error: true
       - name: Run workspace tests
-        run: nix develop -i -L --accept-flake-config .#stable --command cargo test --workspace
+        run: nix develop -i -L .#stable --command cargo test --workspace
 
   regtest-itest:
     name: "Integration regtest tests"
@@ -135,7 +135,7 @@ jobs:
           useDaemon: false
         continue-on-error: true
       - name: Test
-        run: nix develop -i -L --accept-flake-config .#stable --command just itest ${{ matrix.database }}
+        run: nix develop -i -L .#stable --command just itest ${{ matrix.database }}
 
   fake-mint-itest:
     name: "Integration fake mint tests"
@@ -156,7 +156,7 @@ jobs:
           useDaemon: false
         continue-on-error: true
       - name: Test fake mint
-        run: nix develop -i -L --accept-flake-config .#stable --command just fake-mint-itest ${{ matrix.database }}
+        run: nix develop -i -L .#stable --command just fake-mint-itest ${{ matrix.database }}
 
   pure-itest:
     name: "Integration fake wallet tests"
@@ -177,11 +177,11 @@ jobs:
           useDaemon: false
         continue-on-error: true
       - name: Test fake mint
-        run: nix develop -i -L --accept-flake-config .#stable --command just test-pure ${{ matrix.database }}
+        run: nix develop -i -L .#stable --command just test-pure ${{ matrix.database }}
       - name: Install Postgres
         run: bash -x crates/cdk-postgres/start_db_for_test.sh
       - name: Test mint
-        run: nix develop -i -L --accept-flake-config .#stable --command just test
+        run: nix develop -i -L .#stable --command just test
 
   payment-processor-itests:
     name: "Payment processor tests"
@@ -202,7 +202,7 @@ jobs:
           useDaemon: false
         continue-on-error: true
       - name: Test
-        run: nix develop -i -L --accept-flake-config .#stable --command just itest-payment-processor ${{matrix.ln}}
+        run: nix develop -i -L .#stable --command just itest-payment-processor ${{matrix.ln}}
 
   # msrv-build:
   #   name: "MSRV build"
@@ -231,7 +231,7 @@ jobs:
   #     - name: checkout
   #       uses: actions/checkout@v4
   #     - name: Build
-  #       run: nix develop -i -L --accept-flake-config .#msrv --command cargo build ${{ matrix.build-args }}
+  #       run: nix develop -i -L .#msrv --command cargo build ${{ matrix.build-args }}
 
   # check-wasm-msrv:
   #   name: Check WASM
@@ -255,7 +255,7 @@ jobs:
   #     - name: checkout
   #       uses: actions/checkout@v4
   #     - name: Build cdk wasm
-  #       run: nix develop -i -L --accept-flake-config ".#${{ matrix.rust }}" --command cargo build ${{ matrix.build-args }} --target ${{ matrix.target }}
+  #       run: nix develop -i -L ".#${{ matrix.rust }}" --command cargo build ${{ matrix.build-args }} --target ${{ matrix.target }}
 
   fake-mint-auth-itest:
     name: "Integration fake mint auth tests"
@@ -286,7 +286,7 @@ jobs:
           # Check if the realm endpoint is accessible (better verification than log grep)
           curl -f -s http://127.0.0.1:8080/realms/cdk-test-realm/.well-known/openid-configuration > /dev/null && echo "Keycloak realm successfully imported" || (docker logs $(docker ps -q --filter "ancestor=quay.io/keycloak/keycloak:25.0.6") && exit 1)
       - name: Test fake auth mint
-        run: nix develop -i -L --accept-flake-config .#stable --command just fake-auth-mint-itest ${{ matrix.database }} http://127.0.0.1:8080/realms/cdk-test-realm/.well-known/openid-configuration
+        run: nix develop -i -L .#stable --command just fake-auth-mint-itest ${{ matrix.database }} http://127.0.0.1:8080/realms/cdk-test-realm/.well-known/openid-configuration
       - name: Stop and clean up Docker Compose
         run: |
           docker compose -f misc/keycloak/docker-compose-recover.yml down
@@ -306,7 +306,7 @@ jobs:
           useDaemon: false
         continue-on-error: true
       - name: Run doc tests
-        run: nix develop -i -L --accept-flake-config .#stable --command cargo test --doc
+        run: nix develop -i -L .#stable --command cargo test --doc
 
   strict-docs:
     name: "Strict Documentation Check"
@@ -323,7 +323,7 @@ jobs:
           useDaemon: false
         continue-on-error: true
       - name: Check docs with strict warnings
-        run: nix develop -i -L --accept-flake-config .#stable --command just docs-strict
+        run: nix develop -i -L .#stable --command just docs-strict
 
   ffi-tests:
     name: "FFI Python tests"
@@ -342,4 +342,4 @@ jobs:
           useDaemon: false
         continue-on-error: true
       - name: Run FFI tests
-        run: nix develop -i -L --accept-flake-config .#integration --command just ffi-test
+        run: nix develop -i -L .#integration --command just ffi-test

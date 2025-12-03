@@ -138,6 +138,26 @@
           cargoClippyExtraArgs = "${cargoArgs} -- -D warnings";
         });
 
+        # Helper function to create example checks
+        mkExample = name: craneLib.mkCargoDerivation (commonCraneArgs // {
+          pname = "cdk-example-${name}";
+          cargoArtifacts = workspaceDeps;
+          buildPhaseCargoCommand = "cargo run --example ${name}";
+          # Examples don't produce artifacts, just need to run successfully
+          installPhaseCommand = "mkdir -p $out";
+        });
+
+        # ========================================
+        # Example definitions - single source of truth
+        # ========================================
+        exampleChecks = [
+          "mint-token"
+          "melt-token"
+          "p2pk"
+          "proof-selection"
+          "wallet"
+        ];
+
         # ========================================
         # Clippy check definitions - single source of truth
         # ========================================
@@ -267,6 +287,8 @@
         checks =
           # Generate clippy checks from clippyChecks attrset
           (builtins.mapAttrs (name: args: mkClippy name args) clippyChecks)
+          # Generate example checks from exampleChecks list
+          // (builtins.listToAttrs (map (name: { name = "example-${name}"; value = mkExample name; }) exampleChecks))
           // {
             # Pre-commit checks
             pre-commit-check =

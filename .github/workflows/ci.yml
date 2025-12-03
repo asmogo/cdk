@@ -37,15 +37,33 @@ jobs:
       - name: typos
         run: nix develop -i -L .#stable --command typos
 
+  # Discover example checks from flake - single source of truth
+  discover-examples:
+    name: "Discover examples"
+    runs-on: self-hosted
+    timeout-minutes: 5
+    outputs:
+      examples: ${{ steps.examples.outputs.examples }}
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+      - name: Get example check names
+        id: examples
+        run: |
+          # Get all example check names (prefixed with "example-")
+          examples=$(nix eval .#checks.x86_64-linux --apply 'attrs: builtins.filter (n: builtins.substring 0 8 n == "example-") (builtins.attrNames attrs)' --json)
+          echo "examples=$examples" >> $GITHUB_OUTPUT
+          echo "Found examples: $examples"
+
   examples:
-    name: "Run examples"
+    name: "Example: ${{ matrix.example }}"
     runs-on: self-hosted
     timeout-minutes: 30
-    needs: pre-commit-checks
+    needs: [pre-commit-checks, discover-examples]
     strategy:
       fail-fast: true
       matrix:
-        build-args: [mint-token, melt-token, p2pk, proof-selection, wallet]
+        example: ${{ fromJson(needs.discover-examples.outputs.examples) }}
     steps:
       - name: checkout
         uses: actions/checkout@v4
@@ -56,7 +74,7 @@ jobs:
           useDaemon: false
         continue-on-error: true
       - name: Run example
-        run: nix develop -i -L .#stable --command cargo r --example ${{ matrix.build-args }}
+        run: nix build -L .#checks.x86_64-linux.${{ matrix.example }}
 
   # Discover clippy checks from flake - single source of truth
   discover-checks:
@@ -71,8 +89,8 @@ jobs:
       - name: Get clippy check names
         id: checks
         run: |
-          # Get all check names except pre-commit-check
-          checks=$(nix eval .#checks.x86_64-linux --apply 'attrs: builtins.filter (n: n != "pre-commit-check") (builtins.attrNames attrs)' --json)
+          # Get all check names except pre-commit-check and example-* checks
+          checks=$(nix eval .#checks.x86_64-linux --apply 'attrs: builtins.filter (n: n != "pre-commit-check" && builtins.substring 0 8 n != "example-") (builtins.attrNames attrs)' --json)
           echo "checks=$checks" >> $GITHUB_OUTPUT
           echo "Found checks: $checks"
 

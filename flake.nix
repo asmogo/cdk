@@ -138,13 +138,24 @@
           cargoClippyExtraArgs = "${cargoArgs} -- -D warnings";
         });
 
-        # Helper function to create example checks
+        # Helper function to create example checks (compile only, no network access in sandbox)
         mkExample = name: craneLib.mkCargoDerivation (commonCraneArgs // {
           pname = "cdk-example-${name}";
           cargoArtifacts = workspaceDeps;
-          buildPhaseCargoCommand = "cargo run --example ${name}";
-          # Examples don't produce artifacts, just need to run successfully
+          buildPhaseCargoCommand = "cargo build --example ${name}";
+          # Examples are compiled but not run (no network in Nix sandbox)
           installPhaseCommand = "mkdir -p $out";
+        });
+
+        # Helper function to create example packages (outputs binary for running outside sandbox)
+        mkExamplePackage = name: craneLib.mkCargoDerivation (commonCraneArgs // {
+          pname = "cdk-example-${name}";
+          cargoArtifacts = workspaceDeps;
+          buildPhaseCargoCommand = "cargo build --release --example ${name}";
+          installPhaseCommand = ''
+            mkdir -p $out/bin
+            cp target/release/examples/${name} $out/bin/
+          '';
         });
 
         # ========================================
@@ -283,7 +294,9 @@
         # Expose deps for explicit cache warming
         packages = {
           deps = workspaceDeps;
-        };
+        }
+        # Example packages (binaries that can be run outside sandbox with network access)
+        // (builtins.listToAttrs (map (name: { name = "example-${name}"; value = mkExamplePackage name; }) exampleChecks));
         checks =
           # Generate clippy checks from clippyChecks attrset
           (builtins.mapAttrs (name: args: mkClippy name args) clippyChecks)

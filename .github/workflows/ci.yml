@@ -73,8 +73,14 @@ jobs:
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
           useDaemon: false
         continue-on-error: true
+      - name: Build example
+        run: nix build -L .#${{ matrix.example }}
       - name: Run example
-        run: nix build -L .#checks.x86_64-linux.${{ matrix.example }}
+        run: |
+          # Extract binary name by removing "example-" prefix
+          BINARY_NAME="${{ matrix.example }}"
+          BINARY_NAME="${BINARY_NAME#example-}"
+          ./result/bin/$BINARY_NAME
 
   # Discover clippy checks from flake - single source of truth
   discover-checks:

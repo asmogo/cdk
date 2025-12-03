@@ -32,7 +32,9 @@ jobs:
           CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
         continue-on-error: true
       - name: Cargo fmt
-        run: nix develop -i -L .#stable --command cargo fmt --check
+        run: cachix watch-exec cashudevkit -- nix develop -i -L .#stable --command cargo fmt --check
+        env:
+          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - name: typos
         run: nix develop -i -L .#stable --command typos
 
@@ -93,7 +95,9 @@ jobs:
           CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
         continue-on-error: true
       - name: Run clippy check
-        run: nix build -L .#checks.x86_64-linux.${{ matrix.check }}
+        run: cachix watch-exec cashudevkit -- nix build -L .#checks.x86_64-linux.${{ matrix.check }}
+        env:
+          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
   # Run tests using nix develop (tests need to execute, not just build)
   tests:

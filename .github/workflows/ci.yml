@@ -27,7 +27,11 @@ jobs:
       - name: checkout
         uses: actions/checkout@v4
       - name: Configure cachix
-        run: cachix use cashudevkit
+        run: |
+          echo "PATH: $PATH"
+          echo "which cachix: $(which cachix 2>&1 || true)"
+          echo "ls /run/current-system/sw/bin/cachix: $(ls -la /run/current-system/sw/bin/cachix 2>&1 || true)"
+          cachix use cashudevkit
         env:
           CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
         continue-on-error: true

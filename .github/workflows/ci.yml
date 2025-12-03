@@ -26,12 +26,10 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v4
-      - name: Configure cachix
-        run: |
-          mkdir -p ~/.config/nix
-          cachix use cashudevkit
-        env:
-          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - uses: cachix/cachix-action@v16
+        with:
+          name: cashudevkit
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
         continue-on-error: true
       - name: Cargo fmt
         run: cachix watch-exec cashudevkit -- nix develop -i -L .#stable --command cargo fmt --check
@@ -52,12 +50,10 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v4
-      - name: Configure cachix
-        run: |
-          mkdir -p ~/.config/nix
-          cachix use cashudevkit
-        env:
-          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - uses: cachix/cachix-action@v16
+        with:
+          name: cashudevkit
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
         continue-on-error: true
       - name: Run example
         run: nix develop -i -L .#stable --command cargo r --example ${{ matrix.build-args }}
@@ -93,12 +89,10 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v4
-      - name: Configure cachix
-        run: |
-          mkdir -p ~/.config/nix
-          cachix use cashudevkit
-        env:
-          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - uses: cachix/cachix-action@v16
+        with:
+          name: cashudevkit
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
         continue-on-error: true
       - name: Run clippy check
         run: cachix watch-exec cashudevkit -- nix build -L .#checks.x86_64-linux.${{ matrix.check }}
@@ -114,12 +108,10 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v4
-      - name: Configure cachix
-        run: |
-          mkdir -p ~/.config/nix
-          cachix use cashudevkit
-        env:
-          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - uses: cachix/cachix-action@v16
+        with:
+          name: cashudevkit
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
         continue-on-error: true
       - name: Run workspace tests
         run: nix develop -i -L .#stable --command cargo test --workspace
@@ -136,12 +128,10 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v4
-      - name: Configure cachix
-        run: |
-          mkdir -p ~/.config/nix
-          cachix use cashudevkit
-        env:
-          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - uses: cachix/cachix-action@v16
+        with:
+          name: cashudevkit
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
         continue-on-error: true
       - name: Test
         run: nix develop -i -L .#stable --command just itest ${{ matrix.database }}
@@ -158,12 +148,10 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v4
-      - name: Configure cachix
-        run: |
-          mkdir -p ~/.config/nix
-          cachix use cashudevkit
-        env:
-          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - uses: cachix/cachix-action@v16
+        with:
+          name: cashudevkit
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
         continue-on-error: true
       - name: Test fake mint
         run: nix develop -i -L .#stable --command just fake-mint-itest ${{ matrix.database }}
@@ -180,12 +168,10 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v4
-      - name: Configure cachix
-        run: |
-          mkdir -p ~/.config/nix
-          cachix use cashudevkit
-        env:
-          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - uses: cachix/cachix-action@v16
+        with:
+          name: cashudevkit
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
         continue-on-error: true
       - name: Test fake mint
         run: nix develop -i -L .#stable --command just test-pure ${{ matrix.database }}
@@ -206,12 +192,10 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v4
-      - name: Configure cachix
-        run: |
-          mkdir -p ~/.config/nix
-          cachix use cashudevkit
-        env:
-          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - uses: cachix/cachix-action@v16
+        with:
+          name: cashudevkit
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
         continue-on-error: true
       - name: Test
         run: nix develop -i -L .#stable --command just itest-payment-processor ${{matrix.ln}}
@@ -281,12 +265,10 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v4
-      - name: Configure cachix
-        run: |
-          mkdir -p ~/.config/nix
-          cachix use cashudevkit
-        env:
-          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - uses: cachix/cachix-action@v16
+        with:
+          name: cashudevkit
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
         continue-on-error: true
       - name: Start Keycloak with Backup
         run: |
@@ -312,12 +294,10 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v4
-      - name: Configure cachix
-        run: |
-          mkdir -p ~/.config/nix
-          cachix use cashudevkit
-        env:
-          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - uses: cachix/cachix-action@v16
+        with:
+          name: cashudevkit
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
         continue-on-error: true
       - name: Run doc tests
         run: nix develop -i -L .#stable --command cargo test --doc
@@ -330,12 +310,10 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v4
-      - name: Configure cachix
-        run: |
-          mkdir -p ~/.config/nix
-          cachix use cashudevkit
-        env:
-          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - uses: cachix/cachix-action@v16
+        with:
+          name: cashudevkit
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
         continue-on-error: true
       - name: Check docs with strict warnings
         run: nix develop -i -L .#stable --command just docs-strict

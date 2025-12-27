@@ -31,7 +31,7 @@ mod prometheus;
 use std::env;
 use std::str::FromStr;
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, Result};
 #[cfg(feature = "auth")]
 pub use auth::*;
 #[cfg(feature = "cln")]
@@ -55,7 +55,7 @@ pub use mint_info::*;
 #[cfg(feature = "prometheus")]
 pub use prometheus::*;
 
-use crate::config::{DatabaseEngine, LnBackend, Settings};
+use crate::config::{DatabaseEngine, Settings};
 
 impl Settings {
     pub fn from_env(&mut self) -> Result<Self> {
@@ -92,7 +92,14 @@ impl Settings {
 
         self.info = self.info.clone().from_env();
         self.mint_info = self.mint_info.clone().from_env();
-        self.ln = self.ln.clone().from_env();
+
+        // Handle LN Backends from Env
+        // This attempts to create a single backend configuration from environment variables
+        // if `CDK_MINTD_LN_BACKEND` is set.
+        // It appends to the list if successful.
+        if let Some(backend_config) = ln::parse_backend_from_env() {
+            self.ln_backends.push(backend_config);
+        }
 
         #[cfg(feature = "auth")]
         {
@@ -120,37 +127,6 @@ impl Settings {
         #[cfg(feature = "prometheus")]
         {
             self.prometheus = Some(self.prometheus.clone().unwrap_or_default().from_env());
-        }
-
-        match self.ln.ln_backend {
-            #[cfg(feature = "cln")]
-            LnBackend::Cln => {
-                self.cln = Some(self.cln.clone().unwrap_or_default().from_env());
-            }
-            #[cfg(feature = "lnbits")]
-            LnBackend::LNbits => {
-                self.lnbits = Some(self.lnbits.clone().unwrap_or_default().from_env());
-            }
-            #[cfg(feature = "fakewallet")]
-            LnBackend::FakeWallet => {
-                self.fake_wallet = Some(self.fake_wallet.clone().unwrap_or_default().from_env());
-            }
-            #[cfg(feature = "lnd")]
-            LnBackend::Lnd => {
-                self.lnd = Some(self.lnd.clone().unwrap_or_default().from_env());
-            }
-            #[cfg(feature = "ldk-node")]
-            LnBackend::LdkNode => {
-                self.ldk_node = Some(self.ldk_node.clone().unwrap_or_default().from_env());
-            }
-            #[cfg(feature = "grpc-processor")]
-            LnBackend::GrpcProcessor => {
-                self.grpc_processor =
-                    Some(self.grpc_processor.clone().unwrap_or_default().from_env());
-            }
-            LnBackend::None => bail!("Ln backend must be set"),
-            #[allow(unreachable_patterns)]
-            _ => bail!("Selected Ln backend is not enabled in this build"),
         }
 
         Ok(self.clone())

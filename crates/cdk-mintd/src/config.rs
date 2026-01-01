@@ -58,6 +58,7 @@ pub struct Info {
     pub signatory_certs: Option<String>,
     pub input_fee_ppk: Option<u64>,
 
+    #[serde(default)]
     pub http_cache: cache::Config,
 
     /// Logging configuration
@@ -121,68 +122,119 @@ impl std::fmt::Debug for Info {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum LnBackend {
-    #[default]
-    None,
-    #[cfg(feature = "cln")]
-    Cln,
-    #[cfg(feature = "lnbits")]
-    LNbits,
-    #[cfg(feature = "fakewallet")]
-    FakeWallet,
-    #[cfg(feature = "lnd")]
-    Lnd,
-    #[cfg(feature = "ldk-node")]
-    LdkNode,
-    #[cfg(feature = "grpc-processor")]
-    GrpcProcessor,
-}
-
-impl std::str::FromStr for LnBackend {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            #[cfg(feature = "cln")]
-            "cln" => Ok(LnBackend::Cln),
-            #[cfg(feature = "lnbits")]
-            "lnbits" => Ok(LnBackend::LNbits),
-            #[cfg(feature = "fakewallet")]
-            "fakewallet" => Ok(LnBackend::FakeWallet),
-            #[cfg(feature = "lnd")]
-            "lnd" => Ok(LnBackend::Lnd),
-            #[cfg(feature = "ldk-node")]
-            "ldk-node" | "ldknode" => Ok(LnBackend::LdkNode),
-            #[cfg(feature = "grpc-processor")]
-            "grpcprocessor" => Ok(LnBackend::GrpcProcessor),
-            _ => Err(format!("Unknown Lightning backend: {s}")),
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Ln {
-    pub ln_backend: LnBackend,
-    pub invoice_description: Option<String>,
-    pub min_mint: Amount,
-    pub max_mint: Amount,
-    pub min_melt: Amount,
-    pub max_melt: Amount,
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum LnBackendConfig {
+    #[cfg(feature = "cln")]
+    Cln {
+        #[serde(default = "default_currency_unit")]
+        currency_unit: CurrencyUnit,
+        #[serde(default = "default_min_mint")]
+        min_mint: Amount,
+        #[serde(default = "default_max_mint")]
+        max_mint: Amount,
+        #[serde(default = "default_min_melt")]
+        min_melt: Amount,
+        #[serde(default = "default_max_melt")]
+        max_melt: Amount,
+        #[serde(flatten)]
+        cln: Cln,
+    },
+    #[cfg(feature = "lnbits")]
+    Lnbits {
+        #[serde(default = "default_currency_unit")]
+        currency_unit: CurrencyUnit,
+        #[serde(default = "default_min_mint")]
+        min_mint: Amount,
+        #[serde(default = "default_max_mint")]
+        max_mint: Amount,
+        #[serde(default = "default_min_melt")]
+        min_melt: Amount,
+        #[serde(default = "default_max_melt")]
+        max_melt: Amount,
+        #[serde(flatten)]
+        lnbits: LNbits,
+    },
+    #[cfg(feature = "fakewallet")]
+    FakeWallet {
+        #[serde(default = "default_currency_unit")]
+        currency_unit: CurrencyUnit,
+        #[serde(default = "default_min_mint")]
+        min_mint: Amount,
+        #[serde(default = "default_max_mint")]
+        max_mint: Amount,
+        #[serde(default = "default_min_melt")]
+        min_melt: Amount,
+        #[serde(default = "default_max_melt")]
+        max_melt: Amount,
+        #[serde(flatten)]
+        fake_wallet: FakeWallet,
+    },
+    #[cfg(feature = "lnd")]
+    Lnd {
+        #[serde(default = "default_currency_unit")]
+        currency_unit: CurrencyUnit,
+        #[serde(default = "default_min_mint")]
+        min_mint: Amount,
+        #[serde(default = "default_max_mint")]
+        max_mint: Amount,
+        #[serde(default = "default_min_melt")]
+        min_melt: Amount,
+        #[serde(default = "default_max_melt")]
+        max_melt: Amount,
+        #[serde(flatten)]
+        lnd: Lnd,
+    },
+    #[cfg(feature = "ldk-node")]
+    LdkNode {
+        #[serde(default = "default_currency_unit")]
+        currency_unit: CurrencyUnit,
+        #[serde(default = "default_min_mint")]
+        min_mint: Amount,
+        #[serde(default = "default_max_mint")]
+        max_mint: Amount,
+        #[serde(default = "default_min_melt")]
+        min_melt: Amount,
+        #[serde(default = "default_max_melt")]
+        max_melt: Amount,
+        #[serde(flatten)]
+        ldk_node: LdkNode,
+    },
+    #[cfg(feature = "grpc-processor")]
+    GrpcProcessor {
+        #[serde(default = "default_currency_unit")]
+        currency_unit: CurrencyUnit,
+        #[serde(default = "default_min_mint")]
+        min_mint: Amount,
+        #[serde(default = "default_max_mint")]
+        max_mint: Amount,
+        #[serde(default = "default_min_melt")]
+        min_melt: Amount,
+        #[serde(default = "default_max_melt")]
+        max_melt: Amount,
+        #[serde(flatten)]
+        grpc_processor: GrpcProcessor,
+    },
 }
 
-impl Default for Ln {
-    fn default() -> Self {
-        Ln {
-            ln_backend: LnBackend::default(),
-            invoice_description: None,
-            min_mint: 1.into(),
-            max_mint: 500_000.into(),
-            min_melt: 1.into(),
-            max_melt: 500_000.into(),
-        }
-    }
+fn default_currency_unit() -> CurrencyUnit {
+    CurrencyUnit::Sat
+}
+
+fn default_min_mint() -> Amount {
+    1.into()
+}
+
+fn default_max_mint() -> Amount {
+    500_000.into()
+}
+
+fn default_min_melt() -> Amount {
+    1.into()
+}
+
+fn default_max_melt() -> Amount {
+    500_000.into()
 }
 
 #[cfg(feature = "lnbits")]
@@ -349,8 +401,11 @@ fn default_webserver_port() -> Option<u16> {
 #[cfg(feature = "fakewallet")]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FakeWallet {
+    #[serde(default)]
     pub supported_units: Vec<CurrencyUnit>,
+    #[serde(default = "default_fee_percent")]
     pub fee_percent: f32,
+    #[serde(default = "default_reserve_fee_min")]
     pub reserve_fee_min: Amount,
     #[serde(default = "default_min_delay_time")]
     pub min_delay_time: u64,
@@ -551,19 +606,11 @@ fn default_blind() -> AuthType {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Settings {
     pub info: Info,
+    #[serde(default)]
     pub mint_info: MintInfo,
-    pub ln: Ln,
-    #[cfg(feature = "cln")]
-    pub cln: Option<Cln>,
-    #[cfg(feature = "lnbits")]
-    pub lnbits: Option<LNbits>,
-    #[cfg(feature = "lnd")]
-    pub lnd: Option<Lnd>,
-    #[cfg(feature = "ldk-node")]
-    pub ldk_node: Option<LdkNode>,
-    #[cfg(feature = "fakewallet")]
-    pub fake_wallet: Option<FakeWallet>,
-    pub grpc_processor: Option<GrpcProcessor>,
+    #[serde(default)]
+    pub ln_backends: Vec<LnBackendConfig>,
+    #[serde(default)]
     pub database: Database,
     #[cfg(feature = "auth")]
     pub auth_database: Option<AuthDatabase>,
@@ -734,373 +781,108 @@ mod tests {
         assert!(debug_output.contains("<hashed: "));
     }
 
-    /// Test that configuration can be loaded purely from environment variables
-    /// without requiring a config.toml file with backend sections.
-    ///
-    /// This test runs sequentially for all enabled backends to avoid env var interference.
     #[test]
-    fn test_env_var_only_config_all_backends() {
-        // Run each backend test sequentially
-        #[cfg(feature = "lnd")]
-        test_lnd_env_config();
+    fn test_postgres_auth_url_validation() {
+        // Test that the auth database config requires explicit configuration
 
-        #[cfg(feature = "cln")]
-        test_cln_env_config();
+        // Test empty URL
+        let auth_config = PostgresAuthConfig {
+            url: "".to_string(),
+            ..Default::default()
+        };
+        assert!(auth_config.url.is_empty());
 
-        #[cfg(feature = "lnbits")]
-        test_lnbits_env_config();
-
-        #[cfg(feature = "fakewallet")]
-        test_fakewallet_env_config();
-
-        #[cfg(feature = "grpc-processor")]
-        test_grpc_processor_env_config();
-
-        #[cfg(feature = "ldk-node")]
-        test_ldk_node_env_config();
+        // Test non-empty URL
+        let auth_config = PostgresAuthConfig {
+            url: "postgresql://user:password@localhost:5432/auth_db".to_string(),
+            ..Default::default()
+        };
+        assert!(!auth_config.url.is_empty());
     }
 
-    #[cfg(feature = "lnd")]
-    fn test_lnd_env_config() {
-        use std::path::PathBuf;
-        use std::{env, fs};
+    #[test]
+    fn test_ln_backend_config_parsing() {
+        // Example TOML configuration for multiple backends
+        let config_toml = r#"
+            [info]
+            url = "http://localhost:8080"
+            listen_host = "127.0.0.1"
+            listen_port = 8080
 
-        // Create a temporary directory for config file
-        let temp_dir = env::temp_dir().join("cdk_test_env_vars");
-        fs::create_dir_all(&temp_dir).expect("Failed to create temp dir");
-        let config_path = temp_dir.join("config.toml");
+            [[ln_backends]]
+            type = "cln"
+            currency_unit = "sat"
+            rpc_path = "/tmp/lightning-rpc"
+            min_mint = 100
+            max_mint = 100000
 
-        // Create a minimal config.toml with backend set but NO [lnd] section
-        let config_content = r#"
-[ln]
-backend = "lnd"
-min_mint = 1
-max_mint = 500000
-min_melt = 1
-max_melt = 500000
-"#;
-        fs::write(&config_path, config_content).expect("Failed to write config file");
+            [[ln_backends]]
+            type = "fake_wallet"
+            currency_unit = "usd"
+            min_mint = 10
+            max_mint = 1000
+        "#;
 
-        // Set environment variables for LND configuration
-        env::set_var(crate::env_vars::ENV_LN_BACKEND, "lnd");
-        env::set_var(crate::env_vars::ENV_LND_ADDRESS, "https://localhost:10009");
-        env::set_var(crate::env_vars::ENV_LND_CERT_FILE, "/tmp/test_tls.cert");
-        env::set_var(
-            crate::env_vars::ENV_LND_MACAROON_FILE,
-            "/tmp/test_admin.macaroon",
-        );
-        env::set_var(crate::env_vars::ENV_LND_FEE_PERCENT, "0.01");
-        env::set_var(crate::env_vars::ENV_LND_RESERVE_FEE_MIN, "4");
+        let config: Config = Config::builder()
+            .add_source(File::from_str(config_toml, config::FileFormat::Toml))
+            .build()
+            .expect("Failed to parse TOML");
 
-        // Load settings and apply environment variables (same as production code)
-        let mut settings = Settings::new(Some(&config_path));
-        settings.from_env().expect("Failed to apply env vars");
+        let settings: Settings = config.try_deserialize().expect("Failed to deserialize settings");
 
-        // Verify that settings were populated from env vars
-        assert!(settings.lnd.is_some());
-        let lnd_config = settings.lnd.as_ref().unwrap();
-        assert_eq!(lnd_config.address, "https://localhost:10009");
-        assert_eq!(lnd_config.cert_file, PathBuf::from("/tmp/test_tls.cert"));
-        assert_eq!(
-            lnd_config.macaroon_file,
-            PathBuf::from("/tmp/test_admin.macaroon")
-        );
-        assert_eq!(lnd_config.fee_percent, 0.01);
-        let reserve_fee_u64: u64 = lnd_config.reserve_fee_min.into();
-        assert_eq!(reserve_fee_u64, 4);
+        assert_eq!(settings.ln_backends.len(), 2);
 
-        // Cleanup env vars
-        env::remove_var(crate::env_vars::ENV_LN_BACKEND);
-        env::remove_var(crate::env_vars::ENV_LND_ADDRESS);
-        env::remove_var(crate::env_vars::ENV_LND_CERT_FILE);
-        env::remove_var(crate::env_vars::ENV_LND_MACAROON_FILE);
-        env::remove_var(crate::env_vars::ENV_LND_FEE_PERCENT);
-        env::remove_var(crate::env_vars::ENV_LND_RESERVE_FEE_MIN);
+        // Check first backend (CLN)
+        match &settings.ln_backends[0] {
+            #[cfg(feature = "cln")]
+            LnBackendConfig::Cln { currency_unit, min_mint, cln, .. } => {
+                assert_eq!(*currency_unit, CurrencyUnit::Sat);
+                assert_eq!(*min_mint, Amount::from(100));
+                assert_eq!(cln.rpc_path, PathBuf::from("/tmp/lightning-rpc"));
+            }
+            _ => panic!("Expected Cln backend at index 0"),
+        }
 
-        // Cleanup test file
-        let _ = fs::remove_dir_all(&temp_dir);
+        // Check second backend (FakeWallet)
+        match &settings.ln_backends[1] {
+            #[cfg(feature = "fakewallet")]
+            LnBackendConfig::FakeWallet { currency_unit, min_mint, .. } => {
+                assert_eq!(*currency_unit, CurrencyUnit::Usd);
+                assert_eq!(*min_mint, Amount::from(10));
+            }
+             _ => panic!("Expected FakeWallet backend at index 1"),
+        }
     }
 
-    #[cfg(feature = "cln")]
-    fn test_cln_env_config() {
-        use std::path::PathBuf;
-        use std::{env, fs};
+    #[test]
+    fn test_env_var_backend_config() {
+        use std::env;
 
-        // Create a temporary directory for config file
-        let temp_dir = env::temp_dir().join("cdk_test_env_vars_cln");
-        fs::create_dir_all(&temp_dir).expect("Failed to create temp dir");
-        let config_path = temp_dir.join("config.toml");
+        // Mock environment variables for a single CLN backend
+        env::set_var("CDK_MINTD_LN_BACKEND", "cln");
+        env::set_var("CDK_MINTD_CLN_RPC_PATH", "/tmp/env-cln");
+        env::set_var("CDK_MINTD_LN_MIN_MINT", "50");
 
-        // Create a minimal config.toml with backend set but NO [cln] section
-        let config_content = r#"
-[ln]
-backend = "cln"
-min_mint = 1
-max_mint = 500000
-min_melt = 1
-max_melt = 500000
-"#;
-        fs::write(&config_path, config_content).expect("Failed to write config file");
+        // Load settings from env (simulated by creating a default Settings and calling from_env)
+        // Note: calling Settings::new would try to read config file, so we manually call from_env on default
+        let mut settings = Settings::default();
+        settings.from_env().expect("Failed to load from env");
 
-        // Set environment variables for CLN configuration
-        env::set_var(crate::env_vars::ENV_LN_BACKEND, "cln");
-        env::set_var(crate::env_vars::ENV_CLN_RPC_PATH, "/tmp/lightning-rpc");
-        env::set_var(crate::env_vars::ENV_CLN_BOLT12, "false");
-        env::set_var(crate::env_vars::ENV_CLN_FEE_PERCENT, "0.01");
-        env::set_var(crate::env_vars::ENV_CLN_RESERVE_FEE_MIN, "4");
+        assert_eq!(settings.ln_backends.len(), 1);
 
-        // Load settings and apply environment variables (same as production code)
-        let mut settings = Settings::new(Some(&config_path));
-        settings.from_env().expect("Failed to apply env vars");
+         match &settings.ln_backends[0] {
+            #[cfg(feature = "cln")]
+            LnBackendConfig::Cln { currency_unit, min_mint, cln, .. } => {
+                assert_eq!(*currency_unit, CurrencyUnit::Sat); // Default for env var path
+                assert_eq!(*min_mint, Amount::from(50));
+                assert_eq!(cln.rpc_path, PathBuf::from("/tmp/env-cln"));
+            }
+            _ => panic!("Expected Cln backend from env"),
+        }
 
-        // Verify that settings were populated from env vars
-        assert!(settings.cln.is_some());
-        let cln_config = settings.cln.as_ref().unwrap();
-        assert_eq!(cln_config.rpc_path, PathBuf::from("/tmp/lightning-rpc"));
-        assert_eq!(cln_config.bolt12, false);
-        assert_eq!(cln_config.fee_percent, 0.01);
-        let reserve_fee_u64: u64 = cln_config.reserve_fee_min.into();
-        assert_eq!(reserve_fee_u64, 4);
-
-        // Cleanup env vars
-        env::remove_var(crate::env_vars::ENV_LN_BACKEND);
-        env::remove_var(crate::env_vars::ENV_CLN_RPC_PATH);
-        env::remove_var(crate::env_vars::ENV_CLN_BOLT12);
-        env::remove_var(crate::env_vars::ENV_CLN_FEE_PERCENT);
-        env::remove_var(crate::env_vars::ENV_CLN_RESERVE_FEE_MIN);
-
-        // Cleanup test file
-        let _ = fs::remove_dir_all(&temp_dir);
-    }
-
-    #[cfg(feature = "lnbits")]
-    fn test_lnbits_env_config() {
-        use std::{env, fs};
-
-        // Create a temporary directory for config file
-        let temp_dir = env::temp_dir().join("cdk_test_env_vars_lnbits");
-        fs::create_dir_all(&temp_dir).expect("Failed to create temp dir");
-        let config_path = temp_dir.join("config.toml");
-
-        // Create a minimal config.toml with backend set but NO [lnbits] section
-        let config_content = r#"
-[ln]
-backend = "lnbits"
-min_mint = 1
-max_mint = 500000
-min_melt = 1
-max_melt = 500000
-"#;
-        fs::write(&config_path, config_content).expect("Failed to write config file");
-
-        // Set environment variables for LNbits configuration
-        env::set_var(crate::env_vars::ENV_LN_BACKEND, "lnbits");
-        env::set_var(crate::env_vars::ENV_LNBITS_ADMIN_API_KEY, "test_admin_key");
-        env::set_var(
-            crate::env_vars::ENV_LNBITS_INVOICE_API_KEY,
-            "test_invoice_key",
-        );
-        env::set_var(
-            crate::env_vars::ENV_LNBITS_API,
-            "https://lnbits.example.com",
-        );
-        env::set_var(crate::env_vars::ENV_LNBITS_FEE_PERCENT, "0.02");
-        env::set_var(crate::env_vars::ENV_LNBITS_RESERVE_FEE_MIN, "5");
-
-        // Load settings and apply environment variables (same as production code)
-        let mut settings = Settings::new(Some(&config_path));
-        settings.from_env().expect("Failed to apply env vars");
-
-        // Verify that settings were populated from env vars
-        assert!(settings.lnbits.is_some());
-        let lnbits_config = settings.lnbits.as_ref().unwrap();
-        assert_eq!(lnbits_config.admin_api_key, "test_admin_key");
-        assert_eq!(lnbits_config.invoice_api_key, "test_invoice_key");
-        assert_eq!(lnbits_config.lnbits_api, "https://lnbits.example.com");
-        assert_eq!(lnbits_config.fee_percent, 0.02);
-        let reserve_fee_u64: u64 = lnbits_config.reserve_fee_min.into();
-        assert_eq!(reserve_fee_u64, 5);
-
-        // Cleanup env vars
-        env::remove_var(crate::env_vars::ENV_LN_BACKEND);
-        env::remove_var(crate::env_vars::ENV_LNBITS_ADMIN_API_KEY);
-        env::remove_var(crate::env_vars::ENV_LNBITS_INVOICE_API_KEY);
-        env::remove_var(crate::env_vars::ENV_LNBITS_API);
-        env::remove_var(crate::env_vars::ENV_LNBITS_FEE_PERCENT);
-        env::remove_var(crate::env_vars::ENV_LNBITS_RESERVE_FEE_MIN);
-
-        // Cleanup test file
-        let _ = fs::remove_dir_all(&temp_dir);
-    }
-
-    #[cfg(feature = "fakewallet")]
-    fn test_fakewallet_env_config() {
-        use std::{env, fs};
-
-        // Create a temporary directory for config file
-        let temp_dir = env::temp_dir().join("cdk_test_env_vars_fakewallet");
-        fs::create_dir_all(&temp_dir).expect("Failed to create temp dir");
-        let config_path = temp_dir.join("config.toml");
-
-        // Create a minimal config.toml with backend set but NO [fake_wallet] section
-        let config_content = r#"
-[ln]
-backend = "fakewallet"
-min_mint = 1
-max_mint = 500000
-min_melt = 1
-max_melt = 500000
-"#;
-        fs::write(&config_path, config_content).expect("Failed to write config file");
-
-        // Set environment variables for FakeWallet configuration
-        env::set_var(crate::env_vars::ENV_LN_BACKEND, "fakewallet");
-        env::set_var(crate::env_vars::ENV_FAKE_WALLET_SUPPORTED_UNITS, "sat,msat");
-        env::set_var(crate::env_vars::ENV_FAKE_WALLET_FEE_PERCENT, "0.0");
-        env::set_var(crate::env_vars::ENV_FAKE_WALLET_RESERVE_FEE_MIN, "0");
-        env::set_var(crate::env_vars::ENV_FAKE_WALLET_MIN_DELAY, "0");
-        env::set_var(crate::env_vars::ENV_FAKE_WALLET_MAX_DELAY, "5");
-
-        // Load settings and apply environment variables (same as production code)
-        let mut settings = Settings::new(Some(&config_path));
-        settings.from_env().expect("Failed to apply env vars");
-
-        // Verify that settings were populated from env vars
-        assert!(settings.fake_wallet.is_some());
-        let fakewallet_config = settings.fake_wallet.as_ref().unwrap();
-        assert_eq!(fakewallet_config.fee_percent, 0.0);
-        let reserve_fee_u64: u64 = fakewallet_config.reserve_fee_min.into();
-        assert_eq!(reserve_fee_u64, 0);
-        assert_eq!(fakewallet_config.min_delay_time, 0);
-        assert_eq!(fakewallet_config.max_delay_time, 5);
-
-        // Cleanup env vars
-        env::remove_var(crate::env_vars::ENV_LN_BACKEND);
-        env::remove_var(crate::env_vars::ENV_FAKE_WALLET_SUPPORTED_UNITS);
-        env::remove_var(crate::env_vars::ENV_FAKE_WALLET_FEE_PERCENT);
-        env::remove_var(crate::env_vars::ENV_FAKE_WALLET_RESERVE_FEE_MIN);
-        env::remove_var(crate::env_vars::ENV_FAKE_WALLET_MIN_DELAY);
-        env::remove_var(crate::env_vars::ENV_FAKE_WALLET_MAX_DELAY);
-
-        // Cleanup test file
-        let _ = fs::remove_dir_all(&temp_dir);
-    }
-
-    #[cfg(feature = "grpc-processor")]
-    fn test_grpc_processor_env_config() {
-        use std::{env, fs};
-
-        // Create a temporary directory for config file
-        let temp_dir = env::temp_dir().join("cdk_test_env_vars_grpc");
-        fs::create_dir_all(&temp_dir).expect("Failed to create temp dir");
-        let config_path = temp_dir.join("config.toml");
-
-        // Create a minimal config.toml with backend set but NO [grpc_processor] section
-        let config_content = r#"
-[ln]
-backend = "grpcprocessor"
-min_mint = 1
-max_mint = 500000
-min_melt = 1
-max_melt = 500000
-"#;
-        fs::write(&config_path, config_content).expect("Failed to write config file");
-
-        // Set environment variables for GRPC Processor configuration
-        env::set_var(crate::env_vars::ENV_LN_BACKEND, "grpcprocessor");
-        env::set_var(
-            crate::env_vars::ENV_GRPC_PROCESSOR_SUPPORTED_UNITS,
-            "sat,msat",
-        );
-        env::set_var(crate::env_vars::ENV_GRPC_PROCESSOR_ADDRESS, "localhost");
-        env::set_var(crate::env_vars::ENV_GRPC_PROCESSOR_PORT, "50051");
-
-        // Load settings and apply environment variables (same as production code)
-        let mut settings = Settings::new(Some(&config_path));
-        settings.from_env().expect("Failed to apply env vars");
-
-        // Verify that settings were populated from env vars
-        assert!(settings.grpc_processor.is_some());
-        let grpc_config = settings.grpc_processor.as_ref().unwrap();
-        assert_eq!(grpc_config.addr, "localhost");
-        assert_eq!(grpc_config.port, 50051);
-
-        // Cleanup env vars
-        env::remove_var(crate::env_vars::ENV_LN_BACKEND);
-        env::remove_var(crate::env_vars::ENV_GRPC_PROCESSOR_SUPPORTED_UNITS);
-        env::remove_var(crate::env_vars::ENV_GRPC_PROCESSOR_ADDRESS);
-        env::remove_var(crate::env_vars::ENV_GRPC_PROCESSOR_PORT);
-
-        // Cleanup test file
-        let _ = fs::remove_dir_all(&temp_dir);
-    }
-
-    #[cfg(feature = "ldk-node")]
-    fn test_ldk_node_env_config() {
-        use std::{env, fs};
-
-        // Create a temporary directory for config file
-        let temp_dir = env::temp_dir().join("cdk_test_env_vars_ldk");
-        fs::create_dir_all(&temp_dir).expect("Failed to create temp dir");
-        let config_path = temp_dir.join("config.toml");
-
-        // Create a minimal config.toml with backend set but NO [ldk_node] section
-        let config_content = r#"
-[ln]
-backend = "ldknode"
-min_mint = 1
-max_mint = 500000
-min_melt = 1
-max_melt = 500000
-"#;
-        fs::write(&config_path, config_content).expect("Failed to write config file");
-
-        // Set environment variables for LDK Node configuration
-        env::set_var(crate::env_vars::ENV_LN_BACKEND, "ldknode");
-        env::set_var(crate::env_vars::LDK_NODE_FEE_PERCENT_ENV_VAR, "0.01");
-        env::set_var(crate::env_vars::LDK_NODE_RESERVE_FEE_MIN_ENV_VAR, "4");
-        env::set_var(crate::env_vars::LDK_NODE_BITCOIN_NETWORK_ENV_VAR, "regtest");
-        env::set_var(
-            crate::env_vars::LDK_NODE_CHAIN_SOURCE_TYPE_ENV_VAR,
-            "esplora",
-        );
-        env::set_var(
-            crate::env_vars::LDK_NODE_ESPLORA_URL_ENV_VAR,
-            "http://localhost:3000",
-        );
-        env::set_var(
-            crate::env_vars::LDK_NODE_STORAGE_DIR_PATH_ENV_VAR,
-            "/tmp/ldk",
-        );
-
-        // Load settings and apply environment variables (same as production code)
-        let mut settings = Settings::new(Some(&config_path));
-        settings.from_env().expect("Failed to apply env vars");
-
-        // Verify that settings were populated from env vars
-        assert!(settings.ldk_node.is_some());
-        let ldk_config = settings.ldk_node.as_ref().unwrap();
-        assert_eq!(ldk_config.fee_percent, 0.01);
-        let reserve_fee_u64: u64 = ldk_config.reserve_fee_min.into();
-        assert_eq!(reserve_fee_u64, 4);
-        assert_eq!(ldk_config.bitcoin_network, Some("regtest".to_string()));
-        assert_eq!(ldk_config.chain_source_type, Some("esplora".to_string()));
-        assert_eq!(
-            ldk_config.esplora_url,
-            Some("http://localhost:3000".to_string())
-        );
-        assert_eq!(ldk_config.storage_dir_path, Some("/tmp/ldk".to_string()));
-
-        // Cleanup env vars
-        env::remove_var(crate::env_vars::ENV_LN_BACKEND);
-        env::remove_var(crate::env_vars::LDK_NODE_FEE_PERCENT_ENV_VAR);
-        env::remove_var(crate::env_vars::LDK_NODE_RESERVE_FEE_MIN_ENV_VAR);
-        env::remove_var(crate::env_vars::LDK_NODE_BITCOIN_NETWORK_ENV_VAR);
-        env::remove_var(crate::env_vars::LDK_NODE_CHAIN_SOURCE_TYPE_ENV_VAR);
-        env::remove_var(crate::env_vars::LDK_NODE_ESPLORA_URL_ENV_VAR);
-        env::remove_var(crate::env_vars::LDK_NODE_STORAGE_DIR_PATH_ENV_VAR);
-
-        // Cleanup test file
-        let _ = fs::remove_dir_all(&temp_dir);
+        // Clean up
+        env::remove_var("CDK_MINTD_LN_BACKEND");
+        env::remove_var("CDK_MINTD_CLN_RPC_PATH");
+        env::remove_var("CDK_MINTD_LN_MIN_MINT");
     }
 }

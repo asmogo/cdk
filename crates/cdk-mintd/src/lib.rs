@@ -3,6 +3,7 @@
 // std
 #[cfg(feature = "auth")]
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::env::{self};
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
@@ -54,7 +55,7 @@ use cdk_sqlite::MintSqliteDatabase;
 use cli::CLIArgs;
 #[cfg(feature = "auth")]
 use config::AuthType;
-use config::{DatabaseEngine, LnBackend};
+use config::{DatabaseEngine, LnBackendConfig};
 use env_vars::ENV_WORK_DIR;
 use setup::LnBackendSetup;
 use tower::ServiceBuilder;
@@ -410,154 +411,141 @@ async fn configure_lightning_backend(
     mut mint_builder: MintBuilder,
     _runtime: Option<std::sync::Arc<tokio::runtime::Runtime>>,
     work_dir: &Path,
-    _kv_store: Option<Arc<dyn KVStore<Err = cdk::cdk_database::Error> + Send + Sync>>,
+    kv_store: Option<Arc<dyn KVStore<Err = cdk::cdk_database::Error> + Send + Sync>>,
 ) -> Result<MintBuilder> {
-    let mint_melt_limits = MintMeltLimits {
-        mint_min: settings.ln.min_mint,
-        mint_max: settings.ln.max_mint,
-        melt_min: settings.ln.min_melt,
-        melt_max: settings.ln.max_melt,
-    };
 
-    tracing::debug!("Ln backend: {:?}", settings.ln.ln_backend);
+    let mut used_units = HashSet::new();
 
-    match settings.ln.ln_backend {
-        #[cfg(feature = "cln")]
-        LnBackend::Cln => {
-            let cln_settings = settings
-                .cln
-                .clone()
-                .expect("Config checked at load that cln is some");
-            let cln = cln_settings
-                .setup(settings, CurrencyUnit::Msat, None, work_dir, _kv_store)
-                .await?;
-            #[cfg(feature = "prometheus")]
-            let cln = MetricsMintPayment::new(cln);
+    for backend_config in &settings.ln_backends {
+        let (currency_unit, mint_melt_limits) = match backend_config {
+            #[cfg(feature = "cln")]
+            LnBackendConfig::Cln { currency_unit, min_mint, max_mint, min_melt, max_melt, .. } =>
+                (currency_unit, MintMeltLimits { mint_min: *min_mint, mint_max: *max_mint, melt_min: *min_melt, melt_max: *max_melt }),
+            #[cfg(feature = "lnbits")]
+            LnBackendConfig::Lnbits { currency_unit, min_mint, max_mint, min_melt, max_melt, .. } =>
+                (currency_unit, MintMeltLimits { mint_min: *min_mint, mint_max: *max_mint, melt_min: *min_melt, melt_max: *max_melt }),
+            #[cfg(feature = "lnd")]
+            LnBackendConfig::Lnd { currency_unit, min_mint, max_mint, min_melt, max_melt, .. } =>
+                (currency_unit, MintMeltLimits { mint_min: *min_mint, mint_max: *max_mint, melt_min: *min_melt, melt_max: *max_melt }),
+            #[cfg(feature = "ldk-node")]
+            LnBackendConfig::LdkNode { currency_unit, min_mint, max_mint, min_melt, max_melt, .. } =>
+                (currency_unit, MintMeltLimits { mint_min: *min_mint, mint_max: *max_mint, melt_min: *min_melt, melt_max: *max_melt }),
+            #[cfg(feature = "fakewallet")]
+            LnBackendConfig::FakeWallet { currency_unit, min_mint, max_mint, min_melt, max_melt, .. } =>
+                (currency_unit, MintMeltLimits { mint_min: *min_mint, mint_max: *max_mint, melt_min: *min_melt, melt_max: *max_melt }),
+             #[cfg(feature = "grpc-processor")]
+            LnBackendConfig::GrpcProcessor { currency_unit, min_mint, max_mint, min_melt, max_melt, .. } =>
+                (currency_unit, MintMeltLimits { mint_min: *min_mint, mint_max: *max_mint, melt_min: *min_melt, melt_max: *max_melt }),
+        };
 
-            mint_builder = configure_backend_for_unit(
-                settings,
-                mint_builder,
-                CurrencyUnit::Sat,
-                mint_melt_limits,
-                Arc::new(cln),
-            )
-            .await?;
+        if used_units.contains(currency_unit) {
+            bail!("Duplicate currency unit configured: {:?}", currency_unit);
         }
-        #[cfg(feature = "lnbits")]
-        LnBackend::LNbits => {
-            let lnbits_settings = settings.clone().lnbits.expect("Checked on config load");
-            let lnbits = lnbits_settings
-                .setup(settings, CurrencyUnit::Sat, None, work_dir, None)
-                .await?;
-            #[cfg(feature = "prometheus")]
-            let lnbits = MetricsMintPayment::new(lnbits);
+        used_units.insert(currency_unit.clone());
 
-            mint_builder = configure_backend_for_unit(
-                settings,
-                mint_builder,
-                CurrencyUnit::Sat,
-                mint_melt_limits,
-                Arc::new(lnbits),
-            )
-            .await?;
-        }
-        #[cfg(feature = "lnd")]
-        LnBackend::Lnd => {
-            let lnd_settings = settings.clone().lnd.expect("Checked at config load");
-            let lnd = lnd_settings
-                .setup(settings, CurrencyUnit::Msat, None, work_dir, _kv_store)
-                .await?;
-            #[cfg(feature = "prometheus")]
-            let lnd = MetricsMintPayment::new(lnd);
-
-            mint_builder = configure_backend_for_unit(
-                settings,
-                mint_builder,
-                CurrencyUnit::Sat,
-                mint_melt_limits,
-                Arc::new(lnd),
-            )
-            .await?;
-        }
-        #[cfg(feature = "fakewallet")]
-        LnBackend::FakeWallet => {
-            let fake_wallet = settings.clone().fake_wallet.expect("Fake wallet defined");
-            tracing::info!("Using fake wallet: {:?}", fake_wallet);
-
-            for unit in fake_wallet.clone().supported_units {
-                let fake = fake_wallet
-                    .setup(settings, unit.clone(), None, work_dir, _kv_store.clone())
+        match backend_config {
+            #[cfg(feature = "cln")]
+            LnBackendConfig::Cln { cln, .. } => {
+                let backend = cln
+                    .setup(settings, currency_unit.clone(), None, work_dir, kv_store.clone())
                     .await?;
                 #[cfg(feature = "prometheus")]
-                let fake = MetricsMintPayment::new(fake);
+                let backend = MetricsMintPayment::new(backend);
 
                 mint_builder = configure_backend_for_unit(
                     settings,
                     mint_builder,
-                    unit.clone(),
+                    currency_unit.clone(),
                     mint_melt_limits,
-                    Arc::new(fake),
+                    Arc::new(backend),
                 )
                 .await?;
             }
-        }
-        #[cfg(feature = "grpc-processor")]
-        LnBackend::GrpcProcessor => {
-            let grpc_processor = settings
-                .clone()
-                .grpc_processor
-                .expect("grpc processor config defined");
-
-            tracing::info!(
-                "Attempting to start with gRPC payment processor at {}:{}.",
-                grpc_processor.addr,
-                grpc_processor.port
-            );
-
-            for unit in grpc_processor.clone().supported_units {
-                tracing::debug!("Adding unit: {:?}", unit);
-                let processor = grpc_processor
-                    .setup(settings, unit.clone(), None, work_dir, None)
+            #[cfg(feature = "lnbits")]
+            LnBackendConfig::Lnbits { lnbits, .. } => {
+                 let backend = lnbits
+                    .setup(settings, currency_unit.clone(), None, work_dir, kv_store.clone())
                     .await?;
                 #[cfg(feature = "prometheus")]
-                let processor = MetricsMintPayment::new(processor);
+                let backend = MetricsMintPayment::new(backend);
 
                 mint_builder = configure_backend_for_unit(
                     settings,
                     mint_builder,
-                    unit.clone(),
+                    currency_unit.clone(),
                     mint_melt_limits,
-                    Arc::new(processor),
+                    Arc::new(backend),
+                )
+                .await?;
+            }
+            #[cfg(feature = "lnd")]
+            LnBackendConfig::Lnd { lnd, .. } => {
+                let backend = lnd
+                    .setup(settings, currency_unit.clone(), None, work_dir, kv_store.clone())
+                    .await?;
+                #[cfg(feature = "prometheus")]
+                let backend = MetricsMintPayment::new(backend);
+
+                mint_builder = configure_backend_for_unit(
+                    settings,
+                    mint_builder,
+                    currency_unit.clone(),
+                    mint_melt_limits,
+                    Arc::new(backend),
+                )
+                .await?;
+            }
+            #[cfg(feature = "ldk-node")]
+            LnBackendConfig::LdkNode { ldk_node, .. } => {
+                 let backend = ldk_node
+                    .setup(settings, currency_unit.clone(), _runtime.clone(), work_dir, kv_store.clone())
+                    .await?;
+
+                mint_builder = configure_backend_for_unit(
+                    settings,
+                    mint_builder,
+                    currency_unit.clone(),
+                    mint_melt_limits,
+                    Arc::new(backend),
+                )
+                .await?;
+            }
+            #[cfg(feature = "fakewallet")]
+            LnBackendConfig::FakeWallet { fake_wallet, .. } => {
+                let backend = fake_wallet
+                    .setup(settings, currency_unit.clone(), None, work_dir, kv_store.clone())
+                    .await?;
+                #[cfg(feature = "prometheus")]
+                let backend = MetricsMintPayment::new(backend);
+
+                 mint_builder = configure_backend_for_unit(
+                    settings,
+                    mint_builder,
+                    currency_unit.clone(),
+                    mint_melt_limits,
+                    Arc::new(backend),
+                )
+                .await?;
+            }
+            #[cfg(feature = "grpc-processor")]
+            LnBackendConfig::GrpcProcessor { grpc_processor, .. } => {
+                 let backend = grpc_processor
+                    .setup(settings, currency_unit.clone(), None, work_dir, kv_store.clone())
+                    .await?;
+                #[cfg(feature = "prometheus")]
+                let backend = MetricsMintPayment::new(backend);
+
+                 mint_builder = configure_backend_for_unit(
+                    settings,
+                    mint_builder,
+                    currency_unit.clone(),
+                    mint_melt_limits,
+                    Arc::new(backend),
                 )
                 .await?;
             }
         }
-        #[cfg(feature = "ldk-node")]
-        LnBackend::LdkNode => {
-            let ldk_node_settings = settings.clone().ldk_node.expect("Checked at config load");
-            tracing::info!("Using LDK Node backend: {:?}", ldk_node_settings);
-
-            let ldk_node = ldk_node_settings
-                .setup(settings, CurrencyUnit::Sat, _runtime, work_dir, None)
-                .await?;
-
-            mint_builder = configure_backend_for_unit(
-                settings,
-                mint_builder,
-                CurrencyUnit::Sat,
-                mint_melt_limits,
-                Arc::new(ldk_node),
-            )
-            .await?;
-        }
-        LnBackend::None => {
-            tracing::error!(
-                "Payment backend was not set or feature disabled. {:?}",
-                settings.ln.ln_backend
-            );
-            bail!("Lightning backend must be configured");
-        }
-    };
+    }
 
     Ok(mint_builder)
 }

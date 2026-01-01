@@ -2,7 +2,7 @@
 use std::collections::HashMap;
 #[cfg(feature = "fakewallet")]
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 #[cfg(feature = "cln")]
@@ -12,7 +12,7 @@ use anyhow::bail;
 use async_trait::async_trait;
 #[cfg(feature = "fakewallet")]
 use bip39::rand::{thread_rng, Rng};
-use cdk::cdk_database::{self, KVStore};
+use cdk::cdk_database::KVStore;
 use cdk::cdk_payment::MintPayment;
 use cdk::nuts::CurrencyUnit;
 #[cfg(any(
@@ -23,63 +23,10 @@ use cdk::nuts::CurrencyUnit;
     feature = "fakewallet"
 ))]
 use cdk::types::FeeReserve;
-#[cfg(feature = "postgres")]
-use cdk_postgres::MintPgDatabase;
-#[cfg(feature = "sqlite")]
-use cdk_sqlite::MintSqliteDatabase;
 
-use crate::config::{self, DatabaseEngine, Settings};
+use crate::config::{self, Settings};
 #[cfg(feature = "cln")]
 use crate::expand_path;
-
-/// Initialize a database connection based on the configuration.
-///
-/// If `db_path` is provided, it is used for SQLite databases.
-/// Otherwise, for SQLite, it uses `cdk-mintd-backend.sqlite` in `work_dir`.
-///
-/// Note: This function is used for backend databases.
-pub async fn init_db_with_path(
-    db_config: &config::Database,
-    db_path: PathBuf,
-    _password: Option<String>,
-) -> anyhow::Result<Arc<dyn KVStore<Err = cdk::cdk_database::Error> + Send + Sync>> {
-     match db_config.engine {
-        #[cfg(feature = "sqlite")]
-        DatabaseEngine::Sqlite => {
-            #[cfg(not(feature = "sqlcipher"))]
-            let db = MintSqliteDatabase::new(&db_path).await?;
-             #[cfg(feature = "sqlcipher")]
-            let db = {
-                let password = _password
-                    .ok_or_else(|| anyhow::anyhow!("Password required when sqlcipher feature is enabled"))?;
-                MintSqliteDatabase::new((db_path, password)).await?
-            };
-            Ok(Arc::new(db))
-        }
-        #[cfg(feature = "postgres")]
-        DatabaseEngine::Postgres => {
-             let pg_config = db_config.postgres.as_ref().ok_or_else(|| {
-                anyhow::anyhow!("PostgreSQL configuration is required when using PostgreSQL engine")
-            })?;
-
-             if pg_config.url.is_empty() {
-                anyhow::bail!("PostgreSQL URL is required.");
-            }
-
-            let pg_db = Arc::new(MintPgDatabase::new(pg_config.url.as_str()).await?);
-            Ok(pg_db)
-        }
-         #[cfg(not(feature = "sqlite"))]
-        DatabaseEngine::Sqlite => {
-             anyhow::bail!("SQLite support not compiled in.")
-        }
-        #[cfg(not(feature = "postgres"))]
-        DatabaseEngine::Postgres => {
-             anyhow::bail!("PostgreSQL support not compiled in.")
-        }
-    }
-}
-
 
 #[async_trait]
 pub trait LnBackendSetup {

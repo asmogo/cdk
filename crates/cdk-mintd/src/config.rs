@@ -129,8 +129,6 @@ pub enum LnBackendConfig {
     Cln {
         #[serde(default = "default_currency_unit")]
         currency_unit: CurrencyUnit,
-        #[serde(default)]
-        database: Database,
         #[serde(default = "default_min_mint")]
         min_mint: Amount,
         #[serde(default = "default_max_mint")]
@@ -146,8 +144,6 @@ pub enum LnBackendConfig {
     Lnbits {
         #[serde(default = "default_currency_unit")]
         currency_unit: CurrencyUnit,
-        #[serde(default)]
-        database: Database,
         #[serde(default = "default_min_mint")]
         min_mint: Amount,
         #[serde(default = "default_max_mint")]
@@ -163,8 +159,6 @@ pub enum LnBackendConfig {
     FakeWallet {
         #[serde(default = "default_currency_unit")]
         currency_unit: CurrencyUnit,
-        #[serde(default)]
-        database: Database,
         #[serde(default = "default_min_mint")]
         min_mint: Amount,
         #[serde(default = "default_max_mint")]
@@ -180,8 +174,6 @@ pub enum LnBackendConfig {
     Lnd {
         #[serde(default = "default_currency_unit")]
         currency_unit: CurrencyUnit,
-        #[serde(default)]
-        database: Database,
         #[serde(default = "default_min_mint")]
         min_mint: Amount,
         #[serde(default = "default_max_mint")]
@@ -197,8 +189,6 @@ pub enum LnBackendConfig {
     LdkNode {
         #[serde(default = "default_currency_unit")]
         currency_unit: CurrencyUnit,
-        #[serde(default)]
-        database: Database,
         #[serde(default = "default_min_mint")]
         min_mint: Amount,
         #[serde(default = "default_max_mint")]
@@ -214,8 +204,6 @@ pub enum LnBackendConfig {
     GrpcProcessor {
         #[serde(default = "default_currency_unit")]
         currency_unit: CurrencyUnit,
-        #[serde(default)]
-        database: Database,
         #[serde(default = "default_min_mint")]
         min_mint: Amount,
         #[serde(default = "default_max_mint")]
@@ -828,19 +816,11 @@ mod tests {
             min_mint = 100
             max_mint = 100000
 
-            [ln_backends.database]
-            engine = "sqlite"
-
             [[ln_backends]]
             type = "fake_wallet"
             currency_unit = "usd"
             min_mint = 10
             max_mint = 1000
-
-            [ln_backends.database]
-            engine = "postgres"
-            [ln_backends.database.postgres]
-            url = "postgres://user:pass@localhost:5432/db"
         "#;
 
         let config: Config = Config::builder()
@@ -855,10 +835,9 @@ mod tests {
         // Check first backend (CLN)
         match &settings.ln_backends[0] {
             #[cfg(feature = "cln")]
-            LnBackendConfig::Cln { currency_unit, min_mint, database, cln, .. } => {
+            LnBackendConfig::Cln { currency_unit, min_mint, cln, .. } => {
                 assert_eq!(*currency_unit, CurrencyUnit::Sat);
                 assert_eq!(*min_mint, Amount::from(100));
-                assert_eq!(database.engine, DatabaseEngine::Sqlite);
                 assert_eq!(cln.rpc_path, PathBuf::from("/tmp/lightning-rpc"));
             }
             _ => panic!("Expected Cln backend at index 0"),
@@ -867,12 +846,9 @@ mod tests {
         // Check second backend (FakeWallet)
         match &settings.ln_backends[1] {
             #[cfg(feature = "fakewallet")]
-            LnBackendConfig::FakeWallet { currency_unit, min_mint, database, .. } => {
+            LnBackendConfig::FakeWallet { currency_unit, min_mint, .. } => {
                 assert_eq!(*currency_unit, CurrencyUnit::Usd);
                 assert_eq!(*min_mint, Amount::from(10));
-                assert_eq!(database.engine, DatabaseEngine::Postgres);
-                assert!(database.postgres.is_some());
-                assert_eq!(database.postgres.as_ref().unwrap().url, "postgres://user:pass@localhost:5432/db");
             }
              _ => panic!("Expected FakeWallet backend at index 1"),
         }

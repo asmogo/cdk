@@ -340,14 +340,14 @@ async fn configure_mint_builder(
     mint_builder: MintBuilder,
     runtime: Option<std::sync::Arc<tokio::runtime::Runtime>>,
     work_dir: &Path,
-    _kv_store: Option<Arc<dyn KVStore<Err = cdk::cdk_database::Error> + Send + Sync>>,
+    kv_store: Option<Arc<dyn KVStore<Err = cdk::cdk_database::Error> + Send + Sync>>,
 ) -> Result<MintBuilder> {
     // Configure basic mint information
     let mint_builder = configure_basic_info(settings, mint_builder);
 
     // Configure lightning backend
     let mint_builder =
-        configure_lightning_backend(settings, mint_builder, runtime, work_dir).await?;
+        configure_lightning_backend(settings, mint_builder, runtime, work_dir, kv_store).await?;
 
     // Configure caching
     let mint_builder = configure_cache(settings, mint_builder);
@@ -411,30 +411,31 @@ async fn configure_lightning_backend(
     mut mint_builder: MintBuilder,
     _runtime: Option<std::sync::Arc<tokio::runtime::Runtime>>,
     work_dir: &Path,
+    kv_store: Option<Arc<dyn KVStore<Err = cdk::cdk_database::Error> + Send + Sync>>,
 ) -> Result<MintBuilder> {
 
     let mut used_units = HashSet::new();
 
-    for (idx, backend_config) in settings.ln_backends.iter().enumerate() {
-        let (currency_unit, mint_melt_limits, database_config) = match backend_config {
+    for backend_config in &settings.ln_backends {
+        let (currency_unit, mint_melt_limits) = match backend_config {
             #[cfg(feature = "cln")]
-            LnBackendConfig::Cln { currency_unit, min_mint, max_mint, min_melt, max_melt, database, .. } =>
-                (currency_unit, MintMeltLimits { mint_min: *min_mint, mint_max: *max_mint, melt_min: *min_melt, melt_max: *max_melt }, database),
+            LnBackendConfig::Cln { currency_unit, min_mint, max_mint, min_melt, max_melt, .. } =>
+                (currency_unit, MintMeltLimits { mint_min: *min_mint, mint_max: *max_mint, melt_min: *min_melt, melt_max: *max_melt }),
             #[cfg(feature = "lnbits")]
-            LnBackendConfig::Lnbits { currency_unit, min_mint, max_mint, min_melt, max_melt, database, .. } =>
-                (currency_unit, MintMeltLimits { mint_min: *min_mint, mint_max: *max_mint, melt_min: *min_melt, melt_max: *max_melt }, database),
+            LnBackendConfig::Lnbits { currency_unit, min_mint, max_mint, min_melt, max_melt, .. } =>
+                (currency_unit, MintMeltLimits { mint_min: *min_mint, mint_max: *max_mint, melt_min: *min_melt, melt_max: *max_melt }),
             #[cfg(feature = "lnd")]
-            LnBackendConfig::Lnd { currency_unit, min_mint, max_mint, min_melt, max_melt, database, .. } =>
-                (currency_unit, MintMeltLimits { mint_min: *min_mint, mint_max: *max_mint, melt_min: *min_melt, melt_max: *max_melt }, database),
+            LnBackendConfig::Lnd { currency_unit, min_mint, max_mint, min_melt, max_melt, .. } =>
+                (currency_unit, MintMeltLimits { mint_min: *min_mint, mint_max: *max_mint, melt_min: *min_melt, melt_max: *max_melt }),
             #[cfg(feature = "ldk-node")]
-            LnBackendConfig::LdkNode { currency_unit, min_mint, max_mint, min_melt, max_melt, database, .. } =>
-                (currency_unit, MintMeltLimits { mint_min: *min_mint, mint_max: *max_mint, melt_min: *min_melt, melt_max: *max_melt }, database),
+            LnBackendConfig::LdkNode { currency_unit, min_mint, max_mint, min_melt, max_melt, .. } =>
+                (currency_unit, MintMeltLimits { mint_min: *min_mint, mint_max: *max_mint, melt_min: *min_melt, melt_max: *max_melt }),
             #[cfg(feature = "fakewallet")]
-            LnBackendConfig::FakeWallet { currency_unit, min_mint, max_mint, min_melt, max_melt, database, .. } =>
-                (currency_unit, MintMeltLimits { mint_min: *min_mint, mint_max: *max_mint, melt_min: *min_melt, melt_max: *max_melt }, database),
+            LnBackendConfig::FakeWallet { currency_unit, min_mint, max_mint, min_melt, max_melt, .. } =>
+                (currency_unit, MintMeltLimits { mint_min: *min_mint, mint_max: *max_mint, melt_min: *min_melt, melt_max: *max_melt }),
              #[cfg(feature = "grpc-processor")]
-            LnBackendConfig::GrpcProcessor { currency_unit, min_mint, max_mint, min_melt, max_melt, database, .. } =>
-                (currency_unit, MintMeltLimits { mint_min: *min_mint, mint_max: *max_mint, melt_min: *min_melt, melt_max: *max_melt }, database),
+            LnBackendConfig::GrpcProcessor { currency_unit, min_mint, max_mint, min_melt, max_melt, .. } =>
+                (currency_unit, MintMeltLimits { mint_min: *min_mint, mint_max: *max_mint, melt_min: *min_melt, melt_max: *max_melt }),
         };
 
         if used_units.contains(currency_unit) {
@@ -442,25 +443,11 @@ async fn configure_lightning_backend(
         }
         used_units.insert(currency_unit.clone());
 
-        // Determine DB path for sqlite uniqueness
-        let db_path = work_dir.join(format!("cdk-mintd-backend-{}-{}.sqlite", currency_unit, idx));
-
-        // Initialize backend DB
-        // Note: passing None for password as sqlcipher password management for backends is not yet fully plumbed from CLI args specifically per backend,
-        // assuming same password or no password for now, or just passing None as the CLI args password was for the main DB?
-        // CLIArgs password is global. I should probably use it if available?
-        // `run_mintd` gets `db_password`. But `configure_lightning_backend` doesn't have it.
-        // For now I will pass None, meaning backends won't support encryption if they rely on this.
-        // To fix this properly, I'd need to thread `db_password` through.
-        // Given "deep refactoring" requirement, maybe I should?
-        // But let's stick to getting it working first.
-        let kv_store = setup::init_db_with_path(database_config, db_path, None).await?;
-
         match backend_config {
             #[cfg(feature = "cln")]
             LnBackendConfig::Cln { cln, .. } => {
                 let backend = cln
-                    .setup(settings, currency_unit.clone(), None, work_dir, Some(kv_store))
+                    .setup(settings, currency_unit.clone(), None, work_dir, kv_store.clone())
                     .await?;
                 #[cfg(feature = "prometheus")]
                 let backend = MetricsMintPayment::new(backend);
@@ -477,7 +464,7 @@ async fn configure_lightning_backend(
             #[cfg(feature = "lnbits")]
             LnBackendConfig::Lnbits { lnbits, .. } => {
                  let backend = lnbits
-                    .setup(settings, currency_unit.clone(), None, work_dir, Some(kv_store))
+                    .setup(settings, currency_unit.clone(), None, work_dir, kv_store.clone())
                     .await?;
                 #[cfg(feature = "prometheus")]
                 let backend = MetricsMintPayment::new(backend);
@@ -494,7 +481,7 @@ async fn configure_lightning_backend(
             #[cfg(feature = "lnd")]
             LnBackendConfig::Lnd { lnd, .. } => {
                 let backend = lnd
-                    .setup(settings, currency_unit.clone(), None, work_dir, Some(kv_store))
+                    .setup(settings, currency_unit.clone(), None, work_dir, kv_store.clone())
                     .await?;
                 #[cfg(feature = "prometheus")]
                 let backend = MetricsMintPayment::new(backend);
@@ -511,7 +498,7 @@ async fn configure_lightning_backend(
             #[cfg(feature = "ldk-node")]
             LnBackendConfig::LdkNode { ldk_node, .. } => {
                  let backend = ldk_node
-                    .setup(settings, currency_unit.clone(), _runtime.clone(), work_dir, Some(kv_store))
+                    .setup(settings, currency_unit.clone(), _runtime.clone(), work_dir, kv_store.clone())
                     .await?;
 
                 mint_builder = configure_backend_for_unit(
@@ -525,23 +512,8 @@ async fn configure_lightning_backend(
             }
             #[cfg(feature = "fakewallet")]
             LnBackendConfig::FakeWallet { fake_wallet, .. } => {
-                // FakeWallet config has supported_units which is a list.
-                // But LnBackendConfig has a single currency_unit.
-                // This implies we are using one unit per backend config instance.
-                // But `fake_wallet.setup` implementation (in setup.rs) ignores unit arg?
-                // Wait, `setup.rs` `FakeWallet::setup` takes `unit`.
-                // My `config.rs` `FakeWallet` struct still has `supported_units: Vec<CurrencyUnit>`.
-                // This is redundant with `LnBackendConfig` wrapper having `currency_unit`.
-                // I should arguably ignore `fake_wallet.supported_units` and use the wrapper's `currency_unit`.
-                // Or user must configure them consistently.
-
-                // Since I am refactoring, the proper way is:
-                // The wrapper `LnBackendConfig::FakeWallet` defines the unit.
-                // The internal `FakeWallet` config might just have fee settings.
-
-                // `fake_wallet.setup` creates ONE wallet for ONE unit.
                 let backend = fake_wallet
-                    .setup(settings, currency_unit.clone(), None, work_dir, Some(kv_store))
+                    .setup(settings, currency_unit.clone(), None, work_dir, kv_store.clone())
                     .await?;
                 #[cfg(feature = "prometheus")]
                 let backend = MetricsMintPayment::new(backend);
@@ -558,7 +530,7 @@ async fn configure_lightning_backend(
             #[cfg(feature = "grpc-processor")]
             LnBackendConfig::GrpcProcessor { grpc_processor, .. } => {
                  let backend = grpc_processor
-                    .setup(settings, currency_unit.clone(), None, work_dir, Some(kv_store))
+                    .setup(settings, currency_unit.clone(), None, work_dir, kv_store.clone())
                     .await?;
                 #[cfg(feature = "prometheus")]
                 let backend = MetricsMintPayment::new(backend);

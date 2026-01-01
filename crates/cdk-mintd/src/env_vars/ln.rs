@@ -2,7 +2,7 @@
 
 use std::env;
 
-use crate::config::{LnBackendConfig, Database};
+use crate::config::LnBackendConfig;
 
 // LN environment variables
 pub const ENV_LN_BACKEND: &str = "CDK_MINTD_LN_BACKEND";
@@ -26,8 +26,6 @@ pub fn parse_backend_from_env() -> Option<LnBackendConfig> {
     let min_melt = env::var(ENV_LN_MIN_MELT).ok().and_then(|s| s.parse().ok()).map(|v: u64| v.into()).unwrap_or(1.into());
     let max_melt = env::var(ENV_LN_MAX_MELT).ok().and_then(|s| s.parse().ok()).map(|v: u64| v.into()).unwrap_or(500_000.into());
 
-    let database = Database::default();
-
     match backend_type.as_str() {
         #[cfg(feature = "cln")]
         "cln" => {
@@ -35,7 +33,6 @@ pub fn parse_backend_from_env() -> Option<LnBackendConfig> {
             cln = cln.from_env();
             Some(LnBackendConfig::Cln {
                 currency_unit,
-                database,
                 min_mint,
                 max_mint,
                 min_melt,
@@ -49,7 +46,6 @@ pub fn parse_backend_from_env() -> Option<LnBackendConfig> {
             lnbits = lnbits.from_env();
             Some(LnBackendConfig::Lnbits {
                 currency_unit,
-                database,
                 min_mint,
                 max_mint,
                 min_melt,
@@ -63,7 +59,6 @@ pub fn parse_backend_from_env() -> Option<LnBackendConfig> {
             fake_wallet = fake_wallet.from_env();
             Some(LnBackendConfig::FakeWallet {
                 currency_unit,
-                database,
                 min_mint,
                 max_mint,
                 min_melt,
@@ -77,7 +72,6 @@ pub fn parse_backend_from_env() -> Option<LnBackendConfig> {
             lnd = lnd.from_env();
             Some(LnBackendConfig::Lnd {
                 currency_unit,
-                database,
                 min_mint,
                 max_mint,
                 min_melt,
@@ -91,7 +85,6 @@ pub fn parse_backend_from_env() -> Option<LnBackendConfig> {
             ldk_node = ldk_node.from_env();
              Some(LnBackendConfig::LdkNode {
                 currency_unit,
-                database,
                 min_mint,
                 max_mint,
                 min_melt,
@@ -105,7 +98,6 @@ pub fn parse_backend_from_env() -> Option<LnBackendConfig> {
             grpc_processor = grpc_processor.from_env();
             Some(LnBackendConfig::GrpcProcessor {
                 currency_unit,
-                database,
                 min_mint,
                 max_mint,
                 min_melt,

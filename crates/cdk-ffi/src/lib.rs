@@ -9,6 +9,8 @@ pub mod error;
 pub mod multi_mint_wallet;
 #[cfg(feature = "postgres")]
 pub mod postgres;
+#[cfg(feature = "supabase")]
+pub mod supabase;
 pub mod sqlite;
 pub mod token;
 pub mod types;

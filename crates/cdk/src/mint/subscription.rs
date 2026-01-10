@@ -12,8 +12,9 @@ use cdk_common::payment::DynMintPayment;
 use cdk_common::pub_sub::{Pubsub, Spec, Subscriber};
 use cdk_common::subscription::SubId;
 use cdk_common::{
-    Amount, BlindSignature, MeltQuoteBolt11Response, MeltQuoteState, MintQuoteBolt11Response,
-    MintQuoteBolt12Response, MintQuoteState, PaymentMethod, ProofState, PublicKey, QuoteId,
+    Amount, BlindSignature, CurrencyUnit, MeltQuoteBolt11Response, MeltQuoteState,
+    MintQuoteBolt11Response, MintQuoteBolt12Response, MintQuoteState, ProofState, PublicKey,
+    QuoteId,
 };
 
 use super::Mint;
@@ -21,6 +22,7 @@ use crate::event::MintEvent;
 
 /// Mint subtopics
 #[derive(Clone)]
+#[allow(missing_debug_implementations)]
 pub struct MintPubSubSpec {
     db: DynMintDatabase,
     payment_processors: Arc<HashMap<PaymentProcessorKey, DynMintPayment>>,
@@ -99,21 +101,23 @@ impl MintPubSubSpec {
                         quotes
                             .into_iter()
                             .filter_map(|quote| {
-                                quote.and_then(|mint_quotes| match mint_quotes.payment_method {
-                                    PaymentMethod::Bolt11 => {
-                                        let response: MintQuoteBolt11Response<QuoteId> =
-                                            mint_quotes.into();
-                                        Some(response.into())
-                                    }
-                                    PaymentMethod::Bolt12 => match mint_quotes.try_into() {
-                                        Ok(response) => {
-                                            let response: MintQuoteBolt12Response<QuoteId> =
-                                                response;
+                                quote.and_then(|mint_quotes| {
+                                    match mint_quotes.payment_method.as_str() {
+                                        "bolt11" => {
+                                            let response: MintQuoteBolt11Response<QuoteId> =
+                                                mint_quotes.into();
                                             Some(response.into())
                                         }
-                                        Err(_) => None,
-                                    },
-                                    PaymentMethod::Custom(_) => None,
+                                        "bolt12" => match mint_quotes.try_into() {
+                                            Ok(response) => {
+                                                let response: MintQuoteBolt12Response<QuoteId> =
+                                                    response;
+                                                Some(response.into())
+                                            }
+                                            Err(_) => None,
+                                        },
+                                        _ => None,
+                                    }
                                 })
                             })
                             .collect::<Vec<_>>()
@@ -172,6 +176,7 @@ impl Spec for MintPubSubSpec {
 }
 
 /// PubsubManager
+#[allow(missing_debug_implementations)]
 pub struct PubSubManager(Pubsub<MintPubSubSpec>);
 
 impl PubSubManager {
@@ -191,16 +196,16 @@ impl PubSubManager {
     }
 
     /// Helper function to publish even of a mint quote being paid
-    pub fn mint_quote_issue(&self, mint_quote: &MintQuote, total_issued: Amount) {
+    pub fn mint_quote_issue(&self, mint_quote: &MintQuote, total_issued: Amount<CurrencyUnit>) {
         match mint_quote.payment_method {
-            PaymentMethod::Bolt11 => {
+            cdk_common::PaymentMethod::Known(cdk_common::nut00::KnownMethod::Bolt11) => {
                 self.mint_quote_bolt11_status(mint_quote.clone(), MintQuoteState::Issued);
             }
-            PaymentMethod::Bolt12 => {
+            cdk_common::PaymentMethod::Known(cdk_common::nut00::KnownMethod::Bolt12) => {
                 self.mint_quote_bolt12_status(
                     mint_quote.clone(),
-                    mint_quote.amount_paid(),
-                    total_issued,
+                    mint_quote.amount_paid().into(),
+                    total_issued.into(),
                 );
             }
             _ => {
@@ -210,16 +215,16 @@ impl PubSubManager {
     }
 
     /// Helper function to publish even of a mint quote being paid
-    pub fn mint_quote_payment(&self, mint_quote: &MintQuote, total_paid: Amount) {
+    pub fn mint_quote_payment(&self, mint_quote: &MintQuote, total_paid: Amount<CurrencyUnit>) {
         match mint_quote.payment_method {
-            PaymentMethod::Bolt11 => {
+            cdk_common::PaymentMethod::Known(cdk_common::nut00::KnownMethod::Bolt11) => {
                 self.mint_quote_bolt11_status(mint_quote.clone(), MintQuoteState::Paid);
             }
-            PaymentMethod::Bolt12 => {
+            cdk_common::PaymentMethod::Known(cdk_common::nut00::KnownMethod::Bolt12) => {
                 self.mint_quote_bolt12_status(
                     mint_quote.clone(),
-                    total_paid,
-                    mint_quote.amount_issued(),
+                    total_paid.into(),
+                    mint_quote.amount_issued().into(),
                 );
             }
             _ => {

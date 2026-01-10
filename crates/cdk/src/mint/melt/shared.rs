@@ -8,12 +8,12 @@
 
 use cdk_common::database::{self, Acquired, DynMintDatabase};
 use cdk_common::nuts::{BlindSignature, BlindedMessage, MeltQuoteState, State};
-use cdk_common::state::check_state_transition;
-use cdk_common::{Amount, Error, PublicKey, QuoteId};
+use cdk_common::{Amount, CurrencyUnit, Error, PublicKey, QuoteId};
 use cdk_signatory::signatory::SignatoryKeySet;
 
 use crate::mint::subscription::PubSubManager;
 use crate::mint::MeltQuote;
+use crate::Mint;
 
 /// Retrieves fee and amount configuration for the keyset matching the change outputs.
 ///
@@ -183,9 +183,9 @@ pub async fn process_melt_change(
     mint: &super::super::Mint,
     db: &DynMintDatabase,
     quote_id: &QuoteId,
-    inputs_amount: Amount,
-    total_spent: Amount,
-    inputs_fee: Amount,
+    inputs_amount: Amount<CurrencyUnit>,
+    total_spent: Amount<CurrencyUnit>,
+    inputs_fee: Amount<CurrencyUnit>,
     change_outputs: Vec<BlindedMessage>,
 ) -> Result<
     (
@@ -203,13 +203,16 @@ pub async fn process_melt_change(
         return Ok((None, tx));
     }
 
-    let change_target = inputs_amount - total_spent - inputs_fee;
+    let change_target: Amount = inputs_amount
+        .checked_sub(&total_spent)?
+        .checked_sub(&inputs_fee)?
+        .into();
 
     // Get keyset configuration
     let fee_and_amounts = get_keyset_fee_and_amounts(&mint.keysets, &change_outputs);
 
     // Split change into denominations
-    let mut amounts = change_target.split(&fee_and_amounts);
+    let mut amounts: Vec<Amount> = change_target.split(&fee_and_amounts);
 
     if change_outputs.len() < amounts.len() {
         tracing::debug!(
@@ -247,19 +250,23 @@ pub async fn process_melt_change(
 /// Loads a melt quote and acquires exclusive locks on all related quotes.
 ///
 /// This function combines quote loading with defensive locking to prevent race conditions in BOLT12
-/// scenarios where multiple melt quotes can share the same `request_lookup_id`. It performs three
-/// operations atomically:
+/// scenarios where multiple melt quotes can share the same `request_lookup_id`. It performs the
+/// following operations atomically in a single query:
 ///
-/// 1. Loads the melt quote by ID 2. Acquires row-level locks on all sibling quotes sharing the same
-///    lookup identifier 3. Validates that no sibling quote is already in `Pending` or `Paid` state
+/// 1. Acquires row-level locks on ALL quotes sharing the same lookup identifier (including target)
+/// 2. Returns the target quote and validates no sibling is already `Pending` or `Paid`
 ///
-/// This ensures that when a melt operation begins, no other concurrent melt can proceed on a
-/// related quote, preventing double-spending and state inconsistencies.
+/// # Deadlock Prevention
+///
+/// This function uses a single atomic query to lock all related quotes at once, ordered by ID.
+/// This prevents deadlocks that would occur if we locked the target quote first, then tried to
+/// lock related quotes separately - concurrent transactions would each hold one lock and wait
+/// for the other, creating a circular wait condition.
 ///
 /// # Arguments
 ///
-/// * `tx` - The active database transaction used to load and acquire locks. * `quote_id` - The ID
-///   of the melt quote to load and process.
+/// * `tx` - The active database transaction used to load and acquire locks.
+/// * `quote_id` - The ID of the melt quote to load and process.
 ///
 /// # Returns
 ///
@@ -267,51 +274,49 @@ pub async fn process_melt_change(
 ///
 /// # Errors
 ///
-/// * [`Error::UnknownQuote`] if no quote exists with the given ID. * [`Error::Database(Duplicate)`]
-///   if another quote with the same lookup ID is already pending or paid, indicating a conflicting
-///   concurrent melt operation.
+/// * [`Error::UnknownQuote`] if no quote exists with the given ID.
+/// * [`Error::PendingQuote`] (code 20005) if another quote with the same lookup ID is pending.
+/// * [`Error::RequestAlreadyPaid`] (code 20006) if another quote with the same lookup ID is paid.
 pub async fn load_melt_quotes_exclusively(
     tx: &mut Box<dyn database::MintTransaction<database::Error> + Send + Sync>,
     quote_id: &QuoteId,
 ) -> Result<Acquired<MeltQuote>, Error> {
-    let quote = tx
-        .get_melt_quote(quote_id)
+    // Lock ALL related quotes in a single atomic query to prevent deadlocks.
+    // The query locks quotes ordered by ID, ensuring consistent lock acquisition order
+    // across concurrent transactions.
+    let locked = tx
+        .lock_melt_quote_and_related(quote_id)
         .await
         .map_err(|e| match e {
             database::Error::Locked => {
-                tracing::warn!("Quote {quote_id} is locked by another process");
+                tracing::warn!("Quote {quote_id} or related quotes are locked by another process");
                 database::Error::Duplicate
             }
             e => e,
-        })?
-        .ok_or(Error::UnknownQuote)?;
+        })?;
 
-    // Lock any other quotes so they cannot be modified
-    let locked_quotes = if let Some(request_lookup_id) = quote.request_lookup_id.as_ref() {
-        tx.get_melt_quotes_by_request_lookup_id(request_lookup_id)
-            .await
-            .map_err(|e| match e {
-                database::Error::Locked => {
-                    tracing::warn!("Quotes with request_lookyup_id {request_lookup_id} is locked by another process");
-                    database::Error::Duplicate
-                }
-                e => e,
-            })?
-    } else {
-        vec![]
-    };
+    let quote = locked.target.ok_or(Error::UnknownQuote)?;
 
-    if locked_quotes.iter().any(|locked_quote| {
+    // Check if any sibling quote (same lookup_id) is already pending or paid
+    if let Some(conflict) = locked.all_related.iter().find(|locked_quote| {
         locked_quote.id != quote.id
             && (locked_quote.state == MeltQuoteState::Pending
                 || locked_quote.state == MeltQuoteState::Paid)
     }) {
         tracing::warn!(
-            "Cannot transition quote {} to Pending: another quote with lookup_id {:?} is already pending or paid",
+            "Cannot transition quote {} to Pending: another quote with lookup_id {:?} is already {:?}",
             quote.id,
             quote.request_lookup_id,
+            conflict.state,
         );
-        return Err(Error::Database(crate::cdk_database::Error::Duplicate));
+        // Return spec-compliant error codes:
+        // - 20005 (QuotePending) if sibling is Pending
+        // - 20006 (InvoiceAlreadyPaid) if sibling is Paid
+        return Err(match conflict.state {
+            MeltQuoteState::Pending => Error::PendingQuote,
+            MeltQuoteState::Paid => Error::RequestAlreadyPaid,
+            _ => unreachable!("Only Pending/Paid states reach this branch"),
+        });
     }
 
     Ok(quote)
@@ -361,27 +366,58 @@ pub async fn finalize_melt_core(
     pubsub: &PubSubManager,
     quote: &mut Acquired<MeltQuote>,
     input_ys: &[PublicKey],
-    inputs_amount: Amount,
-    inputs_fee: Amount,
-    total_spent: Amount,
+    inputs_amount: Amount<CurrencyUnit>,
+    inputs_fee: Amount<CurrencyUnit>,
+    total_spent: Amount<CurrencyUnit>,
     payment_preimage: Option<String>,
     payment_lookup_id: &cdk_common::payment::PaymentIdentifier,
 ) -> Result<(), Error> {
     // Validate quote amount vs payment amount
-    if quote.amount > total_spent {
+    if quote.amount() > total_spent {
         tracing::error!(
             "Payment amount {} is less than quote amount {} for quote {}",
             total_spent,
-            quote.amount,
+            quote.amount(),
             quote.id
         );
         return Err(Error::IncorrectQuoteAmount);
     }
 
     // Validate inputs amount
-    if inputs_amount - inputs_fee < total_spent {
-        tracing::error!("Over paid melt quote {}", quote.id);
-        return Err(Error::IncorrectQuoteAmount);
+    let net_inputs = inputs_amount.checked_sub(&inputs_fee)?;
+
+    // Convert total_spent to the same unit as net_inputs for comparison.
+    // Backends should return total_spent in the quote's unit, but we convert defensively.
+    let total_spent = total_spent.convert_to(net_inputs.unit())?;
+
+    tracing::debug!(
+        "Melt validation for quote {}: inputs_amount={}, inputs_fee={}, net_inputs={}, total_spent={}, quote_amount={}, fee_reserve={}",
+        quote.id,
+        inputs_amount.display_with_unit(),
+        inputs_fee.display_with_unit(),
+        net_inputs.display_with_unit(),
+        total_spent.display_with_unit(),
+        quote.amount().display_with_unit(),
+        quote.fee_reserve().display_with_unit(),
+    );
+
+    // This can only happen on backends where we cannot set the max fee (e.g., LNbits).
+    // LNbits does not allow setting a fee limit, so payments can exceed the fee reserve.
+    debug_assert!(
+        net_inputs >= total_spent,
+        "Over paid melt quote {}: net_inputs ({}) < total_spent ({}). Payment already complete, finalizing with no change.",
+        quote.id,
+        net_inputs.display_with_unit(),
+        total_spent.display_with_unit(),
+    );
+    if net_inputs < total_spent {
+        tracing::error!(
+            "Over paid melt quote {}: net_inputs ({}) < total_spent ({}). Payment already complete, finalizing with no change.",
+            quote.id,
+            net_inputs.display_with_unit(),
+            total_spent.display_with_unit(),
+        );
+        // Payment is already done - continue finalization but no change will be returned
     }
 
     // Update quote state to Paid
@@ -400,28 +436,9 @@ pub async fn finalize_melt_core(
             .await?;
     }
 
-    for current_state in tx
-        .get_proofs_states(input_ys)
-        .await?
-        .into_iter()
-        .collect::<Option<Vec<_>>>()
-        .ok_or(Error::UnexpectedProofState)?
-    {
-        check_state_transition(current_state, State::Spent)
-            .map_err(|_| Error::UnexpectedProofState)?;
-    }
+    let mut proofs = tx.get_proofs(input_ys).await?;
 
-    // Mark input proofs as spent
-    match tx.update_proofs_states(input_ys, State::Spent).await {
-        Ok(_) => {}
-        Err(database::Error::AttemptUpdateSpentProof) => {
-            tracing::info!("Proofs for quote {} already marked as spent", quote.id);
-            return Ok(());
-        }
-        Err(err) => {
-            return Err(err.into());
-        }
-    }
+    Mint::update_proofs_state(tx, &mut proofs, State::Spent).await?;
 
     // Publish proof state changes
     for pk in input_ys.iter() {
@@ -459,16 +476,11 @@ pub async fn finalize_melt_quote(
     db: &DynMintDatabase,
     pubsub: &PubSubManager,
     quote: &MeltQuote,
-    total_spent: Amount,
+    total_spent: Amount<CurrencyUnit>,
     payment_preimage: Option<String>,
     payment_lookup_id: &cdk_common::payment::PaymentIdentifier,
 ) -> Result<Option<Vec<BlindSignature>>, Error> {
-    use cdk_common::amount::to_unit;
-
     tracing::info!("Finalizing melt quote {}", quote.id);
-
-    // Convert total_spent to quote unit
-    let total_spent = to_unit(total_spent, &quote.unit, &quote.unit).unwrap_or(total_spent);
 
     let mut tx = db.begin_transaction().await?;
 
@@ -507,9 +519,9 @@ pub async fn finalize_melt_quote(
         pubsub,
         &mut locked_quote,
         &input_ys,
-        melt_request_info.inputs_amount,
-        melt_request_info.inputs_fee,
-        total_spent,
+        melt_request_info.inputs_amount.clone(),
+        melt_request_info.inputs_fee.clone(),
+        total_spent.clone(),
         payment_preimage.clone(),
         payment_lookup_id,
     )

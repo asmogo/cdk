@@ -5,7 +5,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use arc_swap::ArcSwap;
-use cdk_common::amount::to_unit;
 use cdk_common::common::{PaymentProcessorKey, QuoteTTL};
 #[cfg(feature = "auth")]
 use cdk_common::database::DynMintAuthDatabase;
@@ -39,6 +38,7 @@ mod issue;
 mod keysets;
 mod ln;
 mod melt;
+mod proofs;
 mod start_up_check;
 mod subscription;
 mod swap;
@@ -46,6 +46,7 @@ mod verification;
 
 pub use builder::{MintBuilder, MintMeltLimits};
 pub use cdk_common::mint::{MeltQuote, MintKeySetInfo, MintQuote};
+pub use issue::{MintQuoteRequest, MintQuoteResponse};
 pub use verification::Verification;
 
 const CDK_MINT_PRIMARY_NAMESPACE: &str = "cdk_mint";
@@ -76,6 +77,12 @@ pub struct Mint {
     keysets: Arc<ArcSwap<Vec<SignatoryKeySet>>>,
     /// Background task management
     task_state: Arc<Mutex<TaskState>>,
+}
+
+impl std::fmt::Debug for Mint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Mint").finish_non_exhaustive()
+    }
 }
 
 /// State for managing background tasks
@@ -398,6 +405,37 @@ impl Mint {
         Ok(())
     }
 
+    /// Get all custom payment methods supported by registered payment processors
+    ///
+    /// This queries all payment processors for their supported custom methods
+    /// and returns a deduplicated list.
+    pub async fn get_custom_payment_methods(&self) -> Result<Vec<String>, Error> {
+        use std::collections::HashSet;
+        let mut custom_methods = HashSet::new();
+        let mut seen_processors = Vec::new();
+
+        for processor in self.payment_processors.values() {
+            // Skip if we've already queried this processor instance
+            if seen_processors.iter().any(|p| Arc::ptr_eq(p, processor)) {
+                continue;
+            }
+            seen_processors.push(Arc::clone(processor));
+
+            match processor.get_settings().await {
+                Ok(settings) => {
+                    for (method, _) in settings.custom {
+                        custom_methods.insert(method);
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to get settings from payment processor: {}", e);
+                }
+            }
+        }
+
+        Ok(custom_methods.into_iter().collect())
+    }
+
     /// Get the payment processor for the given unit and payment method
     pub fn get_payment_processor(
         &self,
@@ -674,7 +712,7 @@ impl Mint {
         pubsub_manager: &Arc<PubSubManager>,
         wait_payment_response: WaitPaymentResponse,
     ) -> Result<(), Error> {
-        if wait_payment_response.payment_amount == Amount::ZERO {
+        if wait_payment_response.payment_amount.value() == 0 {
             tracing::warn!(
                 "Received payment response with 0 amount with payment id {}.",
                 wait_payment_response.payment_id
@@ -715,9 +753,9 @@ impl Mint {
         pubsub_manager: &Arc<PubSubManager>,
     ) -> Result<(), Error> {
         tracing::debug!(
-            "Received payment notification of {} {} for mint quote {} with payment id {}",
+            "Received payment notification of {} {:?} for mint quote {} with payment id {}",
             wait_payment_response.payment_amount,
-            wait_payment_response.unit,
+            wait_payment_response.unit(),
             mint_quote.id,
             wait_payment_response.payment_id.to_string()
         );
@@ -727,18 +765,16 @@ impl Mint {
             .payment_ids()
             .contains(&&wait_payment_response.payment_id)
         {
-            if mint_quote.payment_method == PaymentMethod::Bolt11
+            if mint_quote.payment_method.is_bolt11()
                 && (quote_state == MintQuoteState::Issued || quote_state == MintQuoteState::Paid)
             {
                 tracing::info!("Received payment notification for already issued quote.");
             } else {
-                let payment_amount_quote_unit = to_unit(
-                    wait_payment_response.payment_amount,
-                    &wait_payment_response.unit,
-                    &mint_quote.unit,
-                )?;
+                let payment_amount_quote_unit: Amount<CurrencyUnit> = wait_payment_response
+                    .payment_amount
+                    .convert_to(&mint_quote.unit)?;
 
-                if payment_amount_quote_unit == Amount::ZERO {
+                if payment_amount_quote_unit.value() == 0 {
                     tracing::error!("Zero amount payments should not be recorded.");
                     return Err(Error::AmountUndefined);
                 }
@@ -901,7 +937,9 @@ impl Mint {
                 .get_blind_signatures(&blinded_message)
                 .await?;
 
-            assert_eq!(blinded_signatures.len(), output_len);
+            if blinded_signatures.len() != output_len {
+                return Err(Error::Internal);
+            }
 
             for (blinded_message, blinded_signature) in
                 request.outputs.into_iter().zip(blinded_signatures)

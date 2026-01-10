@@ -34,7 +34,7 @@ pub enum Error {
     #[error(transparent)]
     HexError(#[from] hex::Error),
     /// Keyset length error
-    #[error("NUT02: ID length invalid")]
+    #[error("NUT02: ID length invalid, expected 8 bytes (short/v1) or 33 bytes (v2)")]
     Length,
     /// Unknown version
     #[error("NUT02: Unknown Version")]
@@ -92,7 +92,7 @@ impl fmt::Display for KeySetVersion {
 }
 
 /// Keyset ID bytes
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "swagger", derive(utoipa::ToSchema))]
 pub enum IdBytes {
     /// Bytes for v1
@@ -157,6 +157,11 @@ impl Id {
     /// 4 - If a final expiration is specified, convert it into a radix-10 string and concatenate it (e.g "final_expiry:1896187313")
     /// 5 - HASH_SHA256 the concatenated byte array and take the first 31 bytes
     /// 6 - prefix it with a keyset ID version byte
+    ///
+    /// # Panics
+    ///
+    /// This function will not panic under normal circumstances as the hash output
+    /// is always valid hex and the correct length.
     pub fn v2_from_data(map: &Keys, unit: &CurrencyUnit, expiry: Option<u64>) -> Self {
         let mut keys: Vec<(&Amount, &super::PublicKey)> = map.iter().collect();
         keys.sort_by_key(|(amt, _v)| *amt);
@@ -198,6 +203,11 @@ impl Id {
     ///   3. HASH_SHA256 the concatenated public keys
     ///   4. take the first 14 characters of the hex-encoded hash
     ///   5. prefix it with a keyset ID version byte
+    ///
+    /// # Panics
+    ///
+    /// This function will not panic under normal circumstances as the hash output
+    /// is always valid hex and the correct length.
     pub fn v1_from_keys(map: &Keys) -> Self {
         let mut keys: Vec<(&Amount, &super::PublicKey)> = map.iter().collect();
         keys.sort_by_key(|(amt, _v)| *amt);
@@ -293,6 +303,16 @@ impl TryFrom<String> for Id {
     type Error = Error;
 
     fn try_from(s: String) -> Result<Self, Self::Error> {
+        // Check that string is ASCII (required for hex) to avoid panics on byte slicing
+        // with multi-byte UTF-8 characters
+        ensure_cdk!(
+            s.is_ascii(),
+            Error::HexError(hex::Error::InvalidHexCharacter {
+                c: s.chars().find(|c| !c.is_ascii()).unwrap_or('\0'),
+                index: s.chars().position(|c| !c.is_ascii()).unwrap_or(0),
+            })
+        );
+
         ensure_cdk!(
             s.len() == Self::STRLEN_V1 + 2 || s.len() == Self::STRLEN_V2 + 2,
             Error::Length
@@ -350,6 +370,10 @@ impl ShortKeysetId {
 
     /// [`ShortKeysetId`] from bytes
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
+        if bytes.is_empty() {
+            return Err(Error::Length);
+        }
+
         let version = KeySetVersion::from_byte(&bytes[0])?;
         let prefix = bytes[1..].to_vec();
         Ok(Self { version, prefix })
@@ -392,6 +416,16 @@ impl TryFrom<String> for ShortKeysetId {
     type Error = Error;
 
     fn try_from(s: String) -> Result<Self, Self::Error> {
+        // Check that string is ASCII (required for hex) to avoid panics on byte slicing
+        // with multi-byte UTF-8 characters
+        ensure_cdk!(
+            s.is_ascii(),
+            Error::HexError(hex::Error::InvalidHexCharacter {
+                c: s.chars().find(|c| !c.is_ascii()).unwrap_or('\0'),
+                index: s.chars().position(|c| !c.is_ascii()).unwrap_or(0),
+            })
+        );
+
         ensure_cdk!(s.len() == 16, Error::Length);
 
         let version: KeySetVersion = KeySetVersion::from_byte(&hex::decode(&s[..2])?[0])?;
@@ -549,6 +583,11 @@ pub struct MintKeySet {
 #[cfg(feature = "mint")]
 impl MintKeySet {
     /// Generate new [`MintKeySet`]
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if the RNG fails or if key derivation fails,
+    /// which should not happen under normal circumstances.
     pub fn generate<C: secp256k1::Signing>(
         secp: &Secp256k1<C>,
         xpriv: Xpriv,
@@ -590,6 +629,11 @@ impl MintKeySet {
     }
 
     /// Generate new [`MintKeySet`] from seed
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if the RNG fails or if key derivation fails,
+    /// which should not happen under normal circumstances.
     pub fn generate_from_seed<C: secp256k1::Signing>(
         secp: &Secp256k1<C>,
         seed: &[u8],
@@ -613,6 +657,11 @@ impl MintKeySet {
     }
 
     /// Generate new [`MintKeySet`] from xpriv
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if the RNG fails or if key derivation fails,
+    /// which should not happen under normal circumstances.
     pub fn generate_from_xpriv<C: secp256k1::Signing>(
         secp: &Secp256k1<C>,
         xpriv: Xpriv,
@@ -920,5 +969,19 @@ mod test {
 
         assert!(short_id_1.to_string() == "009a1f293253e41e");
         assert!(short_id_2.to_string() == "01adc013fa9d8517");
+    }
+
+    #[test]
+    fn test_id_with_non_ascii_chars() {
+        // Test that non-ASCII characters in ID strings don't cause panics
+        // but instead return proper errors. This was found by fuzzing.
+        // The character 'ǝ' is a 2-byte UTF-8 sequence that could cause
+        // panics when slicing by byte index.
+        let id_with_non_ascii = Id::from_str("0ǝfa73302d12ff{");
+        assert!(matches!(id_with_non_ascii, Err(Error::HexError(_))));
+
+        // Also test ShortKeysetId
+        let short_id_with_non_ascii = ShortKeysetId::from_str("0ǝfa73302d12ff");
+        assert!(matches!(short_id_with_non_ascii, Err(Error::HexError(_))));
     }
 }

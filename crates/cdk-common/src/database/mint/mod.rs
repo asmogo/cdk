@@ -8,7 +8,9 @@ use cashu::Amount;
 
 use super::{DbTransactionFinalizer, Error};
 use crate::database::Acquired;
-use crate::mint::{self, MeltQuote, MintKeySetInfo, MintQuote as MintMintQuote, Operation};
+use crate::mint::{
+    self, MeltQuote, MintKeySetInfo, MintQuote as MintMintQuote, Operation, ProofsWithState,
+};
 use crate::nuts::{
     BlindSignature, BlindedMessage, CurrencyUnit, Id, MeltQuoteState, Proof, Proofs, PublicKey,
     State,
@@ -34,11 +36,23 @@ pub use super::kvstore::{
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MeltRequestInfo {
     /// Total amount of all input proofs in the melt request
-    pub inputs_amount: Amount,
+    pub inputs_amount: Amount<CurrencyUnit>,
     /// Fee amount associated with the input proofs
-    pub inputs_fee: Amount,
+    pub inputs_fee: Amount<CurrencyUnit>,
     /// Blinded messages for change outputs
     pub change_outputs: Vec<BlindedMessage>,
+}
+
+/// Result of locking a melt quote and all related quotes atomically.
+///
+/// This struct is returned by [`QuotesTransaction::lock_melt_quote_and_related`]
+/// and contains both the target quote and all quotes sharing the same `request_lookup_id`.
+#[derive(Debug)]
+pub struct LockedMeltQuotes {
+    /// The target quote that was requested, if found
+    pub target: Option<Acquired<MeltQuote>>,
+    /// All quotes sharing the same `request_lookup_id` (including the target)
+    pub all_related: Vec<Acquired<MeltQuote>>,
 }
 
 /// KeysDatabaseWriter
@@ -85,8 +99,8 @@ pub trait QuotesTransaction {
     async fn add_melt_request(
         &mut self,
         quote_id: &QuoteId,
-        inputs_amount: Amount,
-        inputs_fee: Amount,
+        inputs_amount: Amount<CurrencyUnit>,
+        inputs_fee: Amount<CurrencyUnit>,
     ) -> Result<(), Self::Err>;
 
     /// Add blinded_messages for a quote_id
@@ -177,6 +191,36 @@ pub trait QuotesTransaction {
         request_lookup_id: &PaymentIdentifier,
     ) -> Result<Vec<Acquired<MeltQuote>>, Self::Err>;
 
+    /// Locks a melt quote and all related quotes sharing the same request_lookup_id atomically.
+    ///
+    /// This method prevents deadlocks by acquiring all locks in a single query with consistent
+    /// ordering, rather than locking the target quote first and then related quotes separately.
+    ///
+    /// # Deadlock Prevention
+    ///
+    /// When multiple transactions try to melt quotes sharing the same `request_lookup_id`,
+    /// acquiring locks in two steps (first the target quote, then all related quotes) can cause
+    /// circular wait deadlocks. This method avoids that by:
+    /// 1. Using a subquery to find the `request_lookup_id` for the target quote
+    /// 2. Locking ALL quotes with that `request_lookup_id` in one atomic operation
+    /// 3. Ordering locks consistently by quote ID
+    ///
+    /// # Arguments
+    ///
+    /// * `quote_id` - The ID of the target melt quote
+    ///
+    /// # Returns
+    ///
+    /// A [`LockedMeltQuotes`] containing:
+    /// - `target`: The target quote (if found)
+    /// - `all_related`: All quotes sharing the same `request_lookup_id` (including the target)
+    ///
+    /// If the quote has no `request_lookup_id`, only the target quote is returned and locked.
+    async fn lock_melt_quote_and_related(
+        &mut self,
+        quote_id: &QuoteId,
+    ) -> Result<LockedMeltQuotes, Self::Err>;
+
     /// Updates the request lookup id for a melt quote.
     ///
     /// Requires an [`Acquired`] melt quote to ensure the row is locked before modification.
@@ -255,19 +299,23 @@ pub trait ProofsTransaction {
         proof: Proofs,
         quote_id: Option<QuoteId>,
         operation: &Operation,
-    ) -> Result<(), Self::Err>;
-    /// Updates the proofs to a given states and return the previous states
-    async fn update_proofs_states(
+    ) -> Result<Acquired<ProofsWithState>, Self::Err>;
+
+    /// Updates the proofs to the given state in the database.
+    ///
+    /// Also updates the `state` field on the [`ProofsWithState`] wrapper to reflect
+    /// the new state after the database update succeeds.
+    async fn update_proofs_state(
         &mut self,
-        ys: &[PublicKey],
-        proofs_state: State,
-    ) -> Result<Vec<Option<State>>, Self::Err>;
+        proofs: &mut Acquired<ProofsWithState>,
+        new_state: State,
+    ) -> Result<(), Self::Err>;
 
     /// get proofs states
-    async fn get_proofs_states(
+    async fn get_proofs(
         &mut self,
         ys: &[PublicKey],
-    ) -> Result<Vec<Option<State>>, Self::Err>;
+    ) -> Result<Acquired<ProofsWithState>, Self::Err>;
 
     /// Remove [`Proofs`]
     async fn remove_proofs(
@@ -479,3 +527,6 @@ pub trait Database<Error>:
 
 /// Type alias for Mint Database
 pub type DynMintDatabase = std::sync::Arc<dyn Database<Error> + Send + Sync>;
+
+/// Type alias for Mint Transaction
+pub type DynMintTransaction = Box<dyn Transaction<Error> + Send + Sync>;

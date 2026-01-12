@@ -34,7 +34,7 @@ cdk-common.workspace = true
 
 
 [features]
-default = ["postgres"]
+default = ["postgres", "supabase"]
 # Enable Postgres-backed wallet database support in FFI
 postgres = ["cdk-postgres"]
 supabase = ["cdk-supabase"]

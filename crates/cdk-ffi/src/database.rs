@@ -13,6 +13,8 @@ use crate::error::FfiError;
 #[cfg(feature = "postgres")]
 use crate::postgres::WalletPostgresDatabase;
 use crate::sqlite::WalletSqliteDatabase;
+#[cfg(feature = "supabase")]
+use crate::supabase::WalletSupabaseDatabase;
 use crate::types::*;
 
 /// FFI-compatible wallet database trait with all read and write operations

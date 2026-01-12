@@ -1,10 +1,12 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::str::FromStr;
 
 use async_trait::async_trait;
 use cdk_common::common::ProofInfo;
 use cdk_common::database::{
-    wallet::Database, Error as DatabaseError, KVStoreDatabase, WalletDatabase,
+    wallet::Database,
+    DbTransactionFinalizer, Error as DatabaseError, KVStoreDatabase, KVStoreTransaction, WalletDatabase,
 };
 use cdk_common::mint_url::MintUrl;
 use cdk_common::nuts::{
@@ -33,6 +35,18 @@ impl SupabaseWalletDatabase {
             client: Client::new(),
         }
     }
+
+    pub fn join_url(&self, path: &str) -> Result<Url, DatabaseError> {
+        self.url
+            .join(path)
+            .map_err(|e| DatabaseError::Internal(e.to_string()))
+    }
+
+    pub async fn begin_db_transaction(&self) -> Result<Box<SupabaseWalletTransaction>, DatabaseError> {
+        Ok(Box::new(SupabaseWalletTransaction {
+            database: self.clone(),
+        }))
+    }
 }
 
 #[async_trait]
@@ -45,7 +59,7 @@ impl KVStoreDatabase for SupabaseWalletDatabase {
         secondary_namespace: &str,
         key: &str,
     ) -> Result<Option<Vec<u8>>, Self::Err> {
-        let url = self.url.join(&format!(
+        let url = self.join_url(&format!(
             "rest/v1/kv_store?primary_namespace=eq.{}&secondary_namespace=eq.{}&key=eq.{}",
             primary_namespace, secondary_namespace, key
         ))?;
@@ -78,7 +92,7 @@ impl KVStoreDatabase for SupabaseWalletDatabase {
         primary_namespace: &str,
         secondary_namespace: &str,
     ) -> Result<Vec<String>, Self::Err> {
-        let url = self.url.join(&format!(
+        let url = self.join_url(&format!(
             "rest/v1/kv_store?primary_namespace=eq.{}&secondary_namespace=eq.{}",
             primary_namespace, secondary_namespace
         ))?;
@@ -95,22 +109,14 @@ impl KVStoreDatabase for SupabaseWalletDatabase {
         let items: Vec<KVStoreTable> = res.json().await.map_err(Error::Reqwest)?;
         Ok(items.into_iter().map(|i| i.key).collect())
     }
-}
 
+}
 #[async_trait]
 impl Database<DatabaseError> for SupabaseWalletDatabase {
-    async fn begin_db_transaction(
-        &self,
-    ) -> Result<Box<dyn DatabaseTransaction<DatabaseError> + Send + Sync>, DatabaseError> {
-        Ok(Box::new(SupabaseWalletTransaction {
-            database: self.clone(),
-        }))
-    }
+
 
     async fn get_mint(&self, mint_url: MintUrl) -> Result<Option<MintInfo>, DatabaseError> {
-        let url = self
-            .url
-            .join(&format!("rest/v1/mint?mint_url=eq.{}", mint_url))?;
+        let url = self.join_url(&format!("rest/v1/mint?mint_url=eq.{}", mint_url))?;
         let res = self
             .client
             .get(url)
@@ -133,7 +139,7 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
     }
 
     async fn get_mints(&self) -> Result<HashMap<MintUrl, Option<MintInfo>>, DatabaseError> {
-        let url = self.url.join("rest/v1/mint")?;
+        let url = self.join_url("rest/v1/mint")?;
         let res = self
             .client
             .get(url)
@@ -146,7 +152,10 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
         let mints: Vec<MintTable> = res.json().await.map_err(Error::Reqwest)?;
         let mut map = HashMap::new();
         for mint in mints {
-            map.insert(MintUrl::parse(&mint.mint_url)?, Some(mint.try_into()?));
+            map.insert(
+                MintUrl::from_str(&mint.mint_url).map_err(|e| DatabaseError::Internal(e.to_string()))?,
+                Some(mint.try_into()?),
+            );
         }
         Ok(map)
     }
@@ -156,8 +165,7 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
         mint_url: MintUrl,
     ) -> Result<Option<Vec<KeySetInfo>>, DatabaseError> {
         let url = self
-            .url
-            .join(&format!("rest/v1/keyset?mint_url=eq.{}", mint_url))?;
+            .join_url(&format!("rest/v1/keyset?mint_url=eq.{}", mint_url))?;
         let res = self
             .client
             .get(url)
@@ -190,7 +198,7 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
     }
 
     async fn get_mint_quotes(&self) -> Result<Vec<MintQuote>, DatabaseError> {
-        let url = self.url.join("rest/v1/mint_quote")?;
+        let url = self.join_url("rest/v1/mint_quote")?;
         let res = self
             .client
             .get(url)
@@ -209,7 +217,7 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
     }
 
     async fn get_unissued_mint_quotes(&self) -> Result<Vec<MintQuote>, DatabaseError> {
-        let url = self.url.join("rest/v1/mint_quote?amount_issued=eq.0")?;
+        let url = self.join_url("rest/v1/mint_quote?amount_issued=eq.0")?;
         let res = self
             .client
             .get(url)
@@ -236,7 +244,7 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
     }
 
     async fn get_melt_quotes(&self) -> Result<Vec<wallet::MeltQuote>, DatabaseError> {
-        let url = self.url.join("rest/v1/melt_quote")?;
+        let url = self.join_url("rest/v1/melt_quote")?;
         let res = self
             .client
             .get(url)
@@ -275,7 +283,7 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
         let ys_str: Vec<String> = ys.iter().map(|y| hex::encode(y.to_bytes())).collect();
         let filter = format!("({},)", ys_str.join(","));
 
-        let url = self.url.join(&format!("rest/v1/proof?y=in.{}", filter))?;
+        let url = self.join_url(&format!("rest/v1/proof?y=in.{}", filter))?;
         let res = self
             .client
             .get(url)
@@ -307,10 +315,8 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
         &self,
         transaction_id: TransactionId,
     ) -> Result<Option<Transaction>, DatabaseError> {
-        let id_hex = hex::encode(transaction_id);
-        let url = self
-            .url
-            .join(&format!("rest/v1/transactions?id=eq.\\x{}", id_hex))?;
+        let id_hex = transaction_id.to_string();
+        let url = self.join_url(&format!("rest/v1/transactions?id=eq.\\x{}", id_hex))?;
         let res = self
             .client
             .get(url)
@@ -349,7 +355,7 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
             query.push_str(&format!("&unit=eq.{}", u));
         }
 
-        let url = self.url.join(&query)?;
+        let url = self.join_url(&query)?;
         let res = self
             .client
             .get(url)
@@ -366,14 +372,165 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
         }
         Ok(result)
     }
+
+    async fn update_proofs(
+        &self,
+        added: Vec<ProofInfo>,
+        removed_ys: Vec<PublicKey>,
+    ) -> Result<(), DatabaseError> {
+        let mut tx = self.begin_db_transaction().await?;
+        tx.update_proofs(added, removed_ys).await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn update_proofs_state(
+        &self,
+        ys: Vec<PublicKey>,
+        state: State,
+    ) -> Result<(), DatabaseError> {
+        let mut tx = self.begin_db_transaction().await?;
+        tx.update_proofs_state(ys, state).await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn add_transaction(&self, transaction: Transaction) -> Result<(), DatabaseError> {
+        let mut tx = self.begin_db_transaction().await?;
+        tx.add_transaction(transaction).await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn remove_transaction(&self, transaction_id: TransactionId) -> Result<(), DatabaseError> {
+        let mut tx = self.begin_db_transaction().await?;
+        tx.remove_transaction(transaction_id).await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn update_mint_url(
+        &self,
+        old_mint_url: MintUrl,
+        new_mint_url: MintUrl,
+    ) -> Result<(), DatabaseError> {
+        let mut tx = self.begin_db_transaction().await?;
+        tx.update_mint_url(old_mint_url, new_mint_url).await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn increment_keyset_counter(&self, keyset_id: &Id, count: u32) -> Result<u32, DatabaseError> {
+        let mut tx = self.begin_db_transaction().await?;
+        let res = tx.increment_keyset_counter(keyset_id, count).await?;
+        tx.commit().await?;
+        Ok(res)
+    }
+
+    async fn add_mint(
+        &self,
+        mint_url: MintUrl,
+        mint_info: Option<MintInfo>,
+    ) -> Result<(), DatabaseError> {
+        let mut tx = self.begin_db_transaction().await?;
+        tx.add_mint(mint_url, mint_info).await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn remove_mint(&self, mint_url: MintUrl) -> Result<(), DatabaseError> {
+        let mut tx = self.begin_db_transaction().await?;
+        tx.remove_mint(mint_url).await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn add_mint_keysets(
+        &self,
+        mint_url: MintUrl,
+        keysets: Vec<KeySetInfo>,
+    ) -> Result<(), DatabaseError> {
+        let mut tx = self.begin_db_transaction().await?;
+        tx.add_mint_keysets(mint_url, keysets).await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn add_mint_quote(&self, quote: MintQuote) -> Result<(), DatabaseError> {
+        let mut tx = self.begin_db_transaction().await?;
+        tx.add_mint_quote(quote).await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn remove_mint_quote(&self, quote_id: &str) -> Result<(), DatabaseError> {
+        let mut tx = self.begin_db_transaction().await?;
+        tx.remove_mint_quote(quote_id).await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn add_melt_quote(&self, quote: wallet::MeltQuote) -> Result<(), DatabaseError> {
+        let mut tx = self.begin_db_transaction().await?;
+        tx.add_melt_quote(quote).await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn remove_melt_quote(&self, quote_id: &str) -> Result<(), DatabaseError> {
+        let mut tx = self.begin_db_transaction().await?;
+        tx.remove_melt_quote(quote_id).await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn add_keys(&self, keyset: KeySet) -> Result<(), DatabaseError> {
+        let mut tx = self.begin_db_transaction().await?;
+        tx.add_keys(keyset).await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn remove_keys(&self, id: &Id) -> Result<(), DatabaseError> {
+        let mut tx = self.begin_db_transaction().await?;
+        tx.remove_keys(id).await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn kv_write(
+        &self,
+        primary_namespace: &str,
+        secondary_namespace: &str,
+        key: &str,
+        value: &[u8],
+    ) -> Result<(), DatabaseError> {
+        let mut tx = self.begin_db_transaction().await?;
+        (*tx).kv_write(primary_namespace, secondary_namespace, key, value)
+            .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn kv_remove(
+        &self,
+        primary_namespace: &str,
+        secondary_namespace: &str,
+        key: &str,
+    ) -> Result<(), DatabaseError> {
+        let mut tx = self.begin_db_transaction().await?;
+        (*tx).kv_remove(primary_namespace, secondary_namespace, key)
+            .await?;
+        tx.commit().await?;
+        Ok(())
+    }
 }
 
 pub struct SupabaseWalletTransaction {
     database: SupabaseWalletDatabase,
 }
 
-#[async_trait]
-impl DatabaseTransaction<DatabaseError> for SupabaseWalletTransaction {
+impl SupabaseWalletTransaction {
     async fn add_mint(
         &mut self,
         mint_url: MintUrl,
@@ -387,7 +544,7 @@ impl DatabaseTransaction<DatabaseError> for SupabaseWalletTransaction {
             },
         };
 
-        let url = self.database.url.join("rest/v1/mint")?;
+        let url = self.database.join_url("rest/v1/mint")?;
         self.database
             .client
             .post(url)
@@ -407,8 +564,7 @@ impl DatabaseTransaction<DatabaseError> for SupabaseWalletTransaction {
     async fn remove_mint(&mut self, mint_url: MintUrl) -> Result<(), DatabaseError> {
         let url = self
             .database
-            .url
-            .join(&format!("rest/v1/mint?mint_url=eq.{}", mint_url))?;
+            .join_url(&format!("rest/v1/mint?mint_url=eq.{}", mint_url))?;
         self.database
             .client
             .delete(url)
@@ -429,8 +585,7 @@ impl DatabaseTransaction<DatabaseError> for SupabaseWalletTransaction {
     ) -> Result<(), DatabaseError> {
         let url = self
             .database
-            .url
-            .join(&format!("rest/v1/mint_quote?mint_url=eq.{}", old_mint_url))?;
+            .join_url(&format!("rest/v1/mint_quote?mint_url=eq.{}", old_mint_url))?;
         self.database
             .client
             .patch(url)
@@ -445,8 +600,7 @@ impl DatabaseTransaction<DatabaseError> for SupabaseWalletTransaction {
 
         let url = self
             .database
-            .url
-            .join(&format!("rest/v1/proof?mint_url=eq.{}", old_mint_url))?;
+            .join_url(&format!("rest/v1/proof?mint_url=eq.{}", old_mint_url))?;
         self.database
             .client
             .patch(url)
@@ -468,8 +622,7 @@ impl DatabaseTransaction<DatabaseError> for SupabaseWalletTransaction {
     ) -> Result<Option<KeySetInfo>, DatabaseError> {
         let url = self
             .database
-            .url
-            .join(&format!("rest/v1/keyset?id=eq.{}", keyset_id))?;
+            .join_url(&format!("rest/v1/keyset?id=eq.{}", keyset_id))?;
         let res = self
             .database
             .client
@@ -495,8 +648,7 @@ impl DatabaseTransaction<DatabaseError> for SupabaseWalletTransaction {
     async fn get_keys(&mut self, id: &Id) -> Result<Option<Keys>, DatabaseError> {
         let url = self
             .database
-            .url
-            .join(&format!("rest/v1/key?id=eq.{}", id))?;
+            .join_url(&format!("rest/v1/key?id=eq.{}", id))?;
         let res = self
             .database
             .client
@@ -534,7 +686,7 @@ impl DatabaseTransaction<DatabaseError> for SupabaseWalletTransaction {
             .collect();
         let items = items?;
 
-        let url = self.database.url.join("rest/v1/keyset")?;
+        let url = self.database.join_url("rest/v1/keyset")?;
         self.database
             .client
             .post(url)
@@ -554,8 +706,7 @@ impl DatabaseTransaction<DatabaseError> for SupabaseWalletTransaction {
     async fn get_mint_quote(&mut self, quote_id: &str) -> Result<Option<MintQuote>, DatabaseError> {
         let url = self
             .database
-            .url
-            .join(&format!("rest/v1/mint_quote?id=eq.{}", quote_id))?;
+            .join_url(&format!("rest/v1/mint_quote?id=eq.{}", quote_id))?;
         let res = self
             .database
             .client
@@ -576,7 +727,7 @@ impl DatabaseTransaction<DatabaseError> for SupabaseWalletTransaction {
 
     async fn add_mint_quote(&mut self, quote: MintQuote) -> Result<(), DatabaseError> {
         let item: MintQuoteTable = quote.try_into()?;
-        let url = self.database.url.join("rest/v1/mint_quote")?;
+        let url = self.database.join_url("rest/v1/mint_quote")?;
         self.database
             .client
             .post(url)
@@ -595,8 +746,7 @@ impl DatabaseTransaction<DatabaseError> for SupabaseWalletTransaction {
     async fn remove_mint_quote(&mut self, quote_id: &str) -> Result<(), DatabaseError> {
         let url = self
             .database
-            .url
-            .join(&format!("rest/v1/mint_quote?id=eq.{}", quote_id))?;
+            .join_url(&format!("rest/v1/mint_quote?id=eq.{}", quote_id))?;
         self.database
             .client
             .delete(url)
@@ -616,8 +766,7 @@ impl DatabaseTransaction<DatabaseError> for SupabaseWalletTransaction {
     ) -> Result<Option<wallet::MeltQuote>, DatabaseError> {
         let url = self
             .database
-            .url
-            .join(&format!("rest/v1/melt_quote?id=eq.{}", quote_id))?;
+            .join_url(&format!("rest/v1/melt_quote?id=eq.{}", quote_id))?;
         let res = self
             .database
             .client
@@ -638,7 +787,7 @@ impl DatabaseTransaction<DatabaseError> for SupabaseWalletTransaction {
 
     async fn add_melt_quote(&mut self, quote: wallet::MeltQuote) -> Result<(), DatabaseError> {
         let item: MeltQuoteTable = quote.try_into()?;
-        let url = self.database.url.join("rest/v1/melt_quote")?;
+        let url = self.database.join_url("rest/v1/melt_quote")?;
         self.database
             .client
             .post(url)
@@ -657,8 +806,7 @@ impl DatabaseTransaction<DatabaseError> for SupabaseWalletTransaction {
     async fn remove_melt_quote(&mut self, quote_id: &str) -> Result<(), DatabaseError> {
         let url = self
             .database
-            .url
-            .join(&format!("rest/v1/melt_quote?id=eq.{}", quote_id))?;
+            .join_url(&format!("rest/v1/melt_quote?id=eq.{}", quote_id))?;
         self.database
             .client
             .delete(url)
@@ -676,7 +824,7 @@ impl DatabaseTransaction<DatabaseError> for SupabaseWalletTransaction {
         keyset.verify_id().map_err(DatabaseError::from)?;
         let item = KeyTable::from_keyset(&keyset)?;
 
-        let url = self.database.url.join("rest/v1/key")?;
+        let url = self.database.join_url("rest/v1/key")?;
         self.database
             .client
             .post(url)
@@ -695,8 +843,7 @@ impl DatabaseTransaction<DatabaseError> for SupabaseWalletTransaction {
     async fn remove_keys(&mut self, id: &Id) -> Result<(), DatabaseError> {
         let url = self
             .database
-            .url
-            .join(&format!("rest/v1/key?id=eq.{}", id))?;
+            .join_url(&format!("rest/v1/key?id=eq.{}", id))?;
         self.database
             .client
             .delete(url)
@@ -730,7 +877,7 @@ impl DatabaseTransaction<DatabaseError> for SupabaseWalletTransaction {
             query.push_str(&format!("&state=in.({})", s_str.join(",")));
         }
 
-        let url = self.database.url.join(&query)?;
+        let url = self.database.join_url(&query)?;
         let res = self
             .database
             .client
@@ -744,7 +891,7 @@ impl DatabaseTransaction<DatabaseError> for SupabaseWalletTransaction {
         let proofs: Vec<ProofTable> = res.json().await.map_err(Error::Reqwest)?;
         let mut result = Vec::new();
         for p in proofs {
-            let info = p.try_into()?;
+            let info: ProofInfo = p.try_into()?;
             if let Some(conds) = &spending_conditions {
                 // memory filter
                 result.push(info);
@@ -776,7 +923,7 @@ impl DatabaseTransaction<DatabaseError> for SupabaseWalletTransaction {
                 added.into_iter().map(|p| p.try_into()).collect();
             let items = items?;
 
-            let url = self.database.url.join("rest/v1/proof")?;
+            let url = self.database.join_url("rest/v1/proof")?;
             self.database
                 .client
                 .post(url)
@@ -799,8 +946,7 @@ impl DatabaseTransaction<DatabaseError> for SupabaseWalletTransaction {
             let filter = format!("({},)", ys_str.join(","));
             let url = self
                 .database
-                .url
-                .join(&format!("rest/v1/proof?y=in.{}", filter))?;
+                .join_url(&format!("rest/v1/proof?y=in.{}", filter))?;
             self.database
                 .client
                 .delete(url)
@@ -830,8 +976,7 @@ impl DatabaseTransaction<DatabaseError> for SupabaseWalletTransaction {
 
         let url = self
             .database
-            .url
-            .join(&format!("rest/v1/proof?y=in.{}", filter))?;
+            .join_url(&format!("rest/v1/proof?y=in.{}", filter))?;
         self.database
             .client
             .patch(url)
@@ -860,7 +1005,7 @@ impl DatabaseTransaction<DatabaseError> for SupabaseWalletTransaction {
             counter: new,
         };
 
-        let url = self.database.url.join("rest/v1/keyset_counter")?;
+        let url = self.database.join_url("rest/v1/keyset_counter")?;
         self.database
             .client
             .post(url)
@@ -879,7 +1024,7 @@ impl DatabaseTransaction<DatabaseError> for SupabaseWalletTransaction {
 
     async fn add_transaction(&mut self, transaction: Transaction) -> Result<(), DatabaseError> {
         let item: TransactionTable = transaction.try_into()?;
-        let url = self.database.url.join("rest/v1/transactions")?;
+        let url = self.database.join_url("rest/v1/transactions")?;
         self.database
             .client
             .post(url)
@@ -899,11 +1044,10 @@ impl DatabaseTransaction<DatabaseError> for SupabaseWalletTransaction {
         &mut self,
         transaction_id: TransactionId,
     ) -> Result<(), DatabaseError> {
-        let id_hex = hex::encode(transaction_id);
+        let id_hex = transaction_id.to_string();
         let url = self
             .database
-            .url
-            .join(&format!("rest/v1/transactions?id=eq.\\x{}", id_hex))?;
+            .join_url(&format!("rest/v1/transactions?id=eq.\\x{}", id_hex))?;
         self.database
             .client
             .delete(url)
@@ -920,7 +1064,7 @@ impl DatabaseTransaction<DatabaseError> for SupabaseWalletTransaction {
 
 impl SupabaseWalletTransaction {
     async fn get_keyset_counter(&self, keyset_id: &Id) -> Result<u32, DatabaseError> {
-        let url = self.database.url.join(&format!(
+        let url = self.database.join_url(&format!(
             "rest/v1/keyset_counter?keyset_id=eq.{}",
             keyset_id
         ))?;
@@ -956,6 +1100,16 @@ impl cdk_common::database::KVStoreTransaction<DatabaseError> for SupabaseWalletT
             .await
     }
 
+    async fn kv_list(
+        &mut self,
+        primary_namespace: &str,
+        secondary_namespace: &str,
+    ) -> Result<Vec<String>, DatabaseError> {
+        self.database
+            .kv_list(primary_namespace, secondary_namespace)
+            .await
+    }
+
     async fn kv_write(
         &mut self,
         primary_namespace: &str,
@@ -970,7 +1124,7 @@ impl cdk_common::database::KVStoreTransaction<DatabaseError> for SupabaseWalletT
             value: hex::encode(value),
         };
 
-        let url = self.database.url.join("rest/v1/kv_store")?;
+        let url = self.database.join_url("rest/v1/kv_store")?;
         self.database
             .client
             .post(url)
@@ -992,7 +1146,7 @@ impl cdk_common::database::KVStoreTransaction<DatabaseError> for SupabaseWalletT
         secondary_namespace: &str,
         key: &str,
     ) -> Result<(), DatabaseError> {
-        let url = self.database.url.join(&format!(
+        let url = self.database.join_url(&format!(
             "rest/v1/kv_store?primary_namespace=eq.{}&secondary_namespace=eq.{}&key=eq.{}",
             primary_namespace, secondary_namespace, key
         ))?;
@@ -1139,7 +1293,7 @@ impl TryInto<KeySetInfo> for KeySetTable {
             unit: CurrencyUnit::from_str(&self.unit)
                 .map_err(|_| DatabaseError::Internal("Invalid unit".into()))?,
             active: self.active,
-            input_fee_ppk: self.input_fee_ppk as u32,
+            input_fee_ppk: self.input_fee_ppk as u64,
             final_expiry: self.final_expiry.map(|v| v as u64),
         })
     }
@@ -1189,15 +1343,21 @@ impl TryInto<MintQuote> for MintQuoteTable {
     fn try_into(self) -> Result<MintQuote, Self::Error> {
         Ok(MintQuote {
             id: self.id,
-            mint_url: MintUrl::parse(&self.mint_url)?,
-            amount: cdk_common::Amount::from(self.amount as u64),
+            mint_url: MintUrl::from_str(&self.mint_url).map_err(|e| DatabaseError::Internal(e.to_string()))?,
+            amount: Some(cdk_common::Amount::from(self.amount as u64)),
             unit: CurrencyUnit::from_str(&self.unit)
                 .map_err(|_| DatabaseError::Internal("Invalid unit".into()))?,
-            request: self.request,
+            request: self
+                .request
+                .ok_or(DatabaseError::Internal("Missing request".into()))?,
             state: cdk_common::nuts::MintQuoteState::from_str(&self.state)
                 .map_err(|_| DatabaseError::Internal("Invalid state".into()))?,
             expiry: self.expiry as u64,
-            secret_key: self.secret_key,
+            secret_key: self
+                .secret_key
+                .map(|k| cdk_common::nuts::SecretKey::from_str(&k))
+                .transpose()
+                .map_err(|_| DatabaseError::Internal("Invalid secret key".into()))?,
             payment_method: cdk_common::PaymentMethod::from_str(&self.payment_method)
                 .map_err(|_| DatabaseError::Internal("Invalid payment method".into()))?,
             amount_issued: cdk_common::Amount::from(self.amount_issued as u64),
@@ -1212,15 +1372,15 @@ impl TryFrom<MintQuote> for MintQuoteTable {
         Ok(Self {
             id: q.id,
             mint_url: q.mint_url.to_string(),
-            amount: q.amount.to_i64(),
+            amount: q.amount.map(|a| a.to_u64() as i64).unwrap_or(0),
             unit: q.unit.to_string(),
-            request: q.request,
+            request: Some(q.request),
             state: q.state.to_string(),
             expiry: q.expiry as i64,
-            secret_key: q.secret_key,
+            secret_key: q.secret_key.map(|k| k.to_string()),
             payment_method: q.payment_method.to_string(),
-            amount_issued: q.amount_issued.to_i64(),
-            amount_paid: q.amount_paid.to_i64(),
+            amount_issued: q.amount_issued.to_u64() as i64,
+            amount_paid: q.amount_paid.to_u64() as i64,
         })
     }
 }
@@ -1301,7 +1461,7 @@ impl TryInto<ProofInfo> for ProofTable {
             .map_err(|_| DatabaseError::Internal("Invalid c".into()))?;
         Ok(ProofInfo {
             y,
-            mint_url: MintUrl::parse(&self.mint_url)?,
+            mint_url: MintUrl::from_str(&self.mint_url).map_err(|e| DatabaseError::Internal(e.to_string()))?,
             state: cdk_common::nuts::State::from_str(&self.state)
                 .map_err(|_| DatabaseError::Internal("Invalid state".into()))?,
             spending_condition: self
@@ -1346,7 +1506,7 @@ impl TryFrom<ProofInfo> for ProofTable {
                 .map(|s| serde_json::to_string(&s))
                 .transpose()?,
             unit: p.unit.to_string(),
-            amount: p.proof.amount.to_i64(),
+            amount: p.proof.amount.to_u64() as i64,
             keyset_id: p.proof.keyset_id.to_string(),
             secret: p.proof.secret.to_string(),
             c: hex::encode(p.proof.c.to_bytes()),
@@ -1403,9 +1563,10 @@ impl TryInto<Transaction> for TransactionTable {
     fn try_into(self) -> Result<Transaction, Self::Error> {
         let id_bytes = hex::decode(&self.id)
             .map_err(|_| DatabaseError::Internal("Invalid transaction id hex".into()))?;
-        let id: TransactionId = id_bytes
+        let id_arr: [u8; 32] = id_bytes
             .try_into()
             .map_err(|_| DatabaseError::Internal("Invalid transaction id len".into()))?;
+
 
         let ys = match self.ys {
             Some(strs) => strs
@@ -1419,7 +1580,7 @@ impl TryInto<Transaction> for TransactionTable {
         };
 
         Ok(Transaction {
-            mint_url: MintUrl::parse(&self.mint_url)?,
+            mint_url: MintUrl::from_str(&self.mint_url).map_err(|e| DatabaseError::Internal(e.to_string()))?,
             direction: TransactionDirection::from_str(&self.direction)
                 .map_err(|_| DatabaseError::Internal("Invalid direction".into()))?,
             unit: CurrencyUnit::from_str(&self.unit)
@@ -1432,7 +1593,8 @@ impl TryInto<Transaction> for TransactionTable {
             metadata: self
                 .metadata
                 .map(|m| serde_json::from_str(&m))
-                .transpose()?,
+                .transpose()?
+                .unwrap_or_default(),
             quote_id: self.quote_id,
             payment_request: self.payment_request,
             payment_proof: self.payment_proof,
@@ -1449,16 +1611,20 @@ impl TryFrom<Transaction> for TransactionTable {
     type Error = DatabaseError;
     fn try_from(t: Transaction) -> Result<Self, Self::Error> {
         Ok(Self {
-            id: hex::encode(t.id()),
+            id: t.id().to_string(),
             mint_url: t.mint_url.to_string(),
             direction: t.direction.to_string(),
             unit: t.unit.to_string(),
-            amount: t.amount.to_i64(),
-            fee: t.fee.to_i64(),
+            amount: t.amount.to_u64() as i64,
+            fee: t.fee.to_u64() as i64,
             ys: Some(t.ys.iter().map(|y| hex::encode(y.to_bytes())).collect()),
             timestamp: t.timestamp as i64,
             memo: t.memo,
-            metadata: t.metadata.map(|m| serde_json::to_string(&m)).transpose()?,
+            metadata: if t.metadata.is_empty() {
+                None
+            } else {
+                Some(serde_json::to_string(&t.metadata)?)
+            },
             quote_id: t.quote_id,
             payment_request: t.payment_request,
             payment_proof: t.payment_proof,

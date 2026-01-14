@@ -258,14 +258,15 @@ impl WalletDatabase for WalletSupabaseDatabase {
         secondary_namespace: String,
         key: String,
     ) -> Result<Option<Vec<u8>>, FfiError> {
-        <SupabaseWalletDatabase as KVStoreDatabase>::kv_read(
-            &self.inner,
-            &primary_namespace,
-            &secondary_namespace,
-            &key,
-        )
-        .await
-        .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })
+        let result: Result<Option<Vec<u8>>, CdkDbError> =
+            <SupabaseWalletDatabase as KVStoreDatabase>::kv_read(
+                &self.inner,
+                &primary_namespace,
+                &secondary_namespace,
+                &key,
+            )
+            .await;
+        result.map_err(|e| FfiError::Database { msg: e.to_string() })
     }
 
     async fn kv_list(
@@ -273,13 +274,14 @@ impl WalletDatabase for WalletSupabaseDatabase {
         primary_namespace: String,
         secondary_namespace: String,
     ) -> Result<Vec<String>, FfiError> {
-        <SupabaseWalletDatabase as KVStoreDatabase>::kv_list(
-            &self.inner,
-            &primary_namespace,
-            &secondary_namespace,
-        )
-        .await
-        .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })
+        let result: Result<Vec<String>, CdkDbError> =
+            <SupabaseWalletDatabase as KVStoreDatabase>::kv_list(
+                &self.inner,
+                &primary_namespace,
+                &secondary_namespace,
+            )
+            .await;
+        result.map_err(|e| FfiError::Database { msg: e.to_string() })
     }
 
     async fn kv_write(
@@ -293,14 +295,14 @@ impl WalletDatabase for WalletSupabaseDatabase {
             .inner
             .begin_db_transaction()
             .await
-            .map_err(|e| FfiError::Database { msg: e.to_string() })?;
+            .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })?;
         (*tx)
             .kv_write(&primary_namespace, &secondary_namespace, &key, &value)
             .await
-            .map_err(|e| FfiError::Database { msg: e.to_string() })?;
+            .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })?;
         tx.commit()
             .await
-            .map_err(|e| FfiError::Database { msg: e.to_string() })?;
+            .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })?;
         Ok(())
     }
 
@@ -314,14 +316,14 @@ impl WalletDatabase for WalletSupabaseDatabase {
             .inner
             .begin_db_transaction()
             .await
-            .map_err(|e| FfiError::Database { msg: e.to_string() })?;
+            .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })?;
         (*tx)
             .kv_remove(&primary_namespace, &secondary_namespace, &key)
             .await
-            .map_err(|e| FfiError::Database { msg: e.to_string() })?;
+            .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })?;
         tx.commit()
             .await
-            .map_err(|e| FfiError::Database { msg: e.to_string() })?;
+            .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })?;
         Ok(())
     }
 

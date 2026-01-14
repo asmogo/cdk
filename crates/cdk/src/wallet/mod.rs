@@ -316,25 +316,49 @@ impl Wallet {
         // Create or update auth wallet
         #[cfg(feature = "auth")]
         {
+            println!("[DEBUG] fetch_mint_info: checking auth wallet initialization");
+            println!(
+                "[DEBUG] fetch_mint_info: protected_endpoints count: {}",
+                mint_info.protected_endpoints().len()
+            );
+            println!(
+                "[DEBUG] fetch_mint_info: openid_discovery: {:?}",
+                mint_info.openid_discovery()
+            );
+
             let mut auth_wallet = self.auth_wallet.write().await;
             match &*auth_wallet {
-                Some(auth_wallet) => {
-                    let mut protected_endpoints = auth_wallet.protected_endpoints.write().await;
+                Some(existing_auth_wallet) => {
+                    println!("[DEBUG] fetch_mint_info: auth_wallet already exists, updating protected endpoints");
+                    let mut protected_endpoints =
+                        existing_auth_wallet.protected_endpoints.write().await;
                     *protected_endpoints = mint_info.protected_endpoints();
+                    println!("[DEBUG] fetch_mint_info: updated protected endpoints");
 
                     if let Some(oidc_client) = mint_info
                         .openid_discovery()
                         .map(|url| OidcClient::new(url, None))
                     {
-                        auth_wallet.set_oidc_client(Some(oidc_client)).await;
+                        println!("[DEBUG] fetch_mint_info: setting OIDC client");
+                        existing_auth_wallet
+                            .set_oidc_client(Some(oidc_client))
+                            .await;
                     }
                 }
                 None => {
+                    println!(
+                        "[INFO] fetch_mint_info: auth_wallet is None, creating new auth wallet"
+                    );
                     tracing::info!("Mint has auth enabled creating auth wallet");
 
                     let oidc_client = mint_info
                         .openid_discovery()
                         .map(|url| OidcClient::new(url, None));
+                    println!(
+                        "[DEBUG] fetch_mint_info: OIDC client created: {}",
+                        oidc_client.is_some()
+                    );
+
                     let new_auth_wallet = AuthWallet::new(
                         self.mint_url.clone(),
                         None,
@@ -343,9 +367,16 @@ impl Wallet {
                         mint_info.protected_endpoints(),
                         oidc_client,
                     );
+                    println!(
+                        "[INFO] fetch_mint_info: new AuthWallet created for mint {}",
+                        self.mint_url
+                    );
+
                     *auth_wallet = Some(new_auth_wallet.clone());
+                    println!("[DEBUG] fetch_mint_info: auth_wallet set on wallet");
 
                     self.client.set_auth_wallet(Some(new_auth_wallet)).await;
+                    println!("[DEBUG] fetch_mint_info: auth_wallet set on client");
                 }
             }
         }

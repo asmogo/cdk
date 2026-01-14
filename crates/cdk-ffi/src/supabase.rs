@@ -24,6 +24,36 @@ use crate::{
 /// - `Authorization: Bearer <jwt_token>`
 ///
 /// When `jwt_token` is not set, the `api_key` is used for both headers (legacy behavior).
+///
+/// ## Automatic Token Synchronization
+///
+/// For automatic synchronization of CAT tokens with the database, use `wallet.set_supabase_database()`:
+///
+/// ```ignore
+/// // Create database without JWT token initially
+/// let db = WalletSupabaseDatabase::new(url, api_key)?;
+///
+/// // Create wallet with the database
+/// let wallet = Wallet::new(mint_url, unit, mnemonic, db.clone(), config)?;
+///
+/// // Register the database for automatic token sync
+/// wallet.set_supabase_database(db).await;
+///
+/// // Now when you set CAT token, it automatically syncs to Supabase
+/// wallet.set_cat(cat_token).await?;
+/// wallet.set_refresh_token(refresh_token).await?;
+///
+/// // Token refresh also syncs automatically
+/// wallet.refresh_access_token().await?;
+/// ```
+///
+/// ## Manual Token Management
+///
+/// You can also manually manage tokens using `set_jwt_token()` if needed:
+///
+/// ```ignore
+/// db.set_jwt_token(Some(jwt_token)).await;
+/// ```
 #[derive(uniffi::Object)]
 pub struct WalletSupabaseDatabase {
     inner: SupabaseWalletDatabase,
@@ -48,6 +78,11 @@ impl WalletSupabaseDatabase {
     /// - `jwt_token`: Optional JWT token for user authentication (used in `Authorization: Bearer` header)
     ///
     /// If `jwt_token` is None, the `api_key` will be used for the Authorization header.
+    ///
+    /// **Recommendation**: For automatic token synchronization with auth wallets,
+    /// use `new()` without a JWT token, then call `wallet.set_supabase_database(db)`.
+    /// This ensures tokens are automatically kept in sync when calling `set_cat()` or
+    /// `refresh_access_token()`.
     #[uniffi::constructor]
     pub fn with_jwt(
         url: String,
@@ -67,8 +102,10 @@ impl WalletSupabaseDatabase {
     /// This token will be used in the `Authorization: Bearer` header for all subsequent requests.
     /// Pass `None` to clear the JWT token and fall back to using the API key.
     ///
-    /// This method is typically called after `wallet.set_cat(jwt)` to synchronize
-    /// the database authentication with the wallet's CAT token.
+    /// **Note**: If you've registered this database with `wallet.set_supabase_database()`,
+    /// tokens are automatically synchronized when calling `wallet.set_cat()` or
+    /// `wallet.refresh_access_token()`. Manual calls to this method are only needed
+    /// if you're not using automatic synchronization.
     pub async fn set_jwt_token(&self, token: Option<String>) {
         self.inner.set_jwt_token(token).await;
     }

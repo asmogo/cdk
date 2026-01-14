@@ -15,12 +15,18 @@ use crate::types::*;
 #[derive(uniffi::Object)]
 pub struct Wallet {
     inner: Arc<CdkWallet>,
+    #[cfg(feature = "supabase")]
+    supabase_db: tokio::sync::RwLock<Option<Arc<crate::supabase::WalletSupabaseDatabase>>>,
 }
 
 impl Wallet {
     /// Create a Wallet from an existing CDK wallet (internal use only)
     pub(crate) fn from_inner(inner: Arc<CdkWallet>) -> Self {
-        Self { inner }
+        Self {
+            inner,
+            #[cfg(feature = "supabase")]
+            supabase_db: tokio::sync::RwLock::new(None),
+        }
     }
 }
 
@@ -57,6 +63,8 @@ impl Wallet {
 
         Ok(Self {
             inner: Arc::new(wallet),
+            #[cfg(feature = "supabase")]
+            supabase_db: tokio::sync::RwLock::new(None),
         })
     }
 
@@ -68,6 +76,26 @@ impl Wallet {
     /// Get the currency unit
     pub fn unit(&self) -> CurrencyUnit {
         self.inner.unit.clone().into()
+    }
+
+    /// Set the Supabase database for automatic token synchronization
+    ///
+    /// When a Supabase database is set, the wallet will automatically synchronize
+    /// authentication tokens (CAT) with the database when `set_cat` or `refresh_access_token`
+    /// is called.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let supabase_db = WalletSupabaseDatabase::new(url, api_key)?;
+    /// wallet.set_supabase_database(supabase_db).await;
+    ///
+    /// // Now when you set the CAT token, it will automatically sync to Supabase
+    /// wallet.set_cat(cat_token).await?;
+    /// ```
+    #[cfg(feature = "supabase")]
+    pub async fn set_supabase_database(&self, db: Arc<crate::supabase::WalletSupabaseDatabase>) {
+        let mut supabase_db = self.supabase_db.write().await;
+        *supabase_db = Some(db);
     }
 
     /// Set metadata cache TTL (time-to-live) in seconds
@@ -642,8 +670,22 @@ impl Wallet {
 #[uniffi::export(async_runtime = "tokio")]
 impl Wallet {
     /// Set Clear Auth Token (CAT) for authentication
+    ///
+    /// This method sets the CAT token for the wallet's auth client.
+    /// If a Supabase database has been configured via `set_supabase_database`,
+    /// the token will also be synchronized to the database automatically.
     pub async fn set_cat(&self, cat: String) -> Result<(), FfiError> {
-        self.inner.set_cat(cat).await?;
+        self.inner.set_cat(cat.clone()).await?;
+
+        // Sync token to Supabase database if configured
+        #[cfg(feature = "supabase")]
+        {
+            let supabase_db = self.supabase_db.read().await;
+            if let Some(db) = supabase_db.as_ref() {
+                db.set_jwt_token(Some(cat)).await;
+            }
+        }
+
         Ok(())
     }
 
@@ -654,8 +696,30 @@ impl Wallet {
     }
 
     /// Refresh access token using the stored refresh token
+    ///
+    /// This method refreshes the CAT token using the stored refresh token.
+    /// If a Supabase database has been configured via `set_supabase_database`,
+    /// the new token will also be synchronized to the database automatically.
     pub async fn refresh_access_token(&self) -> Result<(), FfiError> {
         self.inner.refresh_access_token().await?;
+
+        // Sync refreshed token to Supabase database if configured
+        #[cfg(feature = "supabase")]
+        {
+            let supabase_db = self.supabase_db.read().await;
+            if let Some(db) = supabase_db.as_ref() {
+                // Get the new token from the auth wallet and sync it
+                #[cfg(feature = "auth")]
+                if let Some(auth_wallet) = self.inner.auth_wallet.read().await.as_ref() {
+                    if let Ok(auth_token) = auth_wallet.get_auth_token().await {
+                        if let cdk::nuts::AuthToken::ClearAuth(cat) = auth_token {
+                            db.set_jwt_token(Some(cat)).await;
+                        }
+                    }
+                }
+            }
+        }
+
         Ok(())
     }
 

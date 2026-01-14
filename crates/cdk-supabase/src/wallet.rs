@@ -175,7 +175,17 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
             .await
             .map_err(Error::Reqwest)?;
 
-        let keysets: Vec<KeySetTable> = res.json().await.map_err(Error::Reqwest)?;
+
+        // Get raw body text first for debugging
+        let body_text = res.text().await.map_err(Error::Reqwest)?;
+
+        // Now parse the JSON
+        let keysets: Vec<KeySetTable> = serde_json::from_str(&body_text)
+            .map_err(|e| {
+                eprintln!("[DEBUG] get_mint_keysets: JSON parse error = {:?}", e);
+                DatabaseError::Internal(format!("JSON parse error: {}", e))
+            })?;
+        
         if keysets.is_empty() {
             return Ok(None);
         }
@@ -686,8 +696,9 @@ impl SupabaseWalletTransaction {
             .collect();
         let items = items?;
 
-        let url = self.database.join_url("rest/v1/keyset")?;
-        self.database
+        let url = self.database.join_url("rest/v1/keyset?on_conflict=id")?;
+
+        let res = self.database
             .client
             .post(url)
             .header("apikey", &self.database.key)
@@ -696,9 +707,14 @@ impl SupabaseWalletTransaction {
             .json(&items)
             .send()
             .await
-            .map_err(Error::Reqwest)?
-            .error_for_status()
             .map_err(Error::Reqwest)?;
+        
+        let status = res.status();
+
+        if !status.is_success() {
+            let body = res.text().await.map_err(Error::Reqwest)?;
+            return Err(DatabaseError::Internal(format!("HTTP {}: {}", status, body)));
+        }
 
         Ok(())
     }
@@ -923,8 +939,9 @@ impl SupabaseWalletTransaction {
                 added.into_iter().map(|p| p.try_into()).collect();
             let items = items?;
 
-            let url = self.database.join_url("rest/v1/proof")?;
-            self.database
+            let url = self.database.join_url("rest/v1/proof?on_conflict=y")?;
+
+            let res = self.database
                 .client
                 .post(url)
                 .header("apikey", &self.database.key)
@@ -933,9 +950,13 @@ impl SupabaseWalletTransaction {
                 .json(&items)
                 .send()
                 .await
-                .map_err(Error::Reqwest)?
-                .error_for_status()
                 .map_err(Error::Reqwest)?;
+            
+            let status = res.status();
+            if !status.is_success() {
+                let body = res.text().await.map_err(Error::Reqwest)?;
+                return Err(DatabaseError::Internal(format!("HTTP {}: {}", status, body)));
+            }
         }
 
         if !removed_ys.is_empty() {

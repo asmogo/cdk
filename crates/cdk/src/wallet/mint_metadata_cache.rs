@@ -447,19 +447,26 @@ impl MintMetadataCache {
     ) {
         let storage_id = Self::arc_pointer_id(&storage);
 
+        // Compute combined version - sum of regular and auth versions
+        // This ensures auth-only updates also trigger database sync
+        #[cfg(feature = "auth")]
+        let combined_version = metadata.status.version + metadata.auth_status.version;
+        #[cfg(not(feature = "auth"))]
+        let combined_version = metadata.status.version;
+
         // Check if this write is still needed
         {
             let mut versions = db_sync_versions.write();
 
             let current_synced_version = versions.get(&storage_id).cloned().unwrap_or_default();
 
-            if metadata.status.version <= current_synced_version {
+            if combined_version <= current_synced_version {
                 // A newer version has already been persisted - skip this write
                 return;
             }
 
             // Mark this version as being synced
-            versions.insert(storage_id, metadata.status.version);
+            versions.insert(storage_id, combined_version);
         }
 
         // Save mint info

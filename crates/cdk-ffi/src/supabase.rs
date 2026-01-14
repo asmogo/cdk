@@ -13,6 +13,17 @@ use crate::{
     TransactionId, WalletDatabase,
 };
 
+/// FFI wrapper for Supabase wallet database
+///
+/// This database uses two types of authentication:
+/// - `api_key`: The Supabase project API key (required, used in `apikey` header)
+/// - `jwt_token`: An optional JWT token for user authentication (used in `Authorization: Bearer` header)
+///
+/// When `jwt_token` is set, requests will include both headers:
+/// - `apikey: <api_key>`
+/// - `Authorization: Bearer <jwt_token>`
+///
+/// When `jwt_token` is not set, the `api_key` is used for both headers (legacy behavior).
 #[derive(uniffi::Object)]
 pub struct WalletSupabaseDatabase {
     inner: SupabaseWalletDatabase,
@@ -20,11 +31,51 @@ pub struct WalletSupabaseDatabase {
 
 #[uniffi::export]
 impl WalletSupabaseDatabase {
+    /// Create a new WalletSupabaseDatabase with API key only (legacy behavior)
+    ///
+    /// The API key will be used for both `apikey` and `Authorization` headers.
+    /// Use [`with_jwt`] if you need separate JWT authentication.
     #[uniffi::constructor]
-    pub fn new(url: String, key: String) -> Result<Arc<Self>, FfiError> {
+    pub fn new(url: String, api_key: String) -> Result<Arc<Self>, FfiError> {
         let url = url::Url::parse(&url).map_err(|e| FfiError::InvalidUrl { msg: e.to_string() })?;
-        let inner = SupabaseWalletDatabase::new(url, key);
+        let inner = SupabaseWalletDatabase::new(url, api_key);
         Ok(Arc::new(WalletSupabaseDatabase { inner }))
+    }
+
+    /// Create a new WalletSupabaseDatabase with separate API key and JWT token
+    ///
+    /// - `api_key`: The Supabase project API key (used in `apikey` header)
+    /// - `jwt_token`: Optional JWT token for user authentication (used in `Authorization: Bearer` header)
+    ///
+    /// If `jwt_token` is None, the `api_key` will be used for the Authorization header.
+    #[uniffi::constructor]
+    pub fn with_jwt(
+        url: String,
+        api_key: String,
+        jwt_token: Option<String>,
+    ) -> Result<Arc<Self>, FfiError> {
+        let url = url::Url::parse(&url).map_err(|e| FfiError::InvalidUrl { msg: e.to_string() })?;
+        let inner = SupabaseWalletDatabase::with_jwt(url, api_key, jwt_token);
+        Ok(Arc::new(WalletSupabaseDatabase { inner }))
+    }
+}
+
+#[uniffi::export(async_runtime = "tokio")]
+impl WalletSupabaseDatabase {
+    /// Set or update the JWT token for authentication
+    ///
+    /// This token will be used in the `Authorization: Bearer` header for all subsequent requests.
+    /// Pass `None` to clear the JWT token and fall back to using the API key.
+    ///
+    /// This method is typically called after `wallet.set_cat(jwt)` to synchronize
+    /// the database authentication with the wallet's CAT token.
+    pub async fn set_jwt_token(&self, token: Option<String>) {
+        self.inner.set_jwt_token(token).await;
+    }
+
+    /// Get the current JWT token if set
+    pub async fn get_jwt_token(&self) -> Option<String> {
+        self.inner.get_jwt_token().await
     }
 }
 
@@ -144,9 +195,15 @@ impl WalletDatabase for WalletSupabaseDatabase {
                 })
                 .transpose()?;
 
-        let result = Database::get_proofs(&self.inner, cdk_mint_url, cdk_unit, cdk_state, cdk_spending_conditions)
-            .await
-            .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })?;
+        let result = Database::get_proofs(
+            &self.inner,
+            cdk_mint_url,
+            cdk_unit,
+            cdk_state,
+            cdk_spending_conditions,
+        )
+        .await
+        .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })?;
 
         Ok(result.into_iter().map(Into::into).collect())
     }
@@ -187,9 +244,10 @@ impl WalletDatabase for WalletSupabaseDatabase {
         let cdk_direction = direction.map(Into::into);
         let cdk_unit = unit.map(Into::into);
 
-        let result = Database::list_transactions(&self.inner, cdk_mint_url, cdk_direction, cdk_unit)
-            .await
-            .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })?;
+        let result =
+            Database::list_transactions(&self.inner, cdk_mint_url, cdk_direction, cdk_unit)
+                .await
+                .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })?;
 
         Ok(result.into_iter().map(Into::into).collect())
     }
@@ -200,9 +258,14 @@ impl WalletDatabase for WalletSupabaseDatabase {
         secondary_namespace: String,
         key: String,
     ) -> Result<Option<Vec<u8>>, FfiError> {
-        <SupabaseWalletDatabase as KVStoreDatabase>::kv_read(&self.inner, &primary_namespace, &secondary_namespace, &key)
-            .await
-            .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })
+        <SupabaseWalletDatabase as KVStoreDatabase>::kv_read(
+            &self.inner,
+            &primary_namespace,
+            &secondary_namespace,
+            &key,
+        )
+        .await
+        .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })
     }
 
     async fn kv_list(
@@ -210,9 +273,13 @@ impl WalletDatabase for WalletSupabaseDatabase {
         primary_namespace: String,
         secondary_namespace: String,
     ) -> Result<Vec<String>, FfiError> {
-        <SupabaseWalletDatabase as KVStoreDatabase>::kv_list(&self.inner, &primary_namespace, &secondary_namespace)
-            .await
-            .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })
+        <SupabaseWalletDatabase as KVStoreDatabase>::kv_list(
+            &self.inner,
+            &primary_namespace,
+            &secondary_namespace,
+        )
+        .await
+        .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })
     }
 
     async fn kv_write(

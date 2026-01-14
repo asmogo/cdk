@@ -1,12 +1,13 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::str::FromStr;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use cdk_common::common::ProofInfo;
 use cdk_common::database::{
-    wallet::Database,
-    DbTransactionFinalizer, Error as DatabaseError, KVStoreDatabase, KVStoreTransaction, WalletDatabase,
+    wallet::Database, DbTransactionFinalizer, Error as DatabaseError, KVStoreDatabase,
+    KVStoreTransaction, WalletDatabase,
 };
 use cdk_common::mint_url::MintUrl;
 use cdk_common::nuts::{
@@ -16,24 +17,82 @@ use cdk_common::secret::Secret;
 use cdk_common::wallet::{self, MintQuote, Transaction, TransactionDirection, TransactionId};
 use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
+use tokio::sync::RwLock;
 use url::Url;
 
 use crate::Error;
 
+/// Supabase wallet database implementation
+///
+/// This database uses two types of authentication:
+/// - `api_key`: The Supabase project API key (required, used in `apikey` header)
+/// - `jwt_token`: An optional JWT token for user authentication (used in `Authorization: Bearer` header)
+///
+/// When `jwt_token` is set, requests will include both headers:
+/// - `apikey: <api_key>`
+/// - `Authorization: Bearer <jwt_token>`
+///
+/// When `jwt_token` is not set, the `api_key` is used for both headers (legacy behavior).
 #[derive(Debug, Clone)]
 pub struct SupabaseWalletDatabase {
     url: Url,
-    key: String,
+    api_key: String,
+    jwt_token: Arc<RwLock<Option<String>>>,
     client: Client,
 }
 
 impl SupabaseWalletDatabase {
-    pub fn new(url: Url, key: String) -> Self {
+    /// Create a new SupabaseWalletDatabase with API key only (legacy behavior)
+    ///
+    /// The API key will be used for both `apikey` and `Authorization` headers.
+    /// Use [`with_jwt`] if you need separate JWT authentication.
+    pub fn new(url: Url, api_key: String) -> Self {
         Self {
             url,
-            key,
+            api_key,
+            jwt_token: Arc::new(RwLock::new(None)),
             client: Client::new(),
         }
+    }
+
+    /// Create a new SupabaseWalletDatabase with separate API key and JWT token
+    ///
+    /// - `api_key`: The Supabase project API key (used in `apikey` header)
+    /// - `jwt_token`: Optional JWT token for user authentication (used in `Authorization: Bearer` header)
+    ///
+    /// If `jwt_token` is None, the `api_key` will be used for the Authorization header.
+    pub fn with_jwt(url: Url, api_key: String, jwt_token: Option<String>) -> Self {
+        Self {
+            url,
+            api_key,
+            jwt_token: Arc::new(RwLock::new(jwt_token)),
+            client: Client::new(),
+        }
+    }
+
+    /// Set or update the JWT token for authentication
+    ///
+    /// This token will be used in the `Authorization: Bearer` header.
+    /// Pass `None` to clear the JWT token and fall back to using the API key.
+    pub async fn set_jwt_token(&self, token: Option<String>) {
+        let mut jwt = self.jwt_token.write().await;
+        *jwt = token;
+    }
+
+    /// Get the current JWT token if set
+    pub async fn get_jwt_token(&self) -> Option<String> {
+        self.jwt_token.read().await.clone()
+    }
+
+    /// Get the authorization token to use for requests
+    ///
+    /// Returns the JWT token if set, otherwise falls back to the API key.
+    async fn get_auth_bearer(&self) -> String {
+        self.jwt_token
+            .read()
+            .await
+            .clone()
+            .unwrap_or_else(|| self.api_key.clone())
     }
 
     pub fn join_url(&self, path: &str) -> Result<Url, DatabaseError> {
@@ -42,7 +101,9 @@ impl SupabaseWalletDatabase {
             .map_err(|e| DatabaseError::Internal(e.to_string()))
     }
 
-    pub async fn begin_db_transaction(&self) -> Result<Box<SupabaseWalletTransaction>, DatabaseError> {
+    pub async fn begin_db_transaction(
+        &self,
+    ) -> Result<Box<SupabaseWalletTransaction>, DatabaseError> {
         Ok(Box::new(SupabaseWalletTransaction {
             database: self.clone(),
         }))
@@ -64,11 +125,12 @@ impl KVStoreDatabase for SupabaseWalletDatabase {
             primary_namespace, secondary_namespace, key
         ))?;
 
+        let auth_bearer = self.get_auth_bearer().await;
         let res = self
             .client
             .get(url)
-            .header("apikey", &self.key)
-            .header("Authorization", format!("Bearer {}", self.key))
+            .header("apikey", &self.api_key)
+            .header("Authorization", format!("Bearer {}", auth_bearer))
             .send()
             .await
             .map_err(Error::Reqwest)?;
@@ -97,11 +159,12 @@ impl KVStoreDatabase for SupabaseWalletDatabase {
             primary_namespace, secondary_namespace
         ))?;
 
+        let auth_bearer = self.get_auth_bearer().await;
         let res = self
             .client
             .get(url)
-            .header("apikey", &self.key)
-            .header("Authorization", format!("Bearer {}", self.key))
+            .header("apikey", &self.api_key)
+            .header("Authorization", format!("Bearer {}", auth_bearer))
             .send()
             .await
             .map_err(Error::Reqwest)?;
@@ -109,19 +172,17 @@ impl KVStoreDatabase for SupabaseWalletDatabase {
         let items: Vec<KVStoreTable> = res.json().await.map_err(Error::Reqwest)?;
         Ok(items.into_iter().map(|i| i.key).collect())
     }
-
 }
 #[async_trait]
 impl Database<DatabaseError> for SupabaseWalletDatabase {
-
-
     async fn get_mint(&self, mint_url: MintUrl) -> Result<Option<MintInfo>, DatabaseError> {
         let url = self.join_url(&format!("rest/v1/mint?mint_url=eq.{}", mint_url))?;
+        let auth_bearer = self.get_auth_bearer().await;
         let res = self
             .client
             .get(url)
-            .header("apikey", &self.key)
-            .header("Authorization", format!("Bearer {}", self.key))
+            .header("apikey", &self.api_key)
+            .header("Authorization", format!("Bearer {}", auth_bearer))
             .send()
             .await
             .map_err(Error::Reqwest)?;
@@ -140,11 +201,12 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
 
     async fn get_mints(&self) -> Result<HashMap<MintUrl, Option<MintInfo>>, DatabaseError> {
         let url = self.join_url("rest/v1/mint")?;
+        let auth_bearer = self.get_auth_bearer().await;
         let res = self
             .client
             .get(url)
-            .header("apikey", &self.key)
-            .header("Authorization", format!("Bearer {}", self.key))
+            .header("apikey", &self.api_key)
+            .header("Authorization", format!("Bearer {}", auth_bearer))
             .send()
             .await
             .map_err(Error::Reqwest)?;
@@ -153,7 +215,8 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
         let mut map = HashMap::new();
         for mint in mints {
             map.insert(
-                MintUrl::from_str(&mint.mint_url).map_err(|e| DatabaseError::Internal(e.to_string()))?,
+                MintUrl::from_str(&mint.mint_url)
+                    .map_err(|e| DatabaseError::Internal(e.to_string()))?,
                 Some(mint.try_into()?),
             );
         }
@@ -164,28 +227,19 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
         &self,
         mint_url: MintUrl,
     ) -> Result<Option<Vec<KeySetInfo>>, DatabaseError> {
-        let url = self
-            .join_url(&format!("rest/v1/keyset?mint_url=eq.{}", mint_url))?;
+        let url = self.join_url(&format!("rest/v1/keyset?mint_url=eq.{}", mint_url))?;
+        let auth_bearer = self.get_auth_bearer().await;
         let res = self
             .client
             .get(url)
-            .header("apikey", &self.key)
-            .header("Authorization", format!("Bearer {}", self.key))
+            .header("apikey", &self.api_key)
+            .header("Authorization", format!("Bearer {}", auth_bearer))
             .send()
             .await
             .map_err(Error::Reqwest)?;
 
+        let keysets: Vec<KeySetTable> = res.json().await.map_err(Error::Reqwest)?;
 
-        // Get raw body text first for debugging
-        let body_text = res.text().await.map_err(Error::Reqwest)?;
-
-        // Now parse the JSON
-        let keysets: Vec<KeySetTable> = serde_json::from_str(&body_text)
-            .map_err(|e| {
-                eprintln!("[DEBUG] get_mint_keysets: JSON parse error = {:?}", e);
-                DatabaseError::Internal(format!("JSON parse error: {}", e))
-            })?;
-        
         if keysets.is_empty() {
             return Ok(None);
         }
@@ -209,11 +263,12 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
 
     async fn get_mint_quotes(&self) -> Result<Vec<MintQuote>, DatabaseError> {
         let url = self.join_url("rest/v1/mint_quote")?;
+        let auth_bearer = self.get_auth_bearer().await;
         let res = self
             .client
             .get(url)
-            .header("apikey", &self.key)
-            .header("Authorization", format!("Bearer {}", self.key))
+            .header("apikey", &self.api_key)
+            .header("Authorization", format!("Bearer {}", auth_bearer))
             .send()
             .await
             .map_err(Error::Reqwest)?;
@@ -228,11 +283,12 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
 
     async fn get_unissued_mint_quotes(&self) -> Result<Vec<MintQuote>, DatabaseError> {
         let url = self.join_url("rest/v1/mint_quote?amount_issued=eq.0")?;
+        let auth_bearer = self.get_auth_bearer().await;
         let res = self
             .client
             .get(url)
-            .header("apikey", &self.key)
-            .header("Authorization", format!("Bearer {}", self.key))
+            .header("apikey", &self.api_key)
+            .header("Authorization", format!("Bearer {}", auth_bearer))
             .send()
             .await
             .map_err(Error::Reqwest)?;
@@ -255,11 +311,12 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
 
     async fn get_melt_quotes(&self) -> Result<Vec<wallet::MeltQuote>, DatabaseError> {
         let url = self.join_url("rest/v1/melt_quote")?;
+        let auth_bearer = self.get_auth_bearer().await;
         let res = self
             .client
             .get(url)
-            .header("apikey", &self.key)
-            .header("Authorization", format!("Bearer {}", self.key))
+            .header("apikey", &self.api_key)
+            .header("Authorization", format!("Bearer {}", auth_bearer))
             .send()
             .await
             .map_err(Error::Reqwest)?;
@@ -294,11 +351,12 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
         let filter = format!("({},)", ys_str.join(","));
 
         let url = self.join_url(&format!("rest/v1/proof?y=in.{}", filter))?;
+        let auth_bearer = self.get_auth_bearer().await;
         let res = self
             .client
             .get(url)
-            .header("apikey", &self.key)
-            .header("Authorization", format!("Bearer {}", self.key))
+            .header("apikey", &self.api_key)
+            .header("Authorization", format!("Bearer {}", auth_bearer))
             .send()
             .await
             .map_err(Error::Reqwest)?;
@@ -327,11 +385,12 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
     ) -> Result<Option<Transaction>, DatabaseError> {
         let id_hex = transaction_id.to_string();
         let url = self.join_url(&format!("rest/v1/transactions?id=eq.\\x{}", id_hex))?;
+        let auth_bearer = self.get_auth_bearer().await;
         let res = self
             .client
             .get(url)
-            .header("apikey", &self.key)
-            .header("Authorization", format!("Bearer {}", self.key))
+            .header("apikey", &self.api_key)
+            .header("Authorization", format!("Bearer {}", auth_bearer))
             .send()
             .await
             .map_err(Error::Reqwest)?;
@@ -366,11 +425,12 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
         }
 
         let url = self.join_url(&query)?;
+        let auth_bearer = self.get_auth_bearer().await;
         let res = self
             .client
             .get(url)
-            .header("apikey", &self.key)
-            .header("Authorization", format!("Bearer {}", self.key))
+            .header("apikey", &self.api_key)
+            .header("Authorization", format!("Bearer {}", auth_bearer))
             .send()
             .await
             .map_err(Error::Reqwest)?;
@@ -430,7 +490,11 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
         Ok(())
     }
 
-    async fn increment_keyset_counter(&self, keyset_id: &Id, count: u32) -> Result<u32, DatabaseError> {
+    async fn increment_keyset_counter(
+        &self,
+        keyset_id: &Id,
+        count: u32,
+    ) -> Result<u32, DatabaseError> {
         let mut tx = self.begin_db_transaction().await?;
         let res = tx.increment_keyset_counter(keyset_id, count).await?;
         tx.commit().await?;
@@ -516,7 +580,8 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
         value: &[u8],
     ) -> Result<(), DatabaseError> {
         let mut tx = self.begin_db_transaction().await?;
-        (*tx).kv_write(primary_namespace, secondary_namespace, key, value)
+        (*tx)
+            .kv_write(primary_namespace, secondary_namespace, key, value)
             .await?;
         tx.commit().await?;
         Ok(())
@@ -529,7 +594,8 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
         key: &str,
     ) -> Result<(), DatabaseError> {
         let mut tx = self.begin_db_transaction().await?;
-        (*tx).kv_remove(primary_namespace, secondary_namespace, key)
+        (*tx)
+            .kv_remove(primary_namespace, secondary_namespace, key)
             .await?;
         tx.commit().await?;
         Ok(())
@@ -541,6 +607,11 @@ pub struct SupabaseWalletTransaction {
 }
 
 impl SupabaseWalletTransaction {
+    /// Get the authorization token to use for requests
+    async fn get_auth_bearer(&self) -> String {
+        self.database.get_auth_bearer().await
+    }
+
     async fn add_mint(
         &mut self,
         mint_url: MintUrl,
@@ -558,8 +629,11 @@ impl SupabaseWalletTransaction {
         self.database
             .client
             .post(url)
-            .header("apikey", &self.database.key)
-            .header("Authorization", format!("Bearer {}", self.database.key))
+            .header("apikey", &self.database.api_key)
+            .header(
+                "Authorization",
+                format!("Bearer {}", self.get_auth_bearer().await),
+            )
             .header("Prefer", "resolution=merge-duplicates")
             .json(&info_table)
             .send()
@@ -578,8 +652,11 @@ impl SupabaseWalletTransaction {
         self.database
             .client
             .delete(url)
-            .header("apikey", &self.database.key)
-            .header("Authorization", format!("Bearer {}", self.database.key))
+            .header("apikey", &self.database.api_key)
+            .header(
+                "Authorization",
+                format!("Bearer {}", self.get_auth_bearer().await),
+            )
             .send()
             .await
             .map_err(Error::Reqwest)?
@@ -599,8 +676,11 @@ impl SupabaseWalletTransaction {
         self.database
             .client
             .patch(url)
-            .header("apikey", &self.database.key)
-            .header("Authorization", format!("Bearer {}", self.database.key))
+            .header("apikey", &self.database.api_key)
+            .header(
+                "Authorization",
+                format!("Bearer {}", self.get_auth_bearer().await),
+            )
             .json(&serde_json::json!({ "mint_url": new_mint_url.to_string() }))
             .send()
             .await
@@ -614,8 +694,11 @@ impl SupabaseWalletTransaction {
         self.database
             .client
             .patch(url)
-            .header("apikey", &self.database.key)
-            .header("Authorization", format!("Bearer {}", self.database.key))
+            .header("apikey", &self.database.api_key)
+            .header(
+                "Authorization",
+                format!("Bearer {}", self.get_auth_bearer().await),
+            )
             .json(&serde_json::json!({ "mint_url": new_mint_url.to_string() }))
             .send()
             .await
@@ -637,8 +720,11 @@ impl SupabaseWalletTransaction {
             .database
             .client
             .get(url)
-            .header("apikey", &self.database.key)
-            .header("Authorization", format!("Bearer {}", self.database.key))
+            .header("apikey", &self.database.api_key)
+            .header(
+                "Authorization",
+                format!("Bearer {}", self.get_auth_bearer().await),
+            )
             .send()
             .await
             .map_err(Error::Reqwest)?;
@@ -663,8 +749,11 @@ impl SupabaseWalletTransaction {
             .database
             .client
             .get(url)
-            .header("apikey", &self.database.key)
-            .header("Authorization", format!("Bearer {}", self.database.key))
+            .header("apikey", &self.database.api_key)
+            .header(
+                "Authorization",
+                format!("Bearer {}", self.get_auth_bearer().await),
+            )
             .send()
             .await
             .map_err(Error::Reqwest)?;
@@ -697,23 +786,28 @@ impl SupabaseWalletTransaction {
         let items = items?;
 
         let url = self.database.join_url("rest/v1/keyset?on_conflict=id")?;
-
-        let res = self.database
+        let res = self
+            .database
             .client
             .post(url)
-            .header("apikey", &self.database.key)
-            .header("Authorization", format!("Bearer {}", self.database.key))
+            .header("apikey", &self.database.api_key)
+            .header(
+                "Authorization",
+                format!("Bearer {}", self.get_auth_bearer().await),
+            )
             .header("Prefer", "resolution=merge-duplicates")
             .json(&items)
             .send()
             .await
             .map_err(Error::Reqwest)?;
-        
-        let status = res.status();
 
+        let status = res.status();
         if !status.is_success() {
             let body = res.text().await.map_err(Error::Reqwest)?;
-            return Err(DatabaseError::Internal(format!("HTTP {}: {}", status, body)));
+            return Err(DatabaseError::Internal(format!(
+                "Failed to add keysets: HTTP {}: {}",
+                status, body
+            )));
         }
 
         Ok(())
@@ -727,8 +821,11 @@ impl SupabaseWalletTransaction {
             .database
             .client
             .get(url)
-            .header("apikey", &self.database.key)
-            .header("Authorization", format!("Bearer {}", self.database.key))
+            .header("apikey", &self.database.api_key)
+            .header(
+                "Authorization",
+                format!("Bearer {}", self.get_auth_bearer().await),
+            )
             .send()
             .await
             .map_err(Error::Reqwest)?;
@@ -747,8 +844,11 @@ impl SupabaseWalletTransaction {
         self.database
             .client
             .post(url)
-            .header("apikey", &self.database.key)
-            .header("Authorization", format!("Bearer {}", self.database.key))
+            .header("apikey", &self.database.api_key)
+            .header(
+                "Authorization",
+                format!("Bearer {}", self.get_auth_bearer().await),
+            )
             .header("Prefer", "resolution=merge-duplicates")
             .json(&item)
             .send()
@@ -766,8 +866,11 @@ impl SupabaseWalletTransaction {
         self.database
             .client
             .delete(url)
-            .header("apikey", &self.database.key)
-            .header("Authorization", format!("Bearer {}", self.database.key))
+            .header("apikey", &self.database.api_key)
+            .header(
+                "Authorization",
+                format!("Bearer {}", self.get_auth_bearer().await),
+            )
             .send()
             .await
             .map_err(Error::Reqwest)?
@@ -787,8 +890,11 @@ impl SupabaseWalletTransaction {
             .database
             .client
             .get(url)
-            .header("apikey", &self.database.key)
-            .header("Authorization", format!("Bearer {}", self.database.key))
+            .header("apikey", &self.database.api_key)
+            .header(
+                "Authorization",
+                format!("Bearer {}", self.get_auth_bearer().await),
+            )
             .send()
             .await
             .map_err(Error::Reqwest)?;
@@ -807,8 +913,11 @@ impl SupabaseWalletTransaction {
         self.database
             .client
             .post(url)
-            .header("apikey", &self.database.key)
-            .header("Authorization", format!("Bearer {}", self.database.key))
+            .header("apikey", &self.database.api_key)
+            .header(
+                "Authorization",
+                format!("Bearer {}", self.get_auth_bearer().await),
+            )
             .header("Prefer", "resolution=merge-duplicates")
             .json(&item)
             .send()
@@ -826,8 +935,11 @@ impl SupabaseWalletTransaction {
         self.database
             .client
             .delete(url)
-            .header("apikey", &self.database.key)
-            .header("Authorization", format!("Bearer {}", self.database.key))
+            .header("apikey", &self.database.api_key)
+            .header(
+                "Authorization",
+                format!("Bearer {}", self.get_auth_bearer().await),
+            )
             .send()
             .await
             .map_err(Error::Reqwest)?
@@ -844,8 +956,11 @@ impl SupabaseWalletTransaction {
         self.database
             .client
             .post(url)
-            .header("apikey", &self.database.key)
-            .header("Authorization", format!("Bearer {}", self.database.key))
+            .header("apikey", &self.database.api_key)
+            .header(
+                "Authorization",
+                format!("Bearer {}", self.get_auth_bearer().await),
+            )
             .header("Prefer", "resolution=merge-duplicates")
             .json(&item)
             .send()
@@ -863,8 +978,11 @@ impl SupabaseWalletTransaction {
         self.database
             .client
             .delete(url)
-            .header("apikey", &self.database.key)
-            .header("Authorization", format!("Bearer {}", self.database.key))
+            .header("apikey", &self.database.api_key)
+            .header(
+                "Authorization",
+                format!("Bearer {}", self.get_auth_bearer().await),
+            )
             .send()
             .await
             .map_err(Error::Reqwest)?
@@ -898,8 +1016,11 @@ impl SupabaseWalletTransaction {
             .database
             .client
             .get(url)
-            .header("apikey", &self.database.key)
-            .header("Authorization", format!("Bearer {}", self.database.key))
+            .header("apikey", &self.database.api_key)
+            .header(
+                "Authorization",
+                format!("Bearer {}", self.get_auth_bearer().await),
+            )
             .send()
             .await
             .map_err(Error::Reqwest)?;
@@ -941,21 +1062,28 @@ impl SupabaseWalletTransaction {
 
             let url = self.database.join_url("rest/v1/proof?on_conflict=y")?;
 
-            let res = self.database
+            let res = self
+                .database
                 .client
                 .post(url)
-                .header("apikey", &self.database.key)
-                .header("Authorization", format!("Bearer {}", self.database.key))
+                .header("apikey", &self.database.api_key)
+                .header(
+                    "Authorization",
+                    format!("Bearer {}", self.get_auth_bearer().await),
+                )
                 .header("Prefer", "resolution=merge-duplicates")
                 .json(&items)
                 .send()
                 .await
                 .map_err(Error::Reqwest)?;
-            
+
             let status = res.status();
             if !status.is_success() {
                 let body = res.text().await.map_err(Error::Reqwest)?;
-                return Err(DatabaseError::Internal(format!("HTTP {}: {}", status, body)));
+                return Err(DatabaseError::Internal(format!(
+                    "HTTP {}: {}",
+                    status, body
+                )));
             }
         }
 
@@ -971,8 +1099,11 @@ impl SupabaseWalletTransaction {
             self.database
                 .client
                 .delete(url)
-                .header("apikey", &self.database.key)
-                .header("Authorization", format!("Bearer {}", self.database.key))
+                .header("apikey", &self.database.api_key)
+                .header(
+                    "Authorization",
+                    format!("Bearer {}", self.get_auth_bearer().await),
+                )
                 .send()
                 .await
                 .map_err(Error::Reqwest)?
@@ -1001,8 +1132,11 @@ impl SupabaseWalletTransaction {
         self.database
             .client
             .patch(url)
-            .header("apikey", &self.database.key)
-            .header("Authorization", format!("Bearer {}", self.database.key))
+            .header("apikey", &self.database.api_key)
+            .header(
+                "Authorization",
+                format!("Bearer {}", self.get_auth_bearer().await),
+            )
             .json(&serde_json::json!({ "state": state.to_string() }))
             .send()
             .await
@@ -1024,14 +1158,20 @@ impl SupabaseWalletTransaction {
         let item = KeysetCounterTable {
             keyset_id: keyset_id.to_string(),
             counter: new,
+            user_id: None,
+            opt_version: None,
+            _extra: Default::default(),
         };
 
         let url = self.database.join_url("rest/v1/keyset_counter")?;
         self.database
             .client
             .post(url)
-            .header("apikey", &self.database.key)
-            .header("Authorization", format!("Bearer {}", self.database.key))
+            .header("apikey", &self.database.api_key)
+            .header(
+                "Authorization",
+                format!("Bearer {}", self.get_auth_bearer().await),
+            )
             .header("Prefer", "resolution=merge-duplicates")
             .json(&item)
             .send()
@@ -1049,8 +1189,11 @@ impl SupabaseWalletTransaction {
         self.database
             .client
             .post(url)
-            .header("apikey", &self.database.key)
-            .header("Authorization", format!("Bearer {}", self.database.key))
+            .header("apikey", &self.database.api_key)
+            .header(
+                "Authorization",
+                format!("Bearer {}", self.get_auth_bearer().await),
+            )
             .header("Prefer", "resolution=merge-duplicates")
             .json(&item)
             .send()
@@ -1072,8 +1215,11 @@ impl SupabaseWalletTransaction {
         self.database
             .client
             .delete(url)
-            .header("apikey", &self.database.key)
-            .header("Authorization", format!("Bearer {}", self.database.key))
+            .header("apikey", &self.database.api_key)
+            .header(
+                "Authorization",
+                format!("Bearer {}", self.get_auth_bearer().await),
+            )
             .send()
             .await
             .map_err(Error::Reqwest)?
@@ -1093,8 +1239,11 @@ impl SupabaseWalletTransaction {
             .database
             .client
             .get(url)
-            .header("apikey", &self.database.key)
-            .header("Authorization", format!("Bearer {}", self.database.key))
+            .header("apikey", &self.database.api_key)
+            .header(
+                "Authorization",
+                format!("Bearer {}", self.get_auth_bearer().await),
+            )
             .send()
             .await
             .map_err(Error::Reqwest)?;
@@ -1143,14 +1292,20 @@ impl cdk_common::database::KVStoreTransaction<DatabaseError> for SupabaseWalletT
             secondary_namespace: secondary_namespace.to_string(),
             key: key.to_string(),
             value: hex::encode(value),
+            user_id: None,
+            opt_version: None,
+            _extra: Default::default(),
         };
 
         let url = self.database.join_url("rest/v1/kv_store")?;
         self.database
             .client
             .post(url)
-            .header("apikey", &self.database.key)
-            .header("Authorization", format!("Bearer {}", self.database.key))
+            .header("apikey", &self.database.api_key)
+            .header(
+                "Authorization",
+                format!("Bearer {}", self.get_auth_bearer().await),
+            )
             .header("Prefer", "resolution=merge-duplicates")
             .json(&item)
             .send()
@@ -1174,8 +1329,11 @@ impl cdk_common::database::KVStoreTransaction<DatabaseError> for SupabaseWalletT
         self.database
             .client
             .delete(url)
-            .header("apikey", &self.database.key)
-            .header("Authorization", format!("Bearer {}", self.database.key))
+            .header("apikey", &self.database.api_key)
+            .header(
+                "Authorization",
+                format!("Bearer {}", self.get_auth_bearer().await),
+            )
             .send()
             .await
             .map_err(Error::Reqwest)?
@@ -1200,12 +1358,22 @@ impl DbTransactionFinalizer for SupabaseWalletTransaction {
 
 // Data Structures for Supabase Tables (Serde)
 
+// Note: All table structs use `deny_unknown_fields = false` (serde default) to allow
+// extra columns added by other applications (e.g., user_id, opt_version) without breaking.
+
 #[derive(Debug, Serialize, Deserialize)]
 struct KVStoreTable {
     primary_namespace: String,
     secondary_namespace: String,
     key: String,
     value: String, // hex encoded bytea
+    // Extra fields from other applications (ignored during deserialization)
+    #[serde(default, skip_serializing)]
+    user_id: Option<serde_json::Value>,
+    #[serde(default, skip_serializing)]
+    opt_version: Option<serde_json::Value>,
+    #[serde(flatten)]
+    _extra: serde_json::Map<String, serde_json::Value>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -1223,6 +1391,13 @@ struct MintTable {
     motd: Option<String>,
     mint_time: Option<i64>,
     tos_url: Option<String>,
+    // Extra fields from other applications (ignored during deserialization)
+    #[serde(default, skip_serializing)]
+    user_id: Option<serde_json::Value>,
+    #[serde(default, skip_serializing)]
+    opt_version: Option<serde_json::Value>,
+    #[serde(flatten)]
+    _extra: serde_json::Map<String, serde_json::Value>,
 }
 
 impl MintTable {
@@ -1247,6 +1422,9 @@ impl MintTable {
             motd: info.motd,
             mint_time: info.time.map(|t| t as i64),
             tos_url: info.tos_url,
+            user_id: None,
+            opt_version: None,
+            _extra: Default::default(),
         })
     }
 }
@@ -1290,6 +1468,13 @@ struct KeySetTable {
     input_fee_ppk: i64,
     final_expiry: Option<i64>,
     keyset_u32: Option<i64>,
+    // Extra fields from other applications (ignored during deserialization)
+    #[serde(default, skip_serializing)]
+    user_id: Option<serde_json::Value>,
+    #[serde(default, skip_serializing)]
+    opt_version: Option<serde_json::Value>,
+    #[serde(flatten)]
+    _extra: serde_json::Map<String, serde_json::Value>,
 }
 
 impl KeySetTable {
@@ -1302,6 +1487,9 @@ impl KeySetTable {
             input_fee_ppk: info.input_fee_ppk as i64,
             final_expiry: info.final_expiry.map(|v| v as i64),
             keyset_u32: Some(u32::from(info.id) as i64),
+            user_id: None,
+            opt_version: None,
+            _extra: Default::default(),
         })
     }
 }
@@ -1325,6 +1513,13 @@ struct KeyTable {
     id: String,
     keys: String, // json string
     keyset_u32: Option<i64>,
+    // Extra fields from other applications (ignored during deserialization)
+    #[serde(default, skip_serializing)]
+    user_id: Option<serde_json::Value>,
+    #[serde(default, skip_serializing)]
+    opt_version: Option<serde_json::Value>,
+    #[serde(flatten)]
+    _extra: serde_json::Map<String, serde_json::Value>,
 }
 
 impl KeyTable {
@@ -1333,6 +1528,9 @@ impl KeyTable {
             id: keyset.id.to_string(),
             keys: serde_json::to_string(&keyset.keys)?,
             keyset_u32: Some(u32::from(keyset.id) as i64),
+            user_id: None,
+            opt_version: None,
+            _extra: Default::default(),
         })
     }
 }
@@ -1357,6 +1555,13 @@ struct MintQuoteTable {
     payment_method: String,
     amount_issued: i64,
     amount_paid: i64,
+    // Extra fields from other applications (ignored during deserialization)
+    #[serde(default, skip_serializing)]
+    user_id: Option<serde_json::Value>,
+    #[serde(default, skip_serializing)]
+    opt_version: Option<serde_json::Value>,
+    #[serde(flatten)]
+    _extra: serde_json::Map<String, serde_json::Value>,
 }
 
 impl TryInto<MintQuote> for MintQuoteTable {
@@ -1364,7 +1569,8 @@ impl TryInto<MintQuote> for MintQuoteTable {
     fn try_into(self) -> Result<MintQuote, Self::Error> {
         Ok(MintQuote {
             id: self.id,
-            mint_url: MintUrl::from_str(&self.mint_url).map_err(|e| DatabaseError::Internal(e.to_string()))?,
+            mint_url: MintUrl::from_str(&self.mint_url)
+                .map_err(|e| DatabaseError::Internal(e.to_string()))?,
             amount: Some(cdk_common::Amount::from(self.amount as u64)),
             unit: CurrencyUnit::from_str(&self.unit)
                 .map_err(|_| DatabaseError::Internal("Invalid unit".into()))?,
@@ -1402,6 +1608,9 @@ impl TryFrom<MintQuote> for MintQuoteTable {
             payment_method: q.payment_method.to_string(),
             amount_issued: q.amount_issued.to_u64() as i64,
             amount_paid: q.amount_paid.to_u64() as i64,
+            user_id: None,
+            opt_version: None,
+            _extra: Default::default(),
         })
     }
 }
@@ -1417,6 +1626,13 @@ struct MeltQuoteTable {
     expiry: i64,
     payment_preimage: Option<String>,
     payment_method: String,
+    // Extra fields from other applications (ignored during deserialization)
+    #[serde(default, skip_serializing)]
+    user_id: Option<serde_json::Value>,
+    #[serde(default, skip_serializing)]
+    opt_version: Option<serde_json::Value>,
+    #[serde(flatten)]
+    _extra: serde_json::Map<String, serde_json::Value>,
 }
 
 impl TryInto<wallet::MeltQuote> for MeltQuoteTable {
@@ -1452,6 +1668,9 @@ impl TryFrom<wallet::MeltQuote> for MeltQuoteTable {
             expiry: q.expiry as i64,
             payment_preimage: q.payment_preimage,
             payment_method: q.payment_method.to_string(),
+            user_id: None,
+            opt_version: None,
+            _extra: Default::default(),
         })
     }
 }
@@ -1471,6 +1690,13 @@ struct ProofTable {
     dleq_e: Option<String>,
     dleq_s: Option<String>,
     dleq_r: Option<String>,
+    // Extra fields from other applications (ignored during deserialization)
+    #[serde(default, skip_serializing)]
+    user_id: Option<serde_json::Value>,
+    #[serde(default, skip_serializing)]
+    opt_version: Option<serde_json::Value>,
+    #[serde(flatten)]
+    _extra: serde_json::Map<String, serde_json::Value>,
 }
 
 impl TryInto<ProofInfo> for ProofTable {
@@ -1482,7 +1708,8 @@ impl TryInto<ProofInfo> for ProofTable {
             .map_err(|_| DatabaseError::Internal("Invalid c".into()))?;
         Ok(ProofInfo {
             y,
-            mint_url: MintUrl::from_str(&self.mint_url).map_err(|e| DatabaseError::Internal(e.to_string()))?,
+            mint_url: MintUrl::from_str(&self.mint_url)
+                .map_err(|e| DatabaseError::Internal(e.to_string()))?,
             state: cdk_common::nuts::State::from_str(&self.state)
                 .map_err(|_| DatabaseError::Internal("Invalid state".into()))?,
             spending_condition: self
@@ -1551,6 +1778,9 @@ impl TryFrom<ProofInfo> for ProofTable {
                 .dleq
                 .as_ref()
                 .map(|d| hex::encode(d.r.to_secret_bytes())),
+            user_id: None,
+            opt_version: None,
+            _extra: Default::default(),
         })
     }
 }
@@ -1559,6 +1789,13 @@ impl TryFrom<ProofInfo> for ProofTable {
 struct KeysetCounterTable {
     keyset_id: String,
     counter: u32,
+    // Extra fields from other applications (ignored during deserialization)
+    #[serde(default, skip_serializing)]
+    user_id: Option<serde_json::Value>,
+    #[serde(default, skip_serializing)]
+    opt_version: Option<serde_json::Value>,
+    #[serde(flatten)]
+    _extra: serde_json::Map<String, serde_json::Value>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1577,6 +1814,13 @@ struct TransactionTable {
     payment_request: Option<String>,
     payment_proof: Option<String>,
     payment_method: Option<String>,
+    // Extra fields from other applications (ignored during deserialization)
+    #[serde(default, skip_serializing)]
+    user_id: Option<serde_json::Value>,
+    #[serde(default, skip_serializing)]
+    opt_version: Option<serde_json::Value>,
+    #[serde(flatten)]
+    _extra: serde_json::Map<String, serde_json::Value>,
 }
 
 impl TryInto<Transaction> for TransactionTable {
@@ -1587,7 +1831,6 @@ impl TryInto<Transaction> for TransactionTable {
         let id_arr: [u8; 32] = id_bytes
             .try_into()
             .map_err(|_| DatabaseError::Internal("Invalid transaction id len".into()))?;
-
 
         let ys = match self.ys {
             Some(strs) => strs
@@ -1601,7 +1844,8 @@ impl TryInto<Transaction> for TransactionTable {
         };
 
         Ok(Transaction {
-            mint_url: MintUrl::from_str(&self.mint_url).map_err(|e| DatabaseError::Internal(e.to_string()))?,
+            mint_url: MintUrl::from_str(&self.mint_url)
+                .map_err(|e| DatabaseError::Internal(e.to_string()))?,
             direction: TransactionDirection::from_str(&self.direction)
                 .map_err(|_| DatabaseError::Internal("Invalid direction".into()))?,
             unit: CurrencyUnit::from_str(&self.unit)
@@ -1650,6 +1894,9 @@ impl TryFrom<Transaction> for TransactionTable {
             payment_request: t.payment_request,
             payment_proof: t.payment_proof,
             payment_method: t.payment_method.map(|p| p.to_string()),
+            user_id: None,
+            opt_version: None,
+            _extra: Default::default(),
         })
     }
 }

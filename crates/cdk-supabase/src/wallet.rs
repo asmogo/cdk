@@ -139,7 +139,14 @@ impl KVStoreDatabase for SupabaseWalletDatabase {
             return Ok(None);
         }
 
-        let items: Vec<KVStoreTable> = res.json().await.map_err(Error::Reqwest)?;
+        if !res.status().is_success() {
+             return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+        }
+        let text = res.text().await.map_err(Error::Reqwest)?;
+        if text.trim().is_empty() || text.trim() == "[]" {
+             return Ok(None);
+        }
+        let items: Vec<KVStoreTable> = serde_json::from_str(&text).map_err(Error::Serde)?;
         if let Some(item) = items.into_iter().next() {
             let bytes = hex::decode(item.value)
                 .map_err(|_| DatabaseError::Internal("Invalid hex in kv_store".into()))?;
@@ -169,7 +176,14 @@ impl KVStoreDatabase for SupabaseWalletDatabase {
             .await
             .map_err(Error::Reqwest)?;
 
-        let items: Vec<KVStoreTable> = res.json().await.map_err(Error::Reqwest)?;
+        if !res.status().is_success() {
+             return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+        }
+        let text = res.text().await.map_err(Error::Reqwest)?;
+        if text.trim().is_empty() || text.trim() == "[]" {
+             return Ok(Vec::new());
+        }
+        let items: Vec<KVStoreTable> = serde_json::from_str(&text).map_err(Error::Serde)?;
         Ok(items.into_iter().map(|i| i.key).collect())
     }
 }
@@ -191,7 +205,14 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
             return Ok(None);
         }
 
-        let mints: Vec<MintTable> = res.json().await.map_err(Error::Reqwest)?;
+        if !res.status().is_success() {
+             return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+        }
+        let text = res.text().await.map_err(Error::Reqwest)?;
+        if text.trim().is_empty() || text.trim() == "[]" {
+             return Ok(None);
+        }
+        let mints: Vec<MintTable> = serde_json::from_str(&text).map_err(Error::Serde)?;
         if let Some(mint) = mints.into_iter().next() {
             Ok(Some(mint.try_into()?))
         } else {
@@ -211,11 +232,22 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
             .await
             .map_err(Error::Reqwest)?;
 
-        let mints: Vec<MintTable> = res.json().await.map_err(Error::Reqwest)?;
+        if !res.status().is_success() {
+             return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+        }
+
+        let text = res.text().await.map_err(Error::Reqwest)?;
+        println!("DEBUG: get_mints response: '{}'", text);
+
+        if text.trim().is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let mints: Vec<MintTable> = serde_json::from_str(&text).map_err(Error::Serde)?;
         let mut map = HashMap::new();
         for mint in mints {
             map.insert(
-                MintUrl::from_str(&mint.mint_url)
+                 MintUrl::from_str(&mint.mint_url)
                     .map_err(|e| DatabaseError::Internal(e.to_string()))?,
                 Some(mint.try_into()?),
             );
@@ -238,7 +270,16 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
             .await
             .map_err(Error::Reqwest)?;
 
-        let keysets: Vec<KeySetTable> = res.json().await.map_err(Error::Reqwest)?;
+        if !res.status().is_success() {
+             return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+        }
+
+        let text = res.text().await.map_err(Error::Reqwest)?;
+        if text.trim().is_empty() {
+            return Ok(None);
+        }
+
+        let keysets: Vec<KeySetTable> = serde_json::from_str(&text).map_err(Error::Serde)?;
 
         if keysets.is_empty() {
             return Ok(None);
@@ -273,7 +314,14 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
             .await
             .map_err(Error::Reqwest)?;
 
-        let quotes: Vec<MintQuoteTable> = res.json().await.map_err(Error::Reqwest)?;
+        if !res.status().is_success() {
+             return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+        }
+        let text = res.text().await.map_err(Error::Reqwest)?;
+        if text.trim().is_empty() || text.trim() == "[]" {
+             return Ok(Vec::new());
+        }
+        let quotes: Vec<MintQuoteTable> = serde_json::from_str(&text).map_err(Error::Serde)?;
         let mut result = Vec::new();
         for q in quotes {
             result.push(q.try_into()?);
@@ -293,7 +341,14 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
             .await
             .map_err(Error::Reqwest)?;
 
-        let quotes: Vec<MintQuoteTable> = res.json().await.map_err(Error::Reqwest)?;
+        if !res.status().is_success() {
+             return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+        }
+        let text = res.text().await.map_err(Error::Reqwest)?;
+        if text.trim().is_empty() || text.trim() == "[]" {
+             return Ok(Vec::new());
+        }
+        let quotes: Vec<MintQuoteTable> = serde_json::from_str(&text).map_err(Error::Serde)?;
         let mut result = Vec::new();
         for q in quotes {
             result.push(q.try_into()?);
@@ -321,7 +376,14 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
             .await
             .map_err(Error::Reqwest)?;
 
-        let quotes: Vec<MeltQuoteTable> = res.json().await.map_err(Error::Reqwest)?;
+        if !res.status().is_success() {
+             return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+        }
+        let text = res.text().await.map_err(Error::Reqwest)?;
+        if text.trim().is_empty() || text.trim() == "[]" {
+             return Ok(Vec::new());
+        }
+        let quotes: Vec<MeltQuoteTable> = serde_json::from_str(&text).map_err(Error::Serde)?;
         let mut result = Vec::new();
         for q in quotes {
             result.push(q.try_into()?);
@@ -361,7 +423,14 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
             .await
             .map_err(Error::Reqwest)?;
 
-        let proofs: Vec<ProofTable> = res.json().await.map_err(Error::Reqwest)?;
+        if !res.status().is_success() {
+             return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+        }
+        let text = res.text().await.map_err(Error::Reqwest)?;
+        if text.trim().is_empty() || text.trim() == "[]" {
+             return Ok(Vec::new());
+        }
+        let proofs: Vec<ProofTable> = serde_json::from_str(&text).map_err(Error::Serde)?;
         let mut result = Vec::new();
         for p in proofs {
             result.push(p.try_into()?);
@@ -399,7 +468,14 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
             return Ok(None);
         }
 
-        let txs: Vec<TransactionTable> = res.json().await.map_err(Error::Reqwest)?;
+        if !res.status().is_success() {
+             return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+        }
+        let text = res.text().await.map_err(Error::Reqwest)?;
+        if text.trim().is_empty() || text.trim() == "[]" {
+             return Ok(None);
+        }
+        let txs: Vec<TransactionTable> = serde_json::from_str(&text).map_err(Error::Serde)?;
         if let Some(t) = txs.into_iter().next() {
             Ok(Some(t.try_into()?))
         } else {
@@ -435,7 +511,14 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
             .await
             .map_err(Error::Reqwest)?;
 
-        let txs: Vec<TransactionTable> = res.json().await.map_err(Error::Reqwest)?;
+        if !res.status().is_success() {
+             return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+        }
+        let text = res.text().await.map_err(Error::Reqwest)?;
+        if text.trim().is_empty() || text.trim() == "[]" {
+             return Ok(Vec::new());
+        }
+        let txs: Vec<TransactionTable> = serde_json::from_str(&text).map_err(Error::Serde)?;
         let mut result = Vec::new();
         for t in txs {
             result.push(t.try_into()?);
@@ -733,7 +816,14 @@ impl SupabaseWalletTransaction {
             return Ok(None);
         }
 
-        let items: Vec<KeySetTable> = res.json().await.map_err(Error::Reqwest)?;
+        if !res.status().is_success() {
+             return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+        }
+        let text = res.text().await.map_err(Error::Reqwest)?;
+        if text.trim().is_empty() || text.trim() == "[]" {
+             return Ok(None);
+        }
+        let items: Vec<KeySetTable> = serde_json::from_str(&text).map_err(Error::Serde)?;
         if let Some(item) = items.into_iter().next() {
             Ok(Some(item.try_into()?))
         } else {
@@ -762,7 +852,14 @@ impl SupabaseWalletTransaction {
             return Ok(None);
         }
 
-        let items: Vec<KeyTable> = res.json().await.map_err(Error::Reqwest)?;
+        if !res.status().is_success() {
+             return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+        }
+        let text = res.text().await.map_err(Error::Reqwest)?;
+        if text.trim().is_empty() || text.trim() == "[]" {
+             return Ok(None);
+        }
+        let items: Vec<KeyTable> = serde_json::from_str(&text).map_err(Error::Serde)?;
         if let Some(item) = items.into_iter().next() {
             Ok(Some(item.try_into()?))
         } else {
@@ -830,7 +927,14 @@ impl SupabaseWalletTransaction {
             .await
             .map_err(Error::Reqwest)?;
 
-        let items: Vec<MintQuoteTable> = res.json().await.map_err(Error::Reqwest)?;
+        if !res.status().is_success() {
+             return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+        }
+        let text = res.text().await.map_err(Error::Reqwest)?;
+        if text.trim().is_empty() {
+             return Ok(None);
+        }
+        let items: Vec<MintQuoteTable> = serde_json::from_str(&text).map_err(Error::Serde)?;
         if let Some(item) = items.into_iter().next() {
             Ok(Some(item.try_into()?))
         } else {
@@ -841,7 +945,7 @@ impl SupabaseWalletTransaction {
     async fn add_mint_quote(&mut self, quote: MintQuote) -> Result<(), DatabaseError> {
         let item: MintQuoteTable = quote.try_into()?;
         let url = self.database.join_url("rest/v1/mint_quote")?;
-        self.database
+        let res = self.database
             .client
             .post(url)
             .header("apikey", &self.database.api_key)
@@ -853,9 +957,16 @@ impl SupabaseWalletTransaction {
             .json(&item)
             .send()
             .await
-            .map_err(Error::Reqwest)?
-            .error_for_status()
             .map_err(Error::Reqwest)?;
+
+        let status = res.status();
+        if !status.is_success() {
+            let body = res.text().await.map_err(Error::Reqwest)?;
+            return Err(DatabaseError::Internal(format!(
+                "Failed to add mint quote: HTTP {}: {}",
+                status, body
+            )));
+        }
         Ok(())
     }
 
@@ -899,7 +1010,14 @@ impl SupabaseWalletTransaction {
             .await
             .map_err(Error::Reqwest)?;
 
-        let items: Vec<MeltQuoteTable> = res.json().await.map_err(Error::Reqwest)?;
+        if !res.status().is_success() {
+             return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+        }
+        let text = res.text().await.map_err(Error::Reqwest)?;
+        if text.trim().is_empty() {
+             return Ok(None);
+        }
+        let items: Vec<MeltQuoteTable> = serde_json::from_str(&text).map_err(Error::Serde)?;
         if let Some(item) = items.into_iter().next() {
             Ok(Some(item.try_into()?))
         } else {
@@ -1025,7 +1143,14 @@ impl SupabaseWalletTransaction {
             .await
             .map_err(Error::Reqwest)?;
 
-        let proofs: Vec<ProofTable> = res.json().await.map_err(Error::Reqwest)?;
+        if !res.status().is_success() {
+             return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+        }
+        let text = res.text().await.map_err(Error::Reqwest)?;
+        if text.trim().is_empty() {
+             return Ok(Vec::new());
+        }
+        let proofs: Vec<ProofTable> = serde_json::from_str(&text).map_err(Error::Serde)?;
         let mut result = Vec::new();
         for p in proofs {
             let info: ProofInfo = p.try_into()?;
@@ -1186,7 +1311,7 @@ impl SupabaseWalletTransaction {
     async fn add_transaction(&mut self, transaction: Transaction) -> Result<(), DatabaseError> {
         let item: TransactionTable = transaction.try_into()?;
         let url = self.database.join_url("rest/v1/transactions")?;
-        self.database
+        let res = self.database
             .client
             .post(url)
             .header("apikey", &self.database.api_key)
@@ -1198,9 +1323,16 @@ impl SupabaseWalletTransaction {
             .json(&item)
             .send()
             .await
-            .map_err(Error::Reqwest)?
-            .error_for_status()
             .map_err(Error::Reqwest)?;
+
+        let status = res.status();
+        if !status.is_success() {
+            let body = res.text().await.map_err(Error::Reqwest)?;
+            return Err(DatabaseError::Internal(format!(
+                "Failed to add transaction: HTTP {}: {}",
+                status, body
+            )));
+        }
         Ok(())
     }
 
@@ -1248,7 +1380,14 @@ impl SupabaseWalletTransaction {
             .await
             .map_err(Error::Reqwest)?;
 
-        let items: Vec<KeysetCounterTable> = res.json().await.map_err(Error::Reqwest)?;
+        if !res.status().is_success() {
+             return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+        }
+        let text = res.text().await.map_err(Error::Reqwest)?;
+        if text.trim().is_empty() {
+             return Ok(0);
+        }
+        let items: Vec<KeysetCounterTable> = serde_json::from_str(&text).map_err(Error::Serde)?;
         if let Some(item) = items.into_iter().next() {
             Ok(item.counter)
         } else {
@@ -1432,6 +1571,32 @@ impl MintTable {
 impl TryInto<MintInfo> for MintTable {
     type Error = DatabaseError;
     fn try_into(self) -> Result<MintInfo, Self::Error> {
+        // Helper to filter empty strings before JSON parsing
+        fn parse_json_field<T: serde::de::DeserializeOwned>(
+            field: Option<String>,
+        ) -> Result<Option<T>, serde_json::Error> {
+            match field {
+                Some(s) if !s.trim().is_empty() => {
+                    let s = s.trim();
+                    match serde_json::from_str::<T>(s) {
+                        Ok(v) => Ok(Some(v)),
+                        Err(e) => {
+                            // If it fails to parse, try wrapping it in quotes in case it's a bare string
+                            // but only if it doesn't already look like a JSON object or array
+                            if !s.starts_with('{') && !s.starts_with('[') && !s.starts_with('"') {
+                                let quoted = format!("\"{}\"", s);
+                                if let Ok(v) = serde_json::from_str::<T>(&quoted) {
+                                    return Ok(Some(v));
+                                }
+                            }
+                            Err(e)
+                        }
+                    }
+                }
+                _ => Ok(None),
+            }
+        }
+
         Ok(MintInfo {
             name: self.name,
             pubkey: self
@@ -1441,17 +1606,13 @@ impl TryInto<MintInfo> for MintTable {
                         .map_err(|_| DatabaseError::Internal("Invalid pubkey hex".into()))
                 })
                 .transpose()?,
-            version: self.version.map(|v| serde_json::from_str(&v)).transpose()?,
+            version: parse_json_field(self.version)?,
             description: self.description,
             description_long: self.description_long,
-            contact: self.contact.map(|c| serde_json::from_str(&c)).transpose()?,
-            nuts: self
-                .nuts
-                .map(|n| serde_json::from_str(&n))
-                .transpose()?
-                .unwrap_or_default(),
+            contact: parse_json_field(self.contact)?,
+            nuts: parse_json_field(self.nuts)?.unwrap_or_default(),
             icon_url: self.icon_url,
-            urls: self.urls.map(|u| serde_json::from_str(&u)).transpose()?,
+            urls: parse_json_field(self.urls)?,
             motd: self.motd,
             time: self.mint_time.map(|t| t as u64),
             tos_url: self.tos_url,
@@ -1714,6 +1875,7 @@ impl TryInto<ProofInfo> for ProofTable {
                 .map_err(|_| DatabaseError::Internal("Invalid state".into()))?,
             spending_condition: self
                 .spending_condition
+                .filter(|s| !s.trim().is_empty())
                 .map(|s| serde_json::from_str(&s))
                 .transpose()?,
             unit: CurrencyUnit::from_str(&self.unit)
@@ -1725,7 +1887,7 @@ impl TryInto<ProofInfo> for ProofTable {
                 secret: Secret::from_str(&self.secret)
                     .map_err(|_| DatabaseError::Internal("Invalid secret".into()))?,
                 c,
-                witness: self.witness.map(|w| serde_json::from_str(&w)).transpose()?,
+                witness: self.witness.filter(|w| !w.trim().is_empty()).map(|w| serde_json::from_str(&w)).transpose()?,
                 dleq: match (self.dleq_e, self.dleq_s, self.dleq_r) {
                     (Some(e), Some(s), Some(r)) => Some(cdk_common::ProofDleq {
                         e: cdk_common::SecretKey::from_hex(&e)
@@ -1857,6 +2019,7 @@ impl TryInto<Transaction> for TransactionTable {
             memo: self.memo,
             metadata: self
                 .metadata
+                .filter(|m| !m.trim().is_empty())
                 .map(|m| serde_json::from_str(&m))
                 .transpose()?
                 .unwrap_or_default(),

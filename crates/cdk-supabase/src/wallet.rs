@@ -709,7 +709,7 @@ impl SupabaseWalletTransaction {
         };
 
         let url = self.database.join_url("rest/v1/mint")?;
-        self.database
+        let res = self.database
             .client
             .post(url)
             .header("apikey", &self.database.api_key)
@@ -721,9 +721,16 @@ impl SupabaseWalletTransaction {
             .json(&info_table)
             .send()
             .await
-            .map_err(Error::Reqwest)?
-            .error_for_status()
             .map_err(Error::Reqwest)?;
+
+        let status = res.status();
+        if !status.is_success() {
+            let body = res.text().await.map_err(Error::Reqwest)?;
+            return Err(DatabaseError::Internal(format!(
+                "Failed to add mint: HTTP {}: {}",
+                status, body
+            )));
+        }
 
         Ok(())
     }
@@ -732,7 +739,7 @@ impl SupabaseWalletTransaction {
         let url = self
             .database
             .join_url(&format!("rest/v1/mint?mint_url=eq.{}", mint_url))?;
-        self.database
+        let res = self.database
             .client
             .delete(url)
             .header("apikey", &self.database.api_key)
@@ -742,9 +749,16 @@ impl SupabaseWalletTransaction {
             )
             .send()
             .await
-            .map_err(Error::Reqwest)?
-            .error_for_status()
             .map_err(Error::Reqwest)?;
+
+        let status = res.status();
+        if !status.is_success() {
+            let body = res.text().await.map_err(Error::Reqwest)?;
+            return Err(DatabaseError::Internal(format!(
+                "Failed to remove mint: HTTP {}: {}",
+                status, body
+            )));
+        }
         Ok(())
     }
 
@@ -756,7 +770,7 @@ impl SupabaseWalletTransaction {
         let url = self
             .database
             .join_url(&format!("rest/v1/mint_quote?mint_url=eq.{}", old_mint_url))?;
-        self.database
+        let res = self.database
             .client
             .patch(url)
             .header("apikey", &self.database.api_key)
@@ -767,14 +781,21 @@ impl SupabaseWalletTransaction {
             .json(&serde_json::json!({ "mint_url": new_mint_url.to_string() }))
             .send()
             .await
-            .map_err(Error::Reqwest)?
-            .error_for_status()
             .map_err(Error::Reqwest)?;
+
+        if !res.status().is_success() {
+            let status = res.status();
+            let body = res.text().await.map_err(Error::Reqwest)?;
+            return Err(DatabaseError::Internal(format!(
+                "Failed to update mint url in mint_quote: HTTP {}: {}",
+                status, body
+            )));
+        }
 
         let url = self
             .database
             .join_url(&format!("rest/v1/proof?mint_url=eq.{}", old_mint_url))?;
-        self.database
+        let res = self.database
             .client
             .patch(url)
             .header("apikey", &self.database.api_key)
@@ -785,9 +806,16 @@ impl SupabaseWalletTransaction {
             .json(&serde_json::json!({ "mint_url": new_mint_url.to_string() }))
             .send()
             .await
-            .map_err(Error::Reqwest)?
-            .error_for_status()
             .map_err(Error::Reqwest)?;
+
+        if !res.status().is_success() {
+            let status = res.status();
+            let body = res.text().await.map_err(Error::Reqwest)?;
+            return Err(DatabaseError::Internal(format!(
+                "Failed to update mint url in proof: HTTP {}: {}",
+                status, body
+            )));
+        }
 
         Ok(())
     }
@@ -902,7 +930,7 @@ impl SupabaseWalletTransaction {
         if !status.is_success() {
             let body = res.text().await.map_err(Error::Reqwest)?;
             return Err(DatabaseError::Internal(format!(
-                "Failed to add keysets: HTTP {}: {}",
+                "Failed to add mint keysets: HTTP {}: {}",
                 status, body
             )));
         }
@@ -974,7 +1002,7 @@ impl SupabaseWalletTransaction {
         let url = self
             .database
             .join_url(&format!("rest/v1/mint_quote?id=eq.{}", quote_id))?;
-        self.database
+        let res = self.database
             .client
             .delete(url)
             .header("apikey", &self.database.api_key)
@@ -984,9 +1012,16 @@ impl SupabaseWalletTransaction {
             )
             .send()
             .await
-            .map_err(Error::Reqwest)?
-            .error_for_status()
             .map_err(Error::Reqwest)?;
+
+        let status = res.status();
+        if !status.is_success() {
+            let body = res.text().await.map_err(Error::Reqwest)?;
+            return Err(DatabaseError::Internal(format!(
+                "Failed to remove mint quote: HTTP {}: {}",
+                status, body
+            )));
+        }
         Ok(())
     }
 
@@ -1028,7 +1063,7 @@ impl SupabaseWalletTransaction {
     async fn add_melt_quote(&mut self, quote: wallet::MeltQuote) -> Result<(), DatabaseError> {
         let item: MeltQuoteTable = quote.try_into()?;
         let url = self.database.join_url("rest/v1/melt_quote")?;
-        self.database
+        let res = self.database
             .client
             .post(url)
             .header("apikey", &self.database.api_key)
@@ -1040,9 +1075,16 @@ impl SupabaseWalletTransaction {
             .json(&item)
             .send()
             .await
-            .map_err(Error::Reqwest)?
-            .error_for_status()
             .map_err(Error::Reqwest)?;
+
+        let status = res.status();
+        if !status.is_success() {
+            let body = res.text().await.map_err(Error::Reqwest)?;
+            return Err(DatabaseError::Internal(format!(
+                "Failed to add melt quote: HTTP {}: {}",
+                status, body
+            )));
+        }
         Ok(())
     }
 
@@ -1050,7 +1092,7 @@ impl SupabaseWalletTransaction {
         let url = self
             .database
             .join_url(&format!("rest/v1/melt_quote?id=eq.{}", quote_id))?;
-        self.database
+        let res = self.database
             .client
             .delete(url)
             .header("apikey", &self.database.api_key)
@@ -1060,9 +1102,16 @@ impl SupabaseWalletTransaction {
             )
             .send()
             .await
-            .map_err(Error::Reqwest)?
-            .error_for_status()
             .map_err(Error::Reqwest)?;
+
+        let status = res.status();
+        if !status.is_success() {
+            let body = res.text().await.map_err(Error::Reqwest)?;
+            return Err(DatabaseError::Internal(format!(
+                "Failed to remove melt quote: HTTP {}: {}",
+                status, body
+            )));
+        }
         Ok(())
     }
 
@@ -1071,7 +1120,7 @@ impl SupabaseWalletTransaction {
         let item = KeyTable::from_keyset(&keyset)?;
 
         let url = self.database.join_url("rest/v1/key")?;
-        self.database
+        let res = self.database
             .client
             .post(url)
             .header("apikey", &self.database.api_key)
@@ -1083,9 +1132,16 @@ impl SupabaseWalletTransaction {
             .json(&item)
             .send()
             .await
-            .map_err(Error::Reqwest)?
-            .error_for_status()
             .map_err(Error::Reqwest)?;
+
+        let status = res.status();
+        if !status.is_success() {
+            let body = res.text().await.map_err(Error::Reqwest)?;
+            return Err(DatabaseError::Internal(format!(
+                "Failed to add keys: HTTP {}: {}",
+                status, body
+            )));
+        }
         Ok(())
     }
 
@@ -1093,7 +1149,7 @@ impl SupabaseWalletTransaction {
         let url = self
             .database
             .join_url(&format!("rest/v1/key?id=eq.{}", id))?;
-        self.database
+        let res = self.database
             .client
             .delete(url)
             .header("apikey", &self.database.api_key)
@@ -1103,9 +1159,16 @@ impl SupabaseWalletTransaction {
             )
             .send()
             .await
-            .map_err(Error::Reqwest)?
-            .error_for_status()
             .map_err(Error::Reqwest)?;
+
+        let status = res.status();
+        if !status.is_success() {
+            let body = res.text().await.map_err(Error::Reqwest)?;
+            return Err(DatabaseError::Internal(format!(
+                "Failed to remove keys: HTTP {}: {}",
+                status, body
+            )));
+        }
         Ok(())
     }
 
@@ -1289,7 +1352,7 @@ impl SupabaseWalletTransaction {
         };
 
         let url = self.database.join_url("rest/v1/keyset_counter")?;
-        self.database
+        let res = self.database
             .client
             .post(url)
             .header("apikey", &self.database.api_key)
@@ -1301,9 +1364,16 @@ impl SupabaseWalletTransaction {
             .json(&item)
             .send()
             .await
-            .map_err(Error::Reqwest)?
-            .error_for_status()
             .map_err(Error::Reqwest)?;
+
+        let status = res.status();
+        if !status.is_success() {
+            let body = res.text().await.map_err(Error::Reqwest)?;
+            return Err(DatabaseError::Internal(format!(
+                "Failed to increment keyset counter: HTTP {}: {}",
+                status, body
+            )));
+        }
 
         Ok(new)
     }
@@ -1344,7 +1414,7 @@ impl SupabaseWalletTransaction {
         let url = self
             .database
             .join_url(&format!("rest/v1/transactions?id=eq.\\x{}", id_hex))?;
-        self.database
+        let res = self.database
             .client
             .delete(url)
             .header("apikey", &self.database.api_key)
@@ -1354,9 +1424,16 @@ impl SupabaseWalletTransaction {
             )
             .send()
             .await
-            .map_err(Error::Reqwest)?
-            .error_for_status()
             .map_err(Error::Reqwest)?;
+
+        let status = res.status();
+        if !status.is_success() {
+            let body = res.text().await.map_err(Error::Reqwest)?;
+            return Err(DatabaseError::Internal(format!(
+                "Failed to remove transaction: HTTP {}: {}",
+                status, body
+            )));
+        }
         Ok(())
     }
 }
@@ -1437,7 +1514,7 @@ impl cdk_common::database::KVStoreTransaction<DatabaseError> for SupabaseWalletT
         };
 
         let url = self.database.join_url("rest/v1/kv_store")?;
-        self.database
+        let res = self.database
             .client
             .post(url)
             .header("apikey", &self.database.api_key)
@@ -1449,9 +1526,16 @@ impl cdk_common::database::KVStoreTransaction<DatabaseError> for SupabaseWalletT
             .json(&item)
             .send()
             .await
-            .map_err(Error::Reqwest)?
-            .error_for_status()
             .map_err(Error::Reqwest)?;
+
+        let status = res.status();
+        if !status.is_success() {
+            let body = res.text().await.map_err(Error::Reqwest)?;
+            return Err(DatabaseError::Internal(format!(
+                "Failed to write to kv_store: HTTP {}: {}",
+                status, body
+            )));
+        }
         Ok(())
     }
 
@@ -1465,7 +1549,7 @@ impl cdk_common::database::KVStoreTransaction<DatabaseError> for SupabaseWalletT
             "rest/v1/kv_store?primary_namespace=eq.{}&secondary_namespace=eq.{}&key=eq.{}",
             primary_namespace, secondary_namespace, key
         ))?;
-        self.database
+        let res = self.database
             .client
             .delete(url)
             .header("apikey", &self.database.api_key)
@@ -1475,9 +1559,16 @@ impl cdk_common::database::KVStoreTransaction<DatabaseError> for SupabaseWalletT
             )
             .send()
             .await
-            .map_err(Error::Reqwest)?
-            .error_for_status()
             .map_err(Error::Reqwest)?;
+
+        let status = res.status();
+        if !status.is_success() {
+            let body = res.text().await.map_err(Error::Reqwest)?;
+            return Err(DatabaseError::Internal(format!(
+                "Failed to remove kv_store entry: HTTP {}: {}",
+                status, body
+            )));
+        }
         Ok(())
     }
 }

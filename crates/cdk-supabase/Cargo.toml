@@ -15,7 +15,7 @@ wallet = ["cdk-common/wallet"]
 
 [dependencies]
 async-trait.workspace = true
-cdk-common = { workspace = true, features = ["test"] }
+cdk-common = { workspace = true, features = ["test", "auth"] }
 bitcoin.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread"] }

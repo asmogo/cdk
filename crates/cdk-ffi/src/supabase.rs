@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use cdk_common::auth::oidc::OidcClient;
 use cdk_common::database::{
     wallet::Database, DbTransactionFinalizer, Error as CdkDbError, KVStoreDatabase,
     KVStoreTransaction,
@@ -93,6 +94,28 @@ impl WalletSupabaseDatabase {
         let inner = SupabaseWalletDatabase::with_jwt(url, api_key, jwt_token);
         Ok(Arc::new(WalletSupabaseDatabase { inner }))
     }
+
+    /// Create a new WalletSupabaseDatabase with OIDC client for automatic token refresh
+    ///
+    /// - `url`: The Supabase project URL
+    /// - `api_key`: The Supabase project API key (used in `apikey` header)
+    /// - `openid_discovery`: The OpenID Connect discovery URL (e.g., `https://auth.example.com/.well-known/openid-configuration`)
+    /// - `client_id`: Optional client ID for the OIDC client
+    ///
+    /// When an OIDC client is configured, the database can automatically refresh
+    /// the JWT token when it expires using the stored refresh token.
+    #[uniffi::constructor]
+    pub fn with_oidc(
+        url: String,
+        api_key: String,
+        openid_discovery: String,
+        client_id: Option<String>,
+    ) -> Result<Arc<Self>, FfiError> {
+        let url = url::Url::parse(&url).map_err(|e| FfiError::Internal { error_message: e.to_string() })?;
+        let oidc_client = OidcClient::new(openid_discovery, client_id);
+        let inner = SupabaseWalletDatabase::with_oidc(url, api_key, oidc_client);
+        Ok(Arc::new(WalletSupabaseDatabase { inner }))
+    }
 }
 
 #[uniffi::export(async_runtime = "tokio")]
@@ -113,6 +136,43 @@ impl WalletSupabaseDatabase {
     /// Get the current JWT token if set
     pub async fn get_jwt_token(&self) -> Option<String> {
         self.inner.get_jwt_token().await
+    }
+
+    /// Set the refresh token for automatic token refresh
+    ///
+    /// When both an OIDC client and refresh token are set, the database can
+    /// automatically refresh the JWT token when it expires.
+    ///
+    /// **Note**: If you've registered this database with `wallet.set_supabase_database()`,
+    /// refresh tokens are automatically synchronized when calling `wallet.set_refresh_token()`.
+    pub async fn set_refresh_token(&self, token: Option<String>) {
+        self.inner.set_refresh_token(token).await;
+    }
+
+    /// Set the token expiration time (Unix timestamp in seconds)
+    ///
+    /// When set, the database will automatically attempt to refresh the token
+    /// when it's about to expire (within 60 seconds of expiration).
+    pub async fn set_token_expiration(&self, expiration: Option<u64>) {
+        self.inner.set_token_expiration(expiration).await;
+    }
+
+    /// Refresh the access token using the stored refresh token
+    ///
+    /// This requires both an OIDC client and a refresh token to be set.
+    /// On success, the JWT token and expiration are automatically updated.
+    ///
+    /// Returns an error if:
+    /// - No OIDC client is configured
+    /// - No refresh token is set
+    /// - The refresh token request fails
+    pub async fn refresh_access_token(&self) -> Result<(), FfiError> {
+        self.inner
+            .refresh_access_token()
+            .await
+            .map_err(|e| FfiError::Internal {
+                error_message: e.to_string(),
+            })
     }
 }
 

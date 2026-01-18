@@ -37,10 +37,10 @@ pub enum Error {
     InvalidClientId,
 }
 
-impl From<Error> for cdk_common::error::Error {
+impl From<Error> for crate::error::Error {
     fn from(value: Error) -> Self {
         tracing::debug!("Clear auth verification failed: {}", value);
-        cdk_common::error::Error::ClearAuthFailed
+        crate::error::Error::ClearAuthFailed
     }
 }
 
@@ -72,6 +72,7 @@ pub enum GrantType {
 
 #[cfg(feature = "wallet")]
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub struct RefreshTokenRequest {
     pub grant_type: GrantType,
     pub client_id: String,
@@ -97,6 +98,11 @@ impl OidcClient {
             oidc_config: Arc::new(RwLock::new(None)),
             jwks_set: Arc::new(RwLock::new(None)),
         }
+    }
+
+    /// Get client id
+    pub fn client_id(&self) -> Option<String> {
+        self.client_id.clone()
     }
 
     /// Get config from oidc server

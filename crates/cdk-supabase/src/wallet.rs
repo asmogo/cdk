@@ -2,8 +2,10 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
+use cdk_common::auth::oidc::OidcClient;
 use cdk_common::common::ProofInfo;
 use cdk_common::database::{
     wallet::Database, DbTransactionFinalizer, Error as DatabaseError, KVStoreDatabase,
@@ -38,6 +40,9 @@ pub struct SupabaseWalletDatabase {
     url: Url,
     api_key: String,
     jwt_token: Arc<RwLock<Option<String>>>,
+    refresh_token: Arc<RwLock<Option<String>>>,
+    token_expiration: Arc<RwLock<Option<u64>>>,
+    oidc_client: Arc<RwLock<Option<OidcClient>>>,
     client: Client,
 }
 
@@ -51,6 +56,9 @@ impl SupabaseWalletDatabase {
             url,
             api_key,
             jwt_token: Arc::new(RwLock::new(None)),
+            refresh_token: Arc::new(RwLock::new(None)),
+            token_expiration: Arc::new(RwLock::new(None)),
+            oidc_client: Arc::new(RwLock::new(None)),
             client: Client::new(),
         }
     }
@@ -66,6 +74,22 @@ impl SupabaseWalletDatabase {
             url,
             api_key,
             jwt_token: Arc::new(RwLock::new(jwt_token)),
+            refresh_token: Arc::new(RwLock::new(None)),
+            token_expiration: Arc::new(RwLock::new(None)),
+            oidc_client: Arc::new(RwLock::new(None)),
+            client: Client::new(),
+        }
+    }
+
+    /// Create a new SupabaseWalletDatabase with OIDC client for auth
+    pub fn with_oidc(url: Url, api_key: String, oidc_client: OidcClient) -> Self {
+        Self {
+            url,
+            api_key,
+            jwt_token: Arc::new(RwLock::new(None)),
+            refresh_token: Arc::new(RwLock::new(None)),
+            token_expiration: Arc::new(RwLock::new(None)),
+            oidc_client: Arc::new(RwLock::new(Some(oidc_client))),
             client: Client::new(),
         }
     }
@@ -79,6 +103,61 @@ impl SupabaseWalletDatabase {
         *jwt = token;
     }
 
+    /// Set refresh token
+    pub async fn set_refresh_token(&self, token: Option<String>) {
+        let mut refresh = self.refresh_token.write().await;
+        *refresh = token;
+    }
+
+    /// Set token expiration
+    pub async fn set_token_expiration(&self, expiration: Option<u64>) {
+        let mut exp = self.token_expiration.write().await;
+        *exp = expiration;
+    }
+
+    /// Refresh the access token using the stored refresh token
+    pub async fn refresh_access_token(&self) -> Result<(), Error> {
+        let oidc_client = self.oidc_client.read().await;
+
+        if let Some(oidc) = oidc_client.as_ref() {
+            let refresh_token = self.refresh_token.read().await.clone();
+
+            if let Some(refresh) = refresh_token {
+                if let Some(client_id) = oidc.client_id() {
+                    let response = oidc
+                        .refresh_access_token(client_id, refresh)
+                        .await
+                        .map_err(|e| Error::Supabase(e.to_string()))?;
+
+                    self.set_jwt_token(Some(response.access_token)).await;
+
+                    if let Some(new_refresh) = response.refresh_token {
+                        self.set_refresh_token(Some(new_refresh)).await;
+                    }
+
+                    if let Some(expires_in) = response.expires_in {
+                        let expiration = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap()
+                            .as_secs()
+                            + expires_in as u64;
+                        self.set_token_expiration(Some(expiration)).await;
+                    }
+
+                    return Ok(());
+                } else {
+                    return Err(Error::Supabase(
+                        "Client ID not set in OIDC client".to_string(),
+                    ));
+                }
+            }
+        }
+
+        Err(Error::Supabase(
+            "No OIDC client or refresh token available".to_string(),
+        ))
+    }
+
     /// Get the current JWT token if set
     pub async fn get_jwt_token(&self) -> Option<String> {
         self.jwt_token.read().await.clone()
@@ -88,6 +167,21 @@ impl SupabaseWalletDatabase {
     ///
     /// Returns the JWT token if set, otherwise falls back to the API key.
     async fn get_auth_bearer(&self) -> String {
+        // Check expiration
+        let expiration = *self.token_expiration.read().await;
+        if let Some(exp) = expiration {
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            // Refresh if expired or expiring in 60 seconds
+            if now + 60 > exp {
+                if let Err(e) = self.refresh_access_token().await {
+                    tracing::warn!("Failed to refresh token: {}", e);
+                }
+            }
+        }
+
         self.jwt_token
             .read()
             .await
@@ -1349,29 +1443,53 @@ impl SupabaseWalletTransaction {
         keyset_id: &Id,
         count: u32,
     ) -> Result<u32, DatabaseError> {
-        // Assuming R-M-W for now
+        // Get current counter value (RLS ensures we only see our own data)
         let current = self.get_keyset_counter(keyset_id).await.unwrap_or(0);
         let new = current + count;
 
-        let item = KeysetCounterTable {
-            keyset_id: keyset_id.to_string(),
-            counter: new,
-            user_id: None,
-            opt_version: None,
-            _extra: Default::default(),
-        };
-
-        let url = self.database.join_url("rest/v1/keyset_counter")?;
-        let res = self
+        // For upsert to work with composite primary key (keyset_id, user_id),
+        // we need to either:
+        // 1. Use DELETE + INSERT (safe with RLS)
+        // 2. Use RPC function
+        // We'll use DELETE + INSERT approach since RLS ensures we only affect our own rows
+        
+        // First, try to delete existing counter (if any) - RLS ensures we only delete our own
+        let delete_url = self.database.join_url(&format!(
+            "rest/v1/keyset_counter?keyset_id=eq.{}",
+            keyset_id
+        ))?;
+        let _ = self
             .database
             .client
-            .post(url)
+            .delete(delete_url)
             .header("apikey", &self.database.api_key)
             .header(
                 "Authorization",
                 format!("Bearer {}", self.get_auth_bearer().await),
             )
-            .header("Prefer", "resolution=merge-duplicates")
+            .send()
+            .await
+            .map_err(Error::Reqwest)?;
+
+        // Then insert new counter - user_id will be set by database DEFAULT from JWT
+        let item = KeysetCounterTable {
+            keyset_id: keyset_id.to_string(),
+            counter: new,
+            user_id: None, // Will be set by database DEFAULT from JWT's get_current_user_id()
+            opt_version: None,
+            _extra: Default::default(),
+        };
+
+        let insert_url = self.database.join_url("rest/v1/keyset_counter")?;
+        let res = self
+            .database
+            .client
+            .post(insert_url)
+            .header("apikey", &self.database.api_key)
+            .header(
+                "Authorization",
+                format!("Bearer {}", self.get_auth_bearer().await),
+            )
             .json(&item)
             .send()
             .await
@@ -2075,10 +2193,9 @@ impl TryFrom<ProofInfo> for ProofTable {
 struct KeysetCounterTable {
     keyset_id: String,
     counter: u32,
-    // Extra fields from other applications (ignored during deserialization)
-    #[serde(default, skip_serializing)]
-    #[allow(dead_code)]
-    user_id: Option<serde_json::Value>,
+    // user_id is optional for serialization - if not set, Supabase uses DEFAULT get_current_user_id()
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    user_id: Option<String>,
     #[serde(default, skip_serializing)]
     #[allow(dead_code)]
     opt_version: Option<serde_json::Value>,

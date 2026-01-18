@@ -685,8 +685,21 @@ impl Wallet {
     }
 
     /// Set refresh token for authentication
+    ///
+    /// If a Supabase database has been configured via `set_supabase_database`,
+    /// the refresh token will also be synchronized to the database automatically.
     pub async fn set_refresh_token(&self, refresh_token: String) -> Result<(), FfiError> {
-        self.inner.set_refresh_token(refresh_token).await?;
+        self.inner.set_refresh_token(refresh_token.clone()).await?;
+
+        // Sync refresh token to Supabase database if configured
+        #[cfg(feature = "supabase")]
+        {
+            let supabase_db = self.supabase_db.read().await;
+            if let Some(db) = supabase_db.as_ref() {
+                db.set_refresh_token(Some(refresh_token)).await;
+            }
+        }
+
         Ok(())
     }
 
@@ -694,10 +707,23 @@ impl Wallet {
     ///
     /// This method refreshes the CAT token using the stored refresh token.
     /// If a Supabase database has been configured via `set_supabase_database`,
-    /// the new token will also be synchronized to the database automatically.
+    /// the database's token will also be refreshed automatically.
     pub async fn refresh_access_token(&self) -> Result<(), FfiError> {
         self.inner.refresh_access_token().await?;
 
+        // Trigger token refresh on Supabase database if configured
+        // The database uses the same OIDC client and refresh token (synced via set_refresh_token)
+        #[cfg(feature = "supabase")]
+        {
+            let supabase_db = self.supabase_db.read().await;
+            if let Some(db) = supabase_db.as_ref() {
+                // Attempt to refresh the database token - this is best-effort
+                // since the database also has automatic token refresh in get_auth_bearer()
+                if let Err(e) = db.refresh_access_token().await {
+                    tracing::warn!("Failed to refresh Supabase database token: {:?}", e);
+                }
+            }
+        }
 
         Ok(())
     }

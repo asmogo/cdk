@@ -203,7 +203,6 @@ impl OidcClient {
         match decode::<HashMap<String, serde_json::Value>>(cat_jwt, &decoding_key, &validation) {
             Ok(claims) => {
                 tracing::debug!("Successfully verified cat");
-                tracing::debug!("Claims: {:?}", claims.claims);
                 if let Some(client_id) = &self.client_id {
                     if let Some(token_client_id) = claims.claims.get("client_id") {
                         if let Some(token_client_id_value) = token_client_id.as_str() {

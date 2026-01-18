@@ -1,7 +1,6 @@
 [workspace]
 members = [
     "crates/*",
-    "crates/cdk-supabase",
 ]
 exclude = [
     "fuzz",

@@ -116,6 +116,13 @@ impl SupabaseWalletDatabase {
     }
 
     /// Refresh the access token using the stored refresh token
+    ///
+    /// # Panics
+    ///
+    /// This function will never panic in practice. The `expect` call on
+    /// `SystemTime::now().duration_since(UNIX_EPOCH)` can only fail if the
+    /// system clock is set before January 1, 1970, which is not possible
+    /// on any reasonable system.
     pub async fn refresh_access_token(&self) -> Result<(), Error> {
         let oidc_client = self.oidc_client.read().await;
 
@@ -138,7 +145,7 @@ impl SupabaseWalletDatabase {
                     if let Some(expires_in) = response.expires_in {
                         let expiration = SystemTime::now()
                             .duration_since(UNIX_EPOCH)
-                            .unwrap()
+                            .expect("SystemTime should be after UNIX_EPOCH")
                             .as_secs()
                             + expires_in as u64;
                         self.set_token_expiration(Some(expiration)).await;
@@ -172,7 +179,7 @@ impl SupabaseWalletDatabase {
         if let Some(exp) = expiration {
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .expect("SystemTime should be after UNIX_EPOCH")
                 .as_secs();
             // Refresh if expired or expiring in 60 seconds
             if now + 60 > exp {
@@ -234,7 +241,7 @@ impl KVStoreDatabase for SupabaseWalletDatabase {
         }
 
         if !res.status().is_success() {
-            return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+            return Err(Error::Reqwest(res.error_for_status().expect_err("Status was already checked")).into());
         }
         let text = res.text().await.map_err(Error::Reqwest)?;
         if text.trim().is_empty() || text.trim() == "[]" {
@@ -271,7 +278,7 @@ impl KVStoreDatabase for SupabaseWalletDatabase {
             .map_err(Error::Reqwest)?;
 
         if !res.status().is_success() {
-            return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+            return Err(Error::Reqwest(res.error_for_status().expect_err("Status was already checked")).into());
         }
         let text = res.text().await.map_err(Error::Reqwest)?;
         if text.trim().is_empty() || text.trim() == "[]" {
@@ -300,7 +307,7 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
         }
 
         if !res.status().is_success() {
-            return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+            return Err(Error::Reqwest(res.error_for_status().expect_err("Status was already checked")).into());
         }
         let text = res.text().await.map_err(Error::Reqwest)?;
         if text.trim().is_empty() || text.trim() == "[]" {
@@ -327,7 +334,7 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
             .map_err(Error::Reqwest)?;
 
         if !res.status().is_success() {
-            return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+            return Err(Error::Reqwest(res.error_for_status().expect_err("Status was already checked")).into());
         }
 
         let text = res.text().await.map_err(Error::Reqwest)?;
@@ -364,7 +371,7 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
             .map_err(Error::Reqwest)?;
 
         if !res.status().is_success() {
-            return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+            return Err(Error::Reqwest(res.error_for_status().expect_err("Status was already checked")).into());
         }
 
         let text = res.text().await.map_err(Error::Reqwest)?;
@@ -408,7 +415,7 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
             .map_err(Error::Reqwest)?;
 
         if !res.status().is_success() {
-            return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+            return Err(Error::Reqwest(res.error_for_status().expect_err("Status was already checked")).into());
         }
         let text = res.text().await.map_err(Error::Reqwest)?;
         if text.trim().is_empty() || text.trim() == "[]" {
@@ -435,7 +442,7 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
             .map_err(Error::Reqwest)?;
 
         if !res.status().is_success() {
-            return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+            return Err(Error::Reqwest(res.error_for_status().expect_err("Status was already checked")).into());
         }
         let text = res.text().await.map_err(Error::Reqwest)?;
         if text.trim().is_empty() || text.trim() == "[]" {
@@ -470,7 +477,7 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
             .map_err(Error::Reqwest)?;
 
         if !res.status().is_success() {
-            return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+            return Err(Error::Reqwest(res.error_for_status().expect_err("Status was already checked")).into());
         }
         let text = res.text().await.map_err(Error::Reqwest)?;
         if text.trim().is_empty() || text.trim() == "[]" {
@@ -517,7 +524,7 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
             .map_err(Error::Reqwest)?;
 
         if !res.status().is_success() {
-            return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+            return Err(Error::Reqwest(res.error_for_status().expect_err("Status was already checked")).into());
         }
         let text = res.text().await.map_err(Error::Reqwest)?;
         if text.trim().is_empty() || text.trim() == "[]" {
@@ -562,7 +569,7 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
         }
 
         if !res.status().is_success() {
-            return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+            return Err(Error::Reqwest(res.error_for_status().expect_err("Status was already checked")).into());
         }
         let text = res.text().await.map_err(Error::Reqwest)?;
         if text.trim().is_empty() || text.trim() == "[]" {
@@ -605,7 +612,7 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
             .map_err(Error::Reqwest)?;
 
         if !res.status().is_success() {
-            return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+            return Err(Error::Reqwest(res.error_for_status().expect_err("Status was already checked")).into());
         }
         let text = res.text().await.map_err(Error::Reqwest)?;
         if text.trim().is_empty() || text.trim() == "[]" {
@@ -943,7 +950,7 @@ impl SupabaseWalletTransaction {
         }
 
         if !res.status().is_success() {
-            return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+            return Err(Error::Reqwest(res.error_for_status().expect_err("Status was already checked")).into());
         }
         let text = res.text().await.map_err(Error::Reqwest)?;
         if text.trim().is_empty() || text.trim() == "[]" {
@@ -979,7 +986,7 @@ impl SupabaseWalletTransaction {
         }
 
         if !res.status().is_success() {
-            return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+            return Err(Error::Reqwest(res.error_for_status().expect_err("Status was already checked")).into());
         }
         let text = res.text().await.map_err(Error::Reqwest)?;
         if text.trim().is_empty() || text.trim() == "[]" {
@@ -1054,7 +1061,7 @@ impl SupabaseWalletTransaction {
             .map_err(Error::Reqwest)?;
 
         if !res.status().is_success() {
-            return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+            return Err(Error::Reqwest(res.error_for_status().expect_err("Status was already checked")).into());
         }
         let text = res.text().await.map_err(Error::Reqwest)?;
         if text.trim().is_empty() {
@@ -1146,7 +1153,7 @@ impl SupabaseWalletTransaction {
             .map_err(Error::Reqwest)?;
 
         if !res.status().is_success() {
-            return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+            return Err(Error::Reqwest(res.error_for_status().expect_err("Status was already checked")).into());
         }
         let text = res.text().await.map_err(Error::Reqwest)?;
         if text.trim().is_empty() {
@@ -1311,7 +1318,7 @@ impl SupabaseWalletTransaction {
             .map_err(Error::Reqwest)?;
 
         if !res.status().is_success() {
-            return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+            return Err(Error::Reqwest(res.error_for_status().expect_err("Status was already checked")).into());
         }
         let text = res.text().await.map_err(Error::Reqwest)?;
         if text.trim().is_empty() {
@@ -1589,7 +1596,7 @@ impl SupabaseWalletTransaction {
             .map_err(Error::Reqwest)?;
 
         if !res.status().is_success() {
-            return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+            return Err(Error::Reqwest(res.error_for_status().expect_err("Status was already checked")).into());
         }
         let text = res.text().await.map_err(Error::Reqwest)?;
         if text.trim().is_empty() {

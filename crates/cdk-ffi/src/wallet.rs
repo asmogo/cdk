@@ -709,8 +709,7 @@ impl Wallet {
             let supabase_db = self.supabase_db.read().await;
             if let Some(db) = supabase_db.as_ref() {
                 // Get the new token from the auth wallet and sync it
-                #[cfg(feature = "auth")]
-                if let Some(auth_wallet) = self.inner.auth_wallet.read().await.as_ref() {
+                if let Some(auth_wallet) = self.inner.get_auth_wallet().await {
                     if let Ok(auth_token) = auth_wallet.get_auth_token().await {
                         if let cdk::nuts::AuthToken::ClearAuth(cat) = auth_token {
                             db.set_jwt_token(Some(cat)).await;

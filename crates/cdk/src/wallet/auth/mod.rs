@@ -164,4 +164,9 @@ impl Wallet {
         self.client.set_auth_wallet(auth_wallet).await;
         println!("[DEBUG] set_auth_client: updated client's auth_wallet");
     }
+
+    /// Get the auth wallet
+    pub async fn get_auth_wallet(&self) -> Option<AuthWallet> {
+        self.auth_wallet.read().await.clone()
+    }
 }

@@ -30,4 +30,5 @@ libcdk_ffi*
 cdk_ffi.py
 
 # llm artifacts
-AGENTS.md
+
+logs/

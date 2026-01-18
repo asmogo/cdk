@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use cdk_common::common::ProofInfo;
 use cdk_common::database::{
     wallet::Database, DbTransactionFinalizer, Error as DatabaseError, KVStoreDatabase,
-    KVStoreTransaction, WalletDatabase,
+    KVStoreTransaction,
 };
 use cdk_common::mint_url::MintUrl;
 use cdk_common::nuts::{
@@ -140,11 +140,11 @@ impl KVStoreDatabase for SupabaseWalletDatabase {
         }
 
         if !res.status().is_success() {
-             return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+            return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
         }
         let text = res.text().await.map_err(Error::Reqwest)?;
         if text.trim().is_empty() || text.trim() == "[]" {
-             return Ok(None);
+            return Ok(None);
         }
         let items: Vec<KVStoreTable> = serde_json::from_str(&text).map_err(Error::Serde)?;
         if let Some(item) = items.into_iter().next() {
@@ -177,11 +177,11 @@ impl KVStoreDatabase for SupabaseWalletDatabase {
             .map_err(Error::Reqwest)?;
 
         if !res.status().is_success() {
-             return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+            return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
         }
         let text = res.text().await.map_err(Error::Reqwest)?;
         if text.trim().is_empty() || text.trim() == "[]" {
-             return Ok(Vec::new());
+            return Ok(Vec::new());
         }
         let items: Vec<KVStoreTable> = serde_json::from_str(&text).map_err(Error::Serde)?;
         Ok(items.into_iter().map(|i| i.key).collect())
@@ -206,11 +206,11 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
         }
 
         if !res.status().is_success() {
-             return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+            return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
         }
         let text = res.text().await.map_err(Error::Reqwest)?;
         if text.trim().is_empty() || text.trim() == "[]" {
-             return Ok(None);
+            return Ok(None);
         }
         let mints: Vec<MintTable> = serde_json::from_str(&text).map_err(Error::Serde)?;
         if let Some(mint) = mints.into_iter().next() {
@@ -233,7 +233,7 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
             .map_err(Error::Reqwest)?;
 
         if !res.status().is_success() {
-             return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+            return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
         }
 
         let text = res.text().await.map_err(Error::Reqwest)?;
@@ -247,7 +247,7 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
         let mut map = HashMap::new();
         for mint in mints {
             map.insert(
-                 MintUrl::from_str(&mint.mint_url)
+                MintUrl::from_str(&mint.mint_url)
                     .map_err(|e| DatabaseError::Internal(e.to_string()))?,
                 Some(mint.try_into()?),
             );
@@ -271,7 +271,7 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
             .map_err(Error::Reqwest)?;
 
         if !res.status().is_success() {
-             return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+            return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
         }
 
         let text = res.text().await.map_err(Error::Reqwest)?;
@@ -315,11 +315,11 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
             .map_err(Error::Reqwest)?;
 
         if !res.status().is_success() {
-             return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+            return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
         }
         let text = res.text().await.map_err(Error::Reqwest)?;
         if text.trim().is_empty() || text.trim() == "[]" {
-             return Ok(Vec::new());
+            return Ok(Vec::new());
         }
         let quotes: Vec<MintQuoteTable> = serde_json::from_str(&text).map_err(Error::Serde)?;
         let mut result = Vec::new();
@@ -342,11 +342,11 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
             .map_err(Error::Reqwest)?;
 
         if !res.status().is_success() {
-             return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+            return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
         }
         let text = res.text().await.map_err(Error::Reqwest)?;
         if text.trim().is_empty() || text.trim() == "[]" {
-             return Ok(Vec::new());
+            return Ok(Vec::new());
         }
         let quotes: Vec<MintQuoteTable> = serde_json::from_str(&text).map_err(Error::Serde)?;
         let mut result = Vec::new();
@@ -377,11 +377,11 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
             .map_err(Error::Reqwest)?;
 
         if !res.status().is_success() {
-             return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+            return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
         }
         let text = res.text().await.map_err(Error::Reqwest)?;
         if text.trim().is_empty() || text.trim() == "[]" {
-             return Ok(Vec::new());
+            return Ok(Vec::new());
         }
         let quotes: Vec<MeltQuoteTable> = serde_json::from_str(&text).map_err(Error::Serde)?;
         let mut result = Vec::new();
@@ -424,11 +424,11 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
             .map_err(Error::Reqwest)?;
 
         if !res.status().is_success() {
-             return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+            return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
         }
         let text = res.text().await.map_err(Error::Reqwest)?;
         if text.trim().is_empty() || text.trim() == "[]" {
-             return Ok(Vec::new());
+            return Ok(Vec::new());
         }
         let proofs: Vec<ProofTable> = serde_json::from_str(&text).map_err(Error::Serde)?;
         let mut result = Vec::new();
@@ -469,11 +469,11 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
         }
 
         if !res.status().is_success() {
-             return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+            return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
         }
         let text = res.text().await.map_err(Error::Reqwest)?;
         if text.trim().is_empty() || text.trim() == "[]" {
-             return Ok(None);
+            return Ok(None);
         }
         let txs: Vec<TransactionTable> = serde_json::from_str(&text).map_err(Error::Serde)?;
         if let Some(t) = txs.into_iter().next() {
@@ -512,11 +512,11 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
             .map_err(Error::Reqwest)?;
 
         if !res.status().is_success() {
-             return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+            return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
         }
         let text = res.text().await.map_err(Error::Reqwest)?;
         if text.trim().is_empty() || text.trim() == "[]" {
-             return Ok(Vec::new());
+            return Ok(Vec::new());
         }
         let txs: Vec<TransactionTable> = serde_json::from_str(&text).map_err(Error::Serde)?;
         let mut result = Vec::new();
@@ -685,6 +685,7 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
     }
 }
 
+#[derive(Debug)]
 pub struct SupabaseWalletTransaction {
     database: SupabaseWalletDatabase,
 }
@@ -709,7 +710,8 @@ impl SupabaseWalletTransaction {
         };
 
         let url = self.database.join_url("rest/v1/mint")?;
-        let res = self.database
+        let res = self
+            .database
             .client
             .post(url)
             .header("apikey", &self.database.api_key)
@@ -739,7 +741,8 @@ impl SupabaseWalletTransaction {
         let url = self
             .database
             .join_url(&format!("rest/v1/mint?mint_url=eq.{}", mint_url))?;
-        let res = self.database
+        let res = self
+            .database
             .client
             .delete(url)
             .header("apikey", &self.database.api_key)
@@ -770,7 +773,8 @@ impl SupabaseWalletTransaction {
         let url = self
             .database
             .join_url(&format!("rest/v1/mint_quote?mint_url=eq.{}", old_mint_url))?;
-        let res = self.database
+        let res = self
+            .database
             .client
             .patch(url)
             .header("apikey", &self.database.api_key)
@@ -795,7 +799,8 @@ impl SupabaseWalletTransaction {
         let url = self
             .database
             .join_url(&format!("rest/v1/proof?mint_url=eq.{}", old_mint_url))?;
-        let res = self.database
+        let res = self
+            .database
             .client
             .patch(url)
             .header("apikey", &self.database.api_key)
@@ -845,11 +850,11 @@ impl SupabaseWalletTransaction {
         }
 
         if !res.status().is_success() {
-             return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+            return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
         }
         let text = res.text().await.map_err(Error::Reqwest)?;
         if text.trim().is_empty() || text.trim() == "[]" {
-             return Ok(None);
+            return Ok(None);
         }
         let items: Vec<KeySetTable> = serde_json::from_str(&text).map_err(Error::Serde)?;
         if let Some(item) = items.into_iter().next() {
@@ -881,11 +886,11 @@ impl SupabaseWalletTransaction {
         }
 
         if !res.status().is_success() {
-             return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+            return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
         }
         let text = res.text().await.map_err(Error::Reqwest)?;
         if text.trim().is_empty() || text.trim() == "[]" {
-             return Ok(None);
+            return Ok(None);
         }
         let items: Vec<KeyTable> = serde_json::from_str(&text).map_err(Error::Serde)?;
         if let Some(item) = items.into_iter().next() {
@@ -956,11 +961,11 @@ impl SupabaseWalletTransaction {
             .map_err(Error::Reqwest)?;
 
         if !res.status().is_success() {
-             return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+            return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
         }
         let text = res.text().await.map_err(Error::Reqwest)?;
         if text.trim().is_empty() {
-             return Ok(None);
+            return Ok(None);
         }
         let items: Vec<MintQuoteTable> = serde_json::from_str(&text).map_err(Error::Serde)?;
         if let Some(item) = items.into_iter().next() {
@@ -973,7 +978,8 @@ impl SupabaseWalletTransaction {
     async fn add_mint_quote(&mut self, quote: MintQuote) -> Result<(), DatabaseError> {
         let item: MintQuoteTable = quote.try_into()?;
         let url = self.database.join_url("rest/v1/mint_quote")?;
-        let res = self.database
+        let res = self
+            .database
             .client
             .post(url)
             .header("apikey", &self.database.api_key)
@@ -1002,7 +1008,8 @@ impl SupabaseWalletTransaction {
         let url = self
             .database
             .join_url(&format!("rest/v1/mint_quote?id=eq.{}", quote_id))?;
-        let res = self.database
+        let res = self
+            .database
             .client
             .delete(url)
             .header("apikey", &self.database.api_key)
@@ -1046,11 +1053,11 @@ impl SupabaseWalletTransaction {
             .map_err(Error::Reqwest)?;
 
         if !res.status().is_success() {
-             return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+            return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
         }
         let text = res.text().await.map_err(Error::Reqwest)?;
         if text.trim().is_empty() {
-             return Ok(None);
+            return Ok(None);
         }
         let items: Vec<MeltQuoteTable> = serde_json::from_str(&text).map_err(Error::Serde)?;
         if let Some(item) = items.into_iter().next() {
@@ -1063,7 +1070,8 @@ impl SupabaseWalletTransaction {
     async fn add_melt_quote(&mut self, quote: wallet::MeltQuote) -> Result<(), DatabaseError> {
         let item: MeltQuoteTable = quote.try_into()?;
         let url = self.database.join_url("rest/v1/melt_quote")?;
-        let res = self.database
+        let res = self
+            .database
             .client
             .post(url)
             .header("apikey", &self.database.api_key)
@@ -1092,7 +1100,8 @@ impl SupabaseWalletTransaction {
         let url = self
             .database
             .join_url(&format!("rest/v1/melt_quote?id=eq.{}", quote_id))?;
-        let res = self.database
+        let res = self
+            .database
             .client
             .delete(url)
             .header("apikey", &self.database.api_key)
@@ -1120,7 +1129,8 @@ impl SupabaseWalletTransaction {
         let item = KeyTable::from_keyset(&keyset)?;
 
         let url = self.database.join_url("rest/v1/key")?;
-        let res = self.database
+        let res = self
+            .database
             .client
             .post(url)
             .header("apikey", &self.database.api_key)
@@ -1149,7 +1159,8 @@ impl SupabaseWalletTransaction {
         let url = self
             .database
             .join_url(&format!("rest/v1/key?id=eq.{}", id))?;
-        let res = self.database
+        let res = self
+            .database
             .client
             .delete(url)
             .header("apikey", &self.database.api_key)
@@ -1207,17 +1218,17 @@ impl SupabaseWalletTransaction {
             .map_err(Error::Reqwest)?;
 
         if !res.status().is_success() {
-             return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+            return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
         }
         let text = res.text().await.map_err(Error::Reqwest)?;
         if text.trim().is_empty() {
-             return Ok(Vec::new());
+            return Ok(Vec::new());
         }
         let proofs: Vec<ProofTable> = serde_json::from_str(&text).map_err(Error::Serde)?;
         let mut result = Vec::new();
         for p in proofs {
             let info: ProofInfo = p.try_into()?;
-            if let Some(conds) = &spending_conditions {
+            if let Some(_conds) = &spending_conditions {
                 // memory filter
                 result.push(info);
             } else {
@@ -1352,7 +1363,8 @@ impl SupabaseWalletTransaction {
         };
 
         let url = self.database.join_url("rest/v1/keyset_counter")?;
-        let res = self.database
+        let res = self
+            .database
             .client
             .post(url)
             .header("apikey", &self.database.api_key)
@@ -1381,7 +1393,8 @@ impl SupabaseWalletTransaction {
     async fn add_transaction(&mut self, transaction: Transaction) -> Result<(), DatabaseError> {
         let item: TransactionTable = transaction.try_into()?;
         let url = self.database.join_url("rest/v1/transactions")?;
-        let res = self.database
+        let res = self
+            .database
             .client
             .post(url)
             .header("apikey", &self.database.api_key)
@@ -1414,7 +1427,8 @@ impl SupabaseWalletTransaction {
         let url = self
             .database
             .join_url(&format!("rest/v1/transactions?id=eq.\\x{}", id_hex))?;
-        let res = self.database
+        let res = self
+            .database
             .client
             .delete(url)
             .header("apikey", &self.database.api_key)
@@ -1458,11 +1472,11 @@ impl SupabaseWalletTransaction {
             .map_err(Error::Reqwest)?;
 
         if !res.status().is_success() {
-             return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
+            return Err(Error::Reqwest(res.error_for_status().unwrap_err()).into());
         }
         let text = res.text().await.map_err(Error::Reqwest)?;
         if text.trim().is_empty() {
-             return Ok(0);
+            return Ok(0);
         }
         let items: Vec<KeysetCounterTable> = serde_json::from_str(&text).map_err(Error::Serde)?;
         if let Some(item) = items.into_iter().next() {
@@ -1514,7 +1528,8 @@ impl cdk_common::database::KVStoreTransaction<DatabaseError> for SupabaseWalletT
         };
 
         let url = self.database.join_url("rest/v1/kv_store")?;
-        let res = self.database
+        let res = self
+            .database
             .client
             .post(url)
             .header("apikey", &self.database.api_key)
@@ -1549,7 +1564,8 @@ impl cdk_common::database::KVStoreTransaction<DatabaseError> for SupabaseWalletT
             "rest/v1/kv_store?primary_namespace=eq.{}&secondary_namespace=eq.{}&key=eq.{}",
             primary_namespace, secondary_namespace, key
         ))?;
-        let res = self.database
+        let res = self
+            .database
             .client
             .delete(url)
             .header("apikey", &self.database.api_key)
@@ -1599,8 +1615,10 @@ struct KVStoreTable {
     value: String, // hex encoded bytea
     // Extra fields from other applications (ignored during deserialization)
     #[serde(default, skip_serializing)]
+    #[allow(dead_code)]
     user_id: Option<serde_json::Value>,
     #[serde(default, skip_serializing)]
+    #[allow(dead_code)]
     opt_version: Option<serde_json::Value>,
     #[serde(flatten)]
     _extra: serde_json::Map<String, serde_json::Value>,
@@ -1623,8 +1641,10 @@ struct MintTable {
     tos_url: Option<String>,
     // Extra fields from other applications (ignored during deserialization)
     #[serde(default, skip_serializing)]
+    #[allow(dead_code)]
     user_id: Option<serde_json::Value>,
     #[serde(default, skip_serializing)]
+    #[allow(dead_code)]
     opt_version: Option<serde_json::Value>,
     #[serde(flatten)]
     _extra: serde_json::Map<String, serde_json::Value>,
@@ -1722,8 +1742,10 @@ struct KeySetTable {
     keyset_u32: Option<i64>,
     // Extra fields from other applications (ignored during deserialization)
     #[serde(default, skip_serializing)]
+    #[allow(dead_code)]
     user_id: Option<serde_json::Value>,
     #[serde(default, skip_serializing)]
+    #[allow(dead_code)]
     opt_version: Option<serde_json::Value>,
     #[serde(flatten)]
     _extra: serde_json::Map<String, serde_json::Value>,
@@ -1767,8 +1789,10 @@ struct KeyTable {
     keyset_u32: Option<i64>,
     // Extra fields from other applications (ignored during deserialization)
     #[serde(default, skip_serializing)]
+    #[allow(dead_code)]
     user_id: Option<serde_json::Value>,
     #[serde(default, skip_serializing)]
+    #[allow(dead_code)]
     opt_version: Option<serde_json::Value>,
     #[serde(flatten)]
     _extra: serde_json::Map<String, serde_json::Value>,
@@ -1809,8 +1833,10 @@ struct MintQuoteTable {
     amount_paid: i64,
     // Extra fields from other applications (ignored during deserialization)
     #[serde(default, skip_serializing)]
+    #[allow(dead_code)]
     user_id: Option<serde_json::Value>,
     #[serde(default, skip_serializing)]
+    #[allow(dead_code)]
     opt_version: Option<serde_json::Value>,
     #[serde(flatten)]
     _extra: serde_json::Map<String, serde_json::Value>,
@@ -1880,8 +1906,10 @@ struct MeltQuoteTable {
     payment_method: String,
     // Extra fields from other applications (ignored during deserialization)
     #[serde(default, skip_serializing)]
+    #[allow(dead_code)]
     user_id: Option<serde_json::Value>,
     #[serde(default, skip_serializing)]
+    #[allow(dead_code)]
     opt_version: Option<serde_json::Value>,
     #[serde(flatten)]
     _extra: serde_json::Map<String, serde_json::Value>,
@@ -1944,8 +1972,10 @@ struct ProofTable {
     dleq_r: Option<String>,
     // Extra fields from other applications (ignored during deserialization)
     #[serde(default, skip_serializing)]
+    #[allow(dead_code)]
     user_id: Option<serde_json::Value>,
     #[serde(default, skip_serializing)]
+    #[allow(dead_code)]
     opt_version: Option<serde_json::Value>,
     #[serde(flatten)]
     _extra: serde_json::Map<String, serde_json::Value>,
@@ -1978,7 +2008,11 @@ impl TryInto<ProofInfo> for ProofTable {
                 secret: Secret::from_str(&self.secret)
                     .map_err(|_| DatabaseError::Internal("Invalid secret".into()))?,
                 c,
-                witness: self.witness.filter(|w| !w.trim().is_empty()).map(|w| serde_json::from_str(&w)).transpose()?,
+                witness: self
+                    .witness
+                    .filter(|w| !w.trim().is_empty())
+                    .map(|w| serde_json::from_str(&w))
+                    .transpose()?,
                 dleq: match (self.dleq_e, self.dleq_s, self.dleq_r) {
                     (Some(e), Some(s), Some(r)) => Some(cdk_common::ProofDleq {
                         e: cdk_common::SecretKey::from_hex(&e)
@@ -2044,8 +2078,10 @@ struct KeysetCounterTable {
     counter: u32,
     // Extra fields from other applications (ignored during deserialization)
     #[serde(default, skip_serializing)]
+    #[allow(dead_code)]
     user_id: Option<serde_json::Value>,
     #[serde(default, skip_serializing)]
+    #[allow(dead_code)]
     opt_version: Option<serde_json::Value>,
     #[serde(flatten)]
     _extra: serde_json::Map<String, serde_json::Value>,
@@ -2069,8 +2105,10 @@ struct TransactionTable {
     payment_method: Option<String>,
     // Extra fields from other applications (ignored during deserialization)
     #[serde(default, skip_serializing)]
+    #[allow(dead_code)]
     user_id: Option<serde_json::Value>,
     #[serde(default, skip_serializing)]
+    #[allow(dead_code)]
     opt_version: Option<serde_json::Value>,
     #[serde(flatten)]
     _extra: serde_json::Map<String, serde_json::Value>,
@@ -2081,7 +2119,7 @@ impl TryInto<Transaction> for TransactionTable {
     fn try_into(self) -> Result<Transaction, Self::Error> {
         let id_bytes = hex::decode(&self.id)
             .map_err(|_| DatabaseError::Internal("Invalid transaction id hex".into()))?;
-        let id_arr: [u8; 32] = id_bytes
+        let _id_arr: [u8; 32] = id_bytes
             .try_into()
             .map_err(|_| DatabaseError::Internal("Invalid transaction id len".into()))?;
 

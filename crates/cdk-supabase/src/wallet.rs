@@ -237,7 +237,6 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
         }
 
         let text = res.text().await.map_err(Error::Reqwest)?;
-        println!("DEBUG: get_mints response: '{}'", text);
 
         if text.trim().is_empty() {
             return Ok(HashMap::new());

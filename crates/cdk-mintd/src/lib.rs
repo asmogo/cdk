@@ -30,8 +30,7 @@ use cdk::nuts::nut19::{CachedEndpoint, Method as NUT19Method, Path as NUT19Path}
     feature = "cln",
     feature = "lnbits",
     feature = "lnd",
-    feature = "ldk-node",
-    feature = "fakewallet"
+    feature = "ldk-node"
 ))]
 use cdk::nuts::CurrencyUnit;
 #[cfg(feature = "auth")]
@@ -142,6 +141,7 @@ pub fn setup_tracing(
 
             tracing_subscriber::fmt()
                 .with_env_filter(env_filter)
+                .with_ansi(false)
                 .with_writer(stderr)
                 .init();
 
@@ -169,6 +169,7 @@ pub fn setup_tracing(
 
             tracing_subscriber::fmt()
                 .with_env_filter(env_filter)
+                .with_ansi(false)
                 .with_writer(file_writer)
                 .init();
 
@@ -208,6 +209,7 @@ pub fn setup_tracing(
 
             tracing_subscriber::fmt()
                 .with_env_filter(env_filter)
+                .with_ansi(false)
                 .with_writer(stderr.and(file_writer))
                 .init();
 
@@ -881,7 +883,7 @@ async fn build_mint(
 async fn start_services_with_shutdown(
     mint: Arc<cdk::mint::Mint>,
     settings: &config::Settings,
-    work_dir: &Path,
+    _work_dir: &Path,
     mint_builder_info: cdk::nuts::MintInfo,
     shutdown_signal: impl std::future::Future<Output = ()> + Send + 'static,
     routers: Vec<Router>,
@@ -907,7 +909,7 @@ async fn start_services_with_shutdown(
                 let port = rpc_settings.port.unwrap_or(8086);
                 let mut mint_rpc = cdk_mint_rpc::MintRPCServer::new(&addr, port, mint.clone())?;
 
-                let tls_dir = rpc_settings.tls_dir_path.unwrap_or(work_dir.join("tls"));
+                let tls_dir = rpc_settings.tls_dir_path.unwrap_or(_work_dir.join("tls"));
 
                 let tls_dir = if tls_dir.exists() {
                     Some(tls_dir)

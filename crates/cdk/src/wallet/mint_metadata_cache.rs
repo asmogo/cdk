@@ -143,6 +143,13 @@ impl std::fmt::Debug for MintMetadataCache {
 
 impl Wallet {
     /// Sets the metadata cache TTL
+    ///
+    /// The TTL determines how often the wallet checks the mint for new keysets and information.
+    ///
+    /// If `None`, the cache will never expire and the wallet will use cached data indefinitely
+    /// (unless manually refreshed).
+    ///
+    /// The default value is 1 hour (3600 seconds).
     pub fn set_metadata_cache_ttl(&self, ttl: Option<Duration>) {
         let mut guarded_ttl = self.metadata_cache_ttl.write();
         *guarded_ttl = ttl;
@@ -502,6 +509,8 @@ impl MintMetadataCache {
                 let keyset = KeySet {
                     id: *keyset_id,
                     unit: keyset_info.unit.clone(),
+                    active: Some(keyset_info.active),
+                    input_fee_ppk: keyset_info.input_fee_ppk,
                     final_expiry: keyset_info.final_expiry,
                     keys: (**keys).clone(),
                 };

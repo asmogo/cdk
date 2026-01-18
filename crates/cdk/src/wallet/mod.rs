@@ -107,6 +107,8 @@ pub struct Wallet {
     metadata_cache_ttl: Arc<RwLock<Option<Duration>>>,
     #[cfg(feature = "auth")]
     auth_wallet: Arc<TokioRwLock<Option<AuthWallet>>>,
+    #[cfg(feature = "npubcash")]
+    npubcash_client: Arc<TokioRwLock<Option<Arc<cdk_npubcash::NpubCashClient>>>>,
     seed: [u8; 64],
     client: Arc<dyn MintConnector + Send + Sync>,
     subscription: SubscriptionManager,
@@ -176,8 +178,6 @@ impl Wallet {
     /// use std::sync::Arc;
     ///
     /// use bitcoin::bip32::Xpriv;
-    /// use std::sync::Arc;
-    ///
     /// use cdk::nuts::CurrencyUnit;
     /// use cdk::wallet::{Wallet, WalletBuilder};
     /// use cdk_sqlite::wallet::memory;

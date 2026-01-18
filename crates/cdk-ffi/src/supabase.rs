@@ -67,7 +67,7 @@ impl WalletSupabaseDatabase {
     /// Use [`with_jwt`] if you need separate JWT authentication.
     #[uniffi::constructor]
     pub fn new(url: String, api_key: String) -> Result<Arc<Self>, FfiError> {
-        let url = url::Url::parse(&url).map_err(|e| FfiError::InvalidUrl { msg: e.to_string() })?;
+        let url = url::Url::parse(&url).map_err(|e| FfiError::Internal { error_message: e.to_string() })?;
         let inner = SupabaseWalletDatabase::new(url, api_key);
         Ok(Arc::new(WalletSupabaseDatabase { inner }))
     }
@@ -89,7 +89,7 @@ impl WalletSupabaseDatabase {
         api_key: String,
         jwt_token: Option<String>,
     ) -> Result<Arc<Self>, FfiError> {
-        let url = url::Url::parse(&url).map_err(|e| FfiError::InvalidUrl { msg: e.to_string() })?;
+        let url = url::Url::parse(&url).map_err(|e| FfiError::Internal { error_message: e.to_string() })?;
         let inner = SupabaseWalletDatabase::with_jwt(url, api_key, jwt_token);
         Ok(Arc::new(WalletSupabaseDatabase { inner }))
     }
@@ -128,7 +128,7 @@ impl WalletDatabase for WalletSupabaseDatabase {
 
         let result = Database::get_proofs_by_ys(&self.inner, cdk_ys)
             .await
-            .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })?;
+            .map_err(|e: CdkDbError| FfiError::Internal { error_message: e.to_string() })?;
 
         Ok(result.into_iter().map(Into::into).collect())
     }
@@ -137,14 +137,14 @@ impl WalletDatabase for WalletSupabaseDatabase {
         let cdk_mint_url = mint_url.try_into()?;
         let result = Database::get_mint(&self.inner, cdk_mint_url)
             .await
-            .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })?;
+            .map_err(|e: CdkDbError| FfiError::Internal { error_message: e.to_string() })?;
         Ok(result.map(Into::into))
     }
 
     async fn get_mints(&self) -> Result<HashMap<MintUrl, Option<MintInfo>>, FfiError> {
         let result = Database::get_mints(&self.inner)
             .await
-            .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })?;
+            .map_err(|e: CdkDbError| FfiError::Internal { error_message: e.to_string() })?;
         Ok(result
             .into_iter()
             .map(|(k, v)| (k.into(), v.map(Into::into)))
@@ -158,7 +158,7 @@ impl WalletDatabase for WalletSupabaseDatabase {
         let cdk_mint_url = mint_url.try_into()?;
         let result = Database::get_mint_keysets(&self.inner, cdk_mint_url)
             .await
-            .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })?;
+            .map_err(|e: CdkDbError| FfiError::Internal { error_message: e.to_string() })?;
         Ok(result.map(|keysets| keysets.into_iter().map(Into::into).collect()))
     }
 
@@ -166,42 +166,42 @@ impl WalletDatabase for WalletSupabaseDatabase {
         let cdk_id = keyset_id.into();
         let result = Database::get_keyset_by_id(&self.inner, &cdk_id)
             .await
-            .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })?;
+            .map_err(|e: CdkDbError| FfiError::Internal { error_message: e.to_string() })?;
         Ok(result.map(Into::into))
     }
 
     async fn get_mint_quote(&self, quote_id: String) -> Result<Option<MintQuote>, FfiError> {
         let result = Database::get_mint_quote(&self.inner, &quote_id)
             .await
-            .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })?;
+            .map_err(|e: CdkDbError| FfiError::Internal { error_message: e.to_string() })?;
         Ok(result.map(|q| q.into()))
     }
 
     async fn get_mint_quotes(&self) -> Result<Vec<MintQuote>, FfiError> {
         let result = Database::get_mint_quotes(&self.inner)
             .await
-            .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })?;
+            .map_err(|e: CdkDbError| FfiError::Internal { error_message: e.to_string() })?;
         Ok(result.into_iter().map(|q| q.into()).collect())
     }
 
     async fn get_unissued_mint_quotes(&self) -> Result<Vec<MintQuote>, FfiError> {
         let result = Database::get_unissued_mint_quotes(&self.inner)
             .await
-            .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })?;
+            .map_err(|e: CdkDbError| FfiError::Internal { error_message: e.to_string() })?;
         Ok(result.into_iter().map(|q| q.into()).collect())
     }
 
     async fn get_melt_quote(&self, quote_id: String) -> Result<Option<MeltQuote>, FfiError> {
         let result = Database::get_melt_quote(&self.inner, &quote_id)
             .await
-            .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })?;
+            .map_err(|e: CdkDbError| FfiError::Internal { error_message: e.to_string() })?;
         Ok(result.map(|q| q.into()))
     }
 
     async fn get_melt_quotes(&self) -> Result<Vec<MeltQuote>, FfiError> {
         let result = Database::get_melt_quotes(&self.inner)
             .await
-            .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })?;
+            .map_err(|e: CdkDbError| FfiError::Internal { error_message: e.to_string() })?;
         Ok(result.into_iter().map(|q| q.into()).collect())
     }
 
@@ -209,7 +209,7 @@ impl WalletDatabase for WalletSupabaseDatabase {
         let cdk_id = id.into();
         let result = Database::get_keys(&self.inner, &cdk_id)
             .await
-            .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })?;
+            .map_err(|e: CdkDbError| FfiError::Internal { error_message: e.to_string() })?;
         Ok(result.map(Into::into))
     }
 
@@ -240,7 +240,7 @@ impl WalletDatabase for WalletSupabaseDatabase {
             cdk_spending_conditions,
         )
         .await
-        .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })?;
+        .map_err(|e: CdkDbError| FfiError::Internal { error_message: e.to_string() })?;
 
         Ok(result.into_iter().map(Into::into).collect())
     }
@@ -257,7 +257,7 @@ impl WalletDatabase for WalletSupabaseDatabase {
 
         Database::get_balance(&self.inner, cdk_mint_url, cdk_unit, cdk_state)
             .await
-            .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })
+            .map_err(|e: CdkDbError| FfiError::Internal { error_message: e.to_string() })
     }
 
     async fn get_transaction(
@@ -267,7 +267,7 @@ impl WalletDatabase for WalletSupabaseDatabase {
         let cdk_id = transaction_id.try_into()?;
         let result = Database::get_transaction(&self.inner, cdk_id)
             .await
-            .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })?;
+            .map_err(|e: CdkDbError| FfiError::Internal { error_message: e.to_string() })?;
         Ok(result.map(Into::into))
     }
 
@@ -284,7 +284,7 @@ impl WalletDatabase for WalletSupabaseDatabase {
         let result =
             Database::list_transactions(&self.inner, cdk_mint_url, cdk_direction, cdk_unit)
                 .await
-                .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })?;
+                .map_err(|e: CdkDbError| FfiError::Internal { error_message: e.to_string() })?;
 
         Ok(result.into_iter().map(Into::into).collect())
     }
@@ -303,7 +303,7 @@ impl WalletDatabase for WalletSupabaseDatabase {
                 &key,
             )
             .await;
-        result.map_err(|e| FfiError::Database { msg: e.to_string() })
+        result.map_err(|e| FfiError::Internal { error_message: e.to_string() })
     }
 
     async fn kv_list(
@@ -318,7 +318,7 @@ impl WalletDatabase for WalletSupabaseDatabase {
                 &secondary_namespace,
             )
             .await;
-        result.map_err(|e| FfiError::Database { msg: e.to_string() })
+        result.map_err(|e| FfiError::Internal { error_message: e.to_string() })
     }
 
     async fn kv_write(
@@ -332,14 +332,14 @@ impl WalletDatabase for WalletSupabaseDatabase {
             .inner
             .begin_db_transaction()
             .await
-            .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })?;
+            .map_err(|e: CdkDbError| FfiError::Internal { error_message: e.to_string() })?;
         (*tx)
             .kv_write(&primary_namespace, &secondary_namespace, &key, &value)
             .await
-            .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })?;
+            .map_err(|e: CdkDbError| FfiError::Internal { error_message: e.to_string() })?;
         tx.commit()
             .await
-            .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })?;
+            .map_err(|e: CdkDbError| FfiError::Internal { error_message: e.to_string() })?;
         Ok(())
     }
 
@@ -353,14 +353,14 @@ impl WalletDatabase for WalletSupabaseDatabase {
             .inner
             .begin_db_transaction()
             .await
-            .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })?;
+            .map_err(|e: CdkDbError| FfiError::Internal { error_message: e.to_string() })?;
         (*tx)
             .kv_remove(&primary_namespace, &secondary_namespace, &key)
             .await
-            .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })?;
+            .map_err(|e: CdkDbError| FfiError::Internal { error_message: e.to_string() })?;
         tx.commit()
             .await
-            .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })?;
+            .map_err(|e: CdkDbError| FfiError::Internal { error_message: e.to_string() })?;
         Ok(())
     }
 
@@ -395,7 +395,7 @@ impl WalletDatabase for WalletSupabaseDatabase {
 
         Database::update_proofs(&self.inner, cdk_added, cdk_removed_ys)
             .await
-            .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })
+            .map_err(|e: CdkDbError| FfiError::Internal { error_message: e.to_string() })
     }
 
     async fn update_proofs_state(
@@ -410,21 +410,21 @@ impl WalletDatabase for WalletSupabaseDatabase {
 
         Database::update_proofs_state(&self.inner, cdk_ys, cdk_state)
             .await
-            .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })
+            .map_err(|e: CdkDbError| FfiError::Internal { error_message: e.to_string() })
     }
 
     async fn add_transaction(&self, transaction: Transaction) -> Result<(), FfiError> {
         let cdk_transaction: cdk::wallet::types::Transaction = transaction.try_into()?;
         Database::add_transaction(&self.inner, cdk_transaction)
             .await
-            .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })
+            .map_err(|e: CdkDbError| FfiError::Internal { error_message: e.to_string() })
     }
 
     async fn remove_transaction(&self, transaction_id: TransactionId) -> Result<(), FfiError> {
         let cdk_id = transaction_id.try_into()?;
         Database::remove_transaction(&self.inner, cdk_id)
             .await
-            .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })
+            .map_err(|e: CdkDbError| FfiError::Internal { error_message: e.to_string() })
     }
 
     async fn update_mint_url(
@@ -436,14 +436,14 @@ impl WalletDatabase for WalletSupabaseDatabase {
         let cdk_new = new_mint_url.try_into()?;
         Database::update_mint_url(&self.inner, cdk_old, cdk_new)
             .await
-            .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })
+            .map_err(|e: CdkDbError| FfiError::Internal { error_message: e.to_string() })
     }
 
     async fn increment_keyset_counter(&self, keyset_id: Id, count: u32) -> Result<u32, FfiError> {
         let cdk_id = keyset_id.into();
         Database::increment_keyset_counter(&self.inner, &cdk_id, count)
             .await
-            .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })
+            .map_err(|e: CdkDbError| FfiError::Internal { error_message: e.to_string() })
     }
 
     async fn add_mint(
@@ -455,14 +455,14 @@ impl WalletDatabase for WalletSupabaseDatabase {
         let cdk_mint_info = mint_info.map(Into::into);
         Database::add_mint(&self.inner, cdk_mint_url, cdk_mint_info)
             .await
-            .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })
+            .map_err(|e: CdkDbError| FfiError::Internal { error_message: e.to_string() })
     }
 
     async fn remove_mint(&self, mint_url: MintUrl) -> Result<(), FfiError> {
         let cdk_mint_url = mint_url.try_into()?;
         Database::remove_mint(&self.inner, cdk_mint_url)
             .await
-            .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })
+            .map_err(|e: CdkDbError| FfiError::Internal { error_message: e.to_string() })
     }
 
     async fn add_mint_keysets(
@@ -474,46 +474,46 @@ impl WalletDatabase for WalletSupabaseDatabase {
         let cdk_keysets: Vec<cdk::nuts::KeySetInfo> = keysets.into_iter().map(Into::into).collect();
         Database::add_mint_keysets(&self.inner, cdk_mint_url, cdk_keysets)
             .await
-            .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })
+            .map_err(|e: CdkDbError| FfiError::Internal { error_message: e.to_string() })
     }
 
     async fn add_mint_quote(&self, quote: MintQuote) -> Result<(), FfiError> {
         let cdk_quote = quote.try_into()?;
         Database::add_mint_quote(&self.inner, cdk_quote)
             .await
-            .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })
+            .map_err(|e: CdkDbError| FfiError::Internal { error_message: e.to_string() })
     }
 
     async fn remove_mint_quote(&self, quote_id: String) -> Result<(), FfiError> {
         Database::remove_mint_quote(&self.inner, &quote_id)
             .await
-            .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })
+            .map_err(|e: CdkDbError| FfiError::Internal { error_message: e.to_string() })
     }
 
     async fn add_melt_quote(&self, quote: MeltQuote) -> Result<(), FfiError> {
         let cdk_quote = quote.try_into()?;
         Database::add_melt_quote(&self.inner, cdk_quote)
             .await
-            .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })
+            .map_err(|e: CdkDbError| FfiError::Internal { error_message: e.to_string() })
     }
 
     async fn remove_melt_quote(&self, quote_id: String) -> Result<(), FfiError> {
         Database::remove_melt_quote(&self.inner, &quote_id)
             .await
-            .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })
+            .map_err(|e: CdkDbError| FfiError::Internal { error_message: e.to_string() })
     }
 
     async fn add_keys(&self, keyset: KeySet) -> Result<(), FfiError> {
         let cdk_keyset: cdk::nuts::KeySet = keyset.try_into()?;
         Database::add_keys(&self.inner, cdk_keyset)
             .await
-            .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })
+            .map_err(|e: CdkDbError| FfiError::Internal { error_message: e.to_string() })
     }
 
     async fn remove_keys(&self, id: Id) -> Result<(), FfiError> {
         let cdk_id = id.into();
         Database::remove_keys(&self.inner, &cdk_id)
             .await
-            .map_err(|e: CdkDbError| FfiError::Database { msg: e.to_string() })
+            .map_err(|e: CdkDbError| FfiError::Internal { error_message: e.to_string() })
     }
 }

@@ -13,6 +13,7 @@ result
 **/postgres_data/
 .pg_data/
 **/.env
+logs/
 
 # Mutation testing artifacts
 mutants.out/
@@ -30,5 +31,6 @@ libcdk_ffi*
 cdk_ffi.py
 
 # llm artifacts
+AGENTS.md
 
-logs/
+

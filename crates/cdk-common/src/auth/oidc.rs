@@ -72,7 +72,6 @@ pub enum GrantType {
 
 #[cfg(feature = "wallet")]
 #[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "snake_case")]
 pub struct RefreshTokenRequest {
     pub grant_type: GrantType,
     pub client_id: String,

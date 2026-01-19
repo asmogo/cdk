@@ -637,29 +637,18 @@ impl Wallet {
 #[uniffi::export(async_runtime = "tokio")]
 impl Wallet {
     /// Set Clear Auth Token (CAT) for authentication
-    ///
-    /// This method sets the CAT token for the wallet's auth client.
-    /// If a Supabase database has been configured via `set_supabase_database`,
-    /// the token will also be synchronized to the database automatically.
     pub async fn set_cat(&self, cat: String) -> Result<(), FfiError> {
-        self.inner.set_cat(cat.clone()).await?;
+        self.inner.set_cat(cat).await?;
         Ok(())
     }
 
     /// Set refresh token for authentication
-    ///
-    /// If a Supabase database has been configured via `set_supabase_database`,
-    /// the refresh token will also be synchronized to the database automatically.
     pub async fn set_refresh_token(&self, refresh_token: String) -> Result<(), FfiError> {
-        self.inner.set_refresh_token(refresh_token.clone()).await?;
+        self.inner.set_refresh_token(refresh_token).await?;
         Ok(())
     }
 
     /// Refresh access token using the stored refresh token
-    ///
-    /// This method refreshes the CAT token using the stored refresh token.
-    /// If a Supabase database has been configured via `set_supabase_database`,
-    /// the database's token will also be refreshed automatically.
     pub async fn refresh_access_token(&self) -> Result<(), FfiError> {
         self.inner.refresh_access_token().await?;
         Ok(())

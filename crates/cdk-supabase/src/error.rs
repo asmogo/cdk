@@ -22,9 +22,7 @@ impl From<Error> for DatabaseError {
             Error::Reqwest(e) => DatabaseError::Database(Box::new(e)),
             Error::Url(e) => DatabaseError::Database(Box::new(e)),
             Error::Serde(e) => DatabaseError::Database(Box::new(e)),
-            Error::Supabase(e) => {
-                DatabaseError::Database(Box::new(std::io::Error::other(e)))
-            }
+            Error::Supabase(e) => DatabaseError::Database(Box::new(std::io::Error::other(e))),
         }
     }
 }

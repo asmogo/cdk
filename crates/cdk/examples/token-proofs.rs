@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use cdk::nuts::nut00::ProofsMethods;
 use cdk::nuts::{CurrencyUnit, Token};
-use cdk::wallet::MultiMintWallet;
+use cdk::wallet::WalletRepository;
 use cdk_sqlite::wallet::memory;
 use rand::random;
 

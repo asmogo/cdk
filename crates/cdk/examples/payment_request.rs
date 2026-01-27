@@ -29,7 +29,7 @@ use std::time::Duration;
 use anyhow::anyhow;
 use cdk::amount::SplitTarget;
 use cdk::nuts::CurrencyUnit;
-use cdk::wallet::multi_mint_wallet::MultiMintWallet;
+use cdk::wallet::{Wallet, WalletRepository};
 use cdk::wallet::payment_request::CreateRequestParams;
 use cdk_sqlite::wallet::memory;
 use rand::random;
@@ -64,7 +64,7 @@ async fn main() -> anyhow::Result<()> {
     println!("\nStep 1: Creating payment request...");
 
     // We need to get the wallet for the specific mint to create a request
-    let mint_wallet = wallet
+    let mint_wallet: Wallet = wallet
         .get_wallet(&mint_url.parse()?)
         .await
         .ok_or_else(|| anyhow!("Wallet not found for mint"))?;

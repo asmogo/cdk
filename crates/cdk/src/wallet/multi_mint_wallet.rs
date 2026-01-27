@@ -44,6 +44,17 @@ pub struct TransferResult {
     pub target_balance_after: cdk_common::Amount,
 }
 
+/// Token data
+#[derive(Debug, Clone)]
+pub struct TokenData {
+    /// Mint URL
+    pub mint_url: MintUrl,
+    /// Proofs
+    pub proofs: crate::nuts::Proofs,
+}
+
+
+
 /// Configuration for individual wallets within WalletRepository
 #[derive(Clone, Default, Debug)]
 pub struct WalletConfig {
@@ -675,6 +686,22 @@ impl WalletRepository {
         } else {
             Err(Error::Custom("No active NpubCash mint set".into()))
         }
+    }
+    /// Get token data
+    #[instrument(skip(self, token))]
+    pub async fn get_token_data(&self, token: &crate::nuts::Token) -> Result<TokenData, Error> {
+        let mint_url = token.mint_url()?;
+        let wallet = self.get_wallet(&mint_url).await.ok_or(Error::UnknownMint {
+            mint_url: mint_url.to_string(),
+        })?;
+
+        let keysets = wallet.load_mint_keysets().await?;
+        let proofs = token.proofs(&keysets)?;
+
+        Ok(TokenData {
+            mint_url,
+            proofs,
+        })
     }
 }
 

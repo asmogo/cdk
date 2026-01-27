@@ -25,7 +25,7 @@
 use std::sync::Arc;
 
 use cdk::nuts::CurrencyUnit;
-use cdk::wallet::multi_mint_wallet::MultiMintWallet;
+use cdk::wallet::{Wallet, WalletRepository};
 use cdk::wallet::{BackupOptions, RestoreOptions};
 use cdk_sqlite::wallet::memory;
 use rand::random;
@@ -129,7 +129,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Create a fresh wallet with the same seed (simulating a new device)
     let new_localstore = Arc::new(memory::empty().await?);
-    let new_wallet = WalletRepository::new(new_localstore, seed).await?;
+    let new_wallet: WalletRepository = WalletRepository::new(new_localstore, seed).await?;
 
     // Verify the new wallet is empty
     let new_wallets: Vec<cdk::Wallet> = new_wallet.get_wallets().await;

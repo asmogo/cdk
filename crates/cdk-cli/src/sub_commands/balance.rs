@@ -1,45 +1,39 @@
-use std::collections::BTreeMap;
-
 use anyhow::Result;
 use cdk::mint_url::MintUrl;
 use cdk::nuts::CurrencyUnit;
-use cdk::wallet::MultiMintWallet;
+use cdk::wallet::WalletRepository;
 use cdk::Amount;
+use cdk_common::wallet::WalletKey;
 
-pub async fn balance(multi_mint_wallet: &MultiMintWallet) -> Result<()> {
+pub async fn balance(wallet_repository: &WalletRepository) -> Result<()> {
     // Show individual mint balances
-    let mint_balances = mint_balances(multi_mint_wallet, multi_mint_wallet.unit()).await?;
+    let mint_balances = mint_balances(wallet_repository).await?;
 
     // Show total balance using the new unified interface
-    let total = multi_mint_wallet.total_balance().await?;
+    let total = wallet_repository.total_balance().await?;
     if !mint_balances.is_empty() {
         println!();
-        println!(
-            "Total balance across all wallets: {} {}",
-            total,
-            multi_mint_wallet.unit()
-        );
+        println!("Total balance across all wallets: {}", total);
     }
 
     Ok(())
 }
 
 pub async fn mint_balances(
-    multi_mint_wallet: &MultiMintWallet,
-    unit: &CurrencyUnit,
-) -> Result<Vec<(MintUrl, Amount)>> {
-    let wallets: BTreeMap<MintUrl, Amount> = multi_mint_wallet.get_balances().await?;
+    wallet_repository: &WalletRepository,
+) -> Result<Vec<(MintUrl, CurrencyUnit, Amount)>> {
+    let wallets = wallet_repository.get_balances().await?;
 
     let mut wallets_vec = Vec::with_capacity(wallets.len());
 
-    for (i, (mint_url, amount)) in wallets
+    for (i, (wallet_key, amount)) in wallets
         .iter()
         .filter(|(_, a)| a > &&Amount::ZERO)
         .enumerate()
     {
-        let mint_url = mint_url.clone();
+        let WalletKey { mint_url, unit } = wallet_key.clone();
         println!("{i}: {mint_url} {amount} {unit}");
-        wallets_vec.push((mint_url, *amount))
+        wallets_vec.push((mint_url, unit, *amount))
     }
     Ok(wallets_vec)
 }

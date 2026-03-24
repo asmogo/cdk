@@ -42,7 +42,7 @@ log = "0.4"
 
 
 [features]
-default = ["postgres", "supabase", "npubcash"]
+default = ["postgres", "npubcash"]
 # Enable Postgres-backed wallet database support in FFI
 postgres = ["cdk-postgres"]
 # Enable Supabase-backed wallet database support in FFI

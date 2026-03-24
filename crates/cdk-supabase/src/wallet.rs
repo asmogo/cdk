@@ -2338,6 +2338,8 @@ struct MeltQuoteTable {
     payment_preimage: Option<String>,
     payment_method: String,
     #[serde(default)]
+    mint_url: Option<String>,
+    #[serde(default)]
     used_by_operation: Option<String>,
     #[serde(default)]
     version: Option<i32>,
@@ -2351,6 +2353,12 @@ impl TryInto<wallet::MeltQuote> for MeltQuoteTable {
     fn try_into(self) -> Result<wallet::MeltQuote, Self::Error> {
         Ok(wallet::MeltQuote {
             id: self.id,
+            mint_url: self
+                .mint_url
+                .as_deref()
+                .map(cdk_common::mint_url::MintUrl::from_str)
+                .transpose()
+                .map_err(|_| DatabaseError::Internal("Invalid mint URL".into()))?,
             unit: CurrencyUnit::from_str(&self.unit)
                 .map_err(|_| DatabaseError::Internal("Invalid unit".into()))?,
             amount: cdk_common::Amount::from(self.amount as u64),
@@ -2373,6 +2381,7 @@ impl TryFrom<wallet::MeltQuote> for MeltQuoteTable {
     fn try_from(q: wallet::MeltQuote) -> Result<Self, Self::Error> {
         Ok(Self {
             id: q.id,
+            mint_url: q.mint_url.map(|u| u.to_string()),
             unit: q.unit.to_string(),
             amount: q.amount.to_u64() as i64,
             request: q.request,

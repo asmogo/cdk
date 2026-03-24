@@ -1064,6 +1064,7 @@ where
     ///
     /// This is useful for accessing database-specific methods that are not part
     /// of the standard WalletDatabase trait (e.g., Supabase JWT token management).
+    #[cfg(feature = "supabase")]
     pub fn inner(&self) -> &T {
         &self.inner
     }

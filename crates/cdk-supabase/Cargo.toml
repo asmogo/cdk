@@ -15,7 +15,7 @@ wallet = ["cdk-common/wallet"]
 
 [dependencies]
 async-trait.workspace = true
-cdk-common = { workspace = true, features = ["test", "auth"] }
+cdk-common = { workspace = true, features = ["test"] }
 bitcoin.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread"] }
@@ -25,18 +25,15 @@ serde_json.workspace = true
 lightning-invoice.workspace = true
 uuid.workspace = true
 reqwest = { workspace = true }
-base64 = "0.22"
 url.workspace = true
 once_cell.workspace = true
-hex = "0.4"
 urlencoding = "2.1"
 cdk-sql-common = { workspace = true }
 aes-gcm = "0.10"
-rand = "0.8"
+rand.workspace = true
 pbkdf2 = "0.12"
 hmac = "0.12"
 sha2 = "0.10"
-
 
 [lints]
 workspace = true

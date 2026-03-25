@@ -19,10 +19,11 @@ use cdk_common::secret::Secret;
 use cdk_common::wallet::{
     self, MintQuote, Transaction, TransactionDirection, TransactionId, WalletSaga,
 };
+use cdk_common::util::hex;
 use cdk_sql_common::database::DatabaseExecutor;
 use cdk_sql_common::stmt::{Column, Statement};
 use pbkdf2::pbkdf2;
-use rand::rngs::OsRng;
+use bitcoin::secp256k1::rand::rngs::OsRng;
 use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
@@ -49,8 +50,8 @@ fn decode_jwt_expiry(token: &str) -> Option<u64> {
     }
     let payload_part = parts[1];
 
-    use base64::engine::general_purpose;
-    use base64::Engine as _;
+    use bitcoin::base64::engine::general_purpose;
+    use bitcoin::base64::Engine as _;
 
     let decoded = general_purpose::URL_SAFE_NO_PAD.decode(payload_part).ok()?;
 

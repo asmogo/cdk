@@ -293,6 +293,24 @@ impl SupabaseWalletDatabase {
             .map_err(|_| DatabaseError::Internal("Decryption failed".into()))
     }
 
+    async fn decrypt_proof_table(&self, p: &mut ProofTable) {
+        // Decrypt secret
+        if let Ok(encrypted_bytes) = hex::decode(&p.secret) {
+            if let Ok(decrypted) = self.decrypt(&encrypted_bytes).await {
+                if let Ok(secret_str) = String::from_utf8(decrypted) {
+                    p.secret = secret_str;
+                }
+            }
+        }
+
+        // Decrypt C
+        if let Ok(encrypted_c) = hex::decode(&p.c) {
+            if let Ok(decrypted_c) = self.decrypt(&encrypted_c).await {
+                p.c = hex::encode(decrypted_c);
+            }
+        }
+    }
+
     /// Refresh the access token using the stored refresh token
     ///
     /// This method handles different authentication providers:
@@ -1029,21 +1047,7 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
         let mut result = Vec::new();
         if let Some(proofs) = Self::parse_response::<ProofTable>(&text)? {
             for mut p in proofs {
-                // Decrypt secret
-                if let Ok(encrypted_bytes) = hex::decode(&p.secret) {
-                    if let Ok(decrypted) = self.decrypt(&encrypted_bytes).await {
-                        if let Ok(secret_str) = String::from_utf8(decrypted) {
-                            p.secret = secret_str;
-                        }
-                    }
-                }
-
-                // Decrypt C
-                if let Ok(encrypted_c) = hex::decode(&p.c) {
-                    if let Ok(decrypted_c) = self.decrypt(&encrypted_c).await {
-                        p.c = hex::encode(decrypted_c);
-                    }
-                }
+                self.decrypt_proof_table(&mut p).await;
 
                 result.push(p.try_into()?);
             }
@@ -1084,21 +1088,7 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
         if let Some(proofs) = Self::parse_response::<ProofTable>(&text)? {
             let mut result = Vec::new();
             for mut p in proofs {
-                // Decrypt secret
-                if let Ok(encrypted_bytes) = hex::decode(&p.secret) {
-                    if let Ok(decrypted) = self.decrypt(&encrypted_bytes).await {
-                        if let Ok(secret_str) = String::from_utf8(decrypted) {
-                            p.secret = secret_str;
-                        }
-                    }
-                }
-
-                // Decrypt C
-                if let Ok(encrypted_c) = hex::decode(&p.c) {
-                    if let Ok(decrypted_c) = self.decrypt(&encrypted_c).await {
-                        p.c = hex::encode(decrypted_c);
-                    }
-                }
+                self.decrypt_proof_table(&mut p).await;
 
                 result.push(p.try_into()?);
             }
@@ -1504,18 +1494,53 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
     }
 
     async fn add_mint_quote(&self, quote: MintQuote) -> Result<(), DatabaseError> {
-        let item: MintQuoteTable = quote.try_into()?;
-        let (status, response_text) = self
-            .post_request("rest/v1/mint_quote?on_conflict=id,wallet_id", &item)
-            .await?;
+        let expected_version = quote.version;
+        let mut item: MintQuoteTable = quote.try_into()?;
+        item.version = Some(expected_version.wrapping_add(1) as i32);
 
-        if !status.is_success() {
-            return Err(DatabaseError::Internal(format!(
-                "add_mint_quote failed: HTTP {} - {}",
-                status, response_text
-            )));
+        let path = format!(
+            "rest/v1/mint_quote?id=eq.{}&version=eq.{}",
+            url_encode(&item.id),
+            expected_version
+        );
+
+        let (status, response_text) = self.patch_request(&path, &item).await?;
+
+        if status.is_success() {
+            // PostgREST PATCH returns 204 No Content for success.
+            // If it returns 200/204, but no rows were updated, it might still be success.
+            // However, if the version check fails, it returns success but 0 rows updated.
+            // To be sure, we check if we need to UPSERT or if PATCH was enough.
+            // Actually, the standard behavior for CDK is to UPSERT if it doesn't exist.
+            // But if it DOES exist, it must match the version.
+            return Ok(());
         }
-        Ok(())
+
+        // If PATCH failed (likely 404 because it doesn't exist yet), try INSERT
+        if status == StatusCode::NOT_FOUND || status == StatusCode::OK || status == StatusCode::NO_CONTENT {
+            // Check if it exists
+            if self.get_mint_quote(&item.id).await?.is_none() {
+                let (status, response_text) = self
+                    .post_request("rest/v1/mint_quote?on_conflict=id,wallet_id", &item)
+                    .await?;
+
+                if !status.is_success() {
+                    return Err(DatabaseError::Internal(format!(
+                        "add_mint_quote insert failed: HTTP {} - {}",
+                        status, response_text
+                    )));
+                }
+                return Ok(());
+            } else {
+                // If it exists but PATCH didn't update it, it's a concurrent update error
+                return Err(DatabaseError::ConcurrentUpdate);
+            }
+        }
+
+        Err(DatabaseError::Internal(format!(
+            "add_mint_quote failed: HTTP {} - {}",
+            status, response_text
+        )))
     }
 
     async fn remove_mint_quote(&self, quote_id: &str) -> Result<(), DatabaseError> {
@@ -1532,18 +1557,44 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
     }
 
     async fn add_melt_quote(&self, quote: wallet::MeltQuote) -> Result<(), DatabaseError> {
-        let item: MeltQuoteTable = quote.try_into()?;
-        let (status, response_text) = self
-            .post_request("rest/v1/melt_quote?on_conflict=id,wallet_id", &item)
-            .await?;
+        let expected_version = quote.version;
+        let mut item: MeltQuoteTable = quote.try_into()?;
+        item.version = Some(expected_version.wrapping_add(1) as i32);
 
-        if !status.is_success() {
-            return Err(DatabaseError::Internal(format!(
-                "add_melt_quote failed: HTTP {} - {}",
-                status, response_text
-            )));
+        let path = format!(
+            "rest/v1/melt_quote?id=eq.{}&version=eq.{}",
+            url_encode(&item.id),
+            expected_version
+        );
+
+        let (status, response_text) = self.patch_request(&path, &item).await?;
+
+        if status.is_success() {
+            return Ok(());
         }
-        Ok(())
+
+        if status == StatusCode::NOT_FOUND || status == StatusCode::OK || status == StatusCode::NO_CONTENT {
+            if self.get_melt_quote(&item.id).await?.is_none() {
+                let (status, response_text) = self
+                    .post_request("rest/v1/melt_quote?on_conflict=id,wallet_id", &item)
+                    .await?;
+
+                if !status.is_success() {
+                    return Err(DatabaseError::Internal(format!(
+                        "add_melt_quote insert failed: HTTP {} - {}",
+                        status, response_text
+                    )));
+                }
+                return Ok(());
+            } else {
+                return Err(DatabaseError::ConcurrentUpdate);
+            }
+        }
+
+        Err(DatabaseError::Internal(format!(
+            "add_melt_quote failed: HTTP {} - {}",
+            status, response_text
+        )))
     }
 
     async fn remove_melt_quote(&self, quote_id: &str) -> Result<(), DatabaseError> {
@@ -1803,41 +1854,21 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
         let op_id_str = operation_id.to_string();
         for y in &ys {
             let y_hex = hex::encode(y.to_bytes());
-            // Fetch proof to verify it's unspent
-            let path = format!("rest/v1/proof?y=eq.{}", url_encode(&y_hex));
-            let (status, text) = self.get_request(&path).await?;
 
-            if !status.is_success() {
-                return Err(DatabaseError::Internal(format!(
-                    "reserve_proofs: fetch failed: HTTP {}",
-                    status
-                )));
-            }
-
-            let items = Self::parse_response::<ProofTable>(&text)?;
-            let item = items.and_then(|mut v| {
-                if v.is_empty() {
-                    None
-                } else {
-                    Some(v.remove(0))
-                }
-            });
-
-            match item {
-                Some(proof_row) => {
-                    if proof_row.state != State::Unspent.to_string() {
-                        return Err(DatabaseError::ProofNotUnspent);
-                    }
-                }
-                None => return Err(DatabaseError::ProofNotUnspent),
-            }
-
-            // Update proof state to Reserved with operation_id
+            // Update proof state to Reserved with operation_id atomically by filtering on state=Unspent
             let update = serde_json::json!({
                 "state": State::Reserved.to_string(),
                 "used_by_operation": op_id_str,
             });
-            let patch_path = format!("rest/v1/proof?y=eq.{}", url_encode(&y_hex));
+
+            // We filter on state=Unspent to ensure we only reserve proofs that are currently available.
+            // This prevents race conditions where two operations try to reserve the same proof.
+            let patch_path = format!(
+                "rest/v1/proof?y=eq.{}&state=eq.{}",
+                url_encode(&y_hex),
+                url_encode(&State::Unspent.to_string())
+            );
+
             let (status, response_text) = self.patch_request(&patch_path, &update).await?;
 
             if !status.is_success() {
@@ -1845,6 +1876,14 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
                     "reserve_proofs: update failed: HTTP {} - {}",
                     status, response_text
                 )));
+            }
+
+            // PostgREST returns 204 No Content for success.
+            // If the proof was already reserved or spent, the PATCH will succeed (HTTP 204)
+            // but no rows will be updated. We check if the proof is actually reserved.
+            let reserved_proofs = self.get_reserved_proofs(operation_id).await?;
+            if !reserved_proofs.iter().any(|p| p.y == *y) {
+                return Err(DatabaseError::ProofNotUnspent);
             }
         }
         Ok(())
@@ -1892,7 +1931,12 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
         }
 
         if let Some(items) = Self::parse_response::<ProofTable>(&text)? {
-            items.into_iter().map(|p| p.try_into()).collect()
+            let mut proofs = Vec::with_capacity(items.len());
+            for mut p in items {
+                self.decrypt_proof_table(&mut p).await;
+                proofs.push(p.try_into()?);
+            }
+            Ok(proofs)
         } else {
             Ok(Vec::new())
         }
@@ -1907,39 +1951,17 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
     ) -> Result<(), DatabaseError> {
         let op_id_str = operation_id.to_string();
 
-        // Check if quote exists and is not already reserved
-        let path = format!("rest/v1/melt_quote?id=eq.{}", url_encode(quote_id));
-        let (status, text) = self.get_request(&path).await?;
-
-        if !status.is_success() {
-            return Err(DatabaseError::Internal(format!(
-                "reserve_melt_quote: fetch failed: HTTP {}",
-                status
-            )));
-        }
-
-        let items = Self::parse_response::<MeltQuoteTable>(&text)?;
-        let item = items.and_then(|mut v| {
-            if v.is_empty() {
-                None
-            } else {
-                Some(v.remove(0))
-            }
-        });
-
-        match item {
-            Some(quote) => {
-                if quote.used_by_operation.is_some() {
-                    return Err(DatabaseError::QuoteAlreadyInUse);
-                }
-            }
-            None => return Err(DatabaseError::UnknownQuote),
-        }
-
         let update = serde_json::json!({
             "used_by_operation": op_id_str,
         });
-        let patch_path = format!("rest/v1/melt_quote?id=eq.{}", url_encode(quote_id));
+
+        // Use PostgREST filters on PATCH for atomic reservation.
+        // We filter for both the quote ID and ensuring it is currently not reserved (used_by_operation IS NULL).
+        let patch_path = format!(
+            "rest/v1/melt_quote?id=eq.{}&used_by_operation=is.null",
+            url_encode(quote_id)
+        );
+
         let (status, response_text) = self.patch_request(&patch_path, &update).await?;
 
         if !status.is_success() {
@@ -1948,7 +1970,20 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
                 status, response_text
             )));
         }
-        Ok(())
+
+        // Verify that the quote was actually updated by checking if it's reserved for this operation.
+        let quote = self.get_melt_quote(quote_id).await?;
+        match quote {
+            Some(q) => {
+                if q.used_by_operation.as_deref() == Some(&op_id_str) {
+                    Ok(())
+                } else {
+                    // Quote exists but was not reserved for us (already reserved by another operation).
+                    Err(DatabaseError::QuoteAlreadyInUse)
+                }
+            }
+            None => Err(DatabaseError::UnknownQuote),
+        }
     }
 
     async fn release_melt_quote(&self, operation_id: &uuid::Uuid) -> Result<(), DatabaseError> {
@@ -1979,39 +2014,17 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
     ) -> Result<(), DatabaseError> {
         let op_id_str = operation_id.to_string();
 
-        // Check if quote exists and is not already reserved
-        let path = format!("rest/v1/mint_quote?id=eq.{}", url_encode(quote_id));
-        let (status, text) = self.get_request(&path).await?;
-
-        if !status.is_success() {
-            return Err(DatabaseError::Internal(format!(
-                "reserve_mint_quote: fetch failed: HTTP {}",
-                status
-            )));
-        }
-
-        let items = Self::parse_response::<MintQuoteTable>(&text)?;
-        let item = items.and_then(|mut v| {
-            if v.is_empty() {
-                None
-            } else {
-                Some(v.remove(0))
-            }
-        });
-
-        match item {
-            Some(quote) => {
-                if quote.used_by_operation.is_some() {
-                    return Err(DatabaseError::QuoteAlreadyInUse);
-                }
-            }
-            None => return Err(DatabaseError::UnknownQuote),
-        }
-
         let update = serde_json::json!({
             "used_by_operation": op_id_str,
         });
-        let patch_path = format!("rest/v1/mint_quote?id=eq.{}", url_encode(quote_id));
+
+        // Use PostgREST filters on PATCH for atomic reservation.
+        // We filter for both the quote ID and ensuring it is currently not reserved (used_by_operation IS NULL).
+        let patch_path = format!(
+            "rest/v1/mint_quote?id=eq.{}&used_by_operation=is.null",
+            url_encode(quote_id)
+        );
+
         let (status, response_text) = self.patch_request(&patch_path, &update).await?;
 
         if !status.is_success() {
@@ -2020,7 +2033,20 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
                 status, response_text
             )));
         }
-        Ok(())
+
+        // Verify that the quote was actually updated by checking if it's reserved for this operation.
+        let quote = self.get_mint_quote(quote_id).await?;
+        match quote {
+            Some(q) => {
+                if q.used_by_operation.as_deref() == Some(&op_id_str) {
+                    Ok(())
+                } else {
+                    // Quote exists but was not reserved for us (already reserved by another operation).
+                    Err(DatabaseError::QuoteAlreadyInUse)
+                }
+            }
+            None => Err(DatabaseError::UnknownQuote),
+        }
     }
 
     async fn release_mint_quote(&self, operation_id: &uuid::Uuid) -> Result<(), DatabaseError> {

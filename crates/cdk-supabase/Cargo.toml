@@ -30,10 +30,6 @@ once_cell.workspace = true
 urlencoding = "2.1"
 cdk-sql-common = { workspace = true }
 aes-gcm = "0.10"
-rand.workspace = true
-pbkdf2 = "0.12"
-hmac = "0.12"
-sha2 = "0.10"
 
 [lints]
 workspace = true

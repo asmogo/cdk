@@ -7,6 +7,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use aes_gcm::aead::{Aead, AeadCore, KeyInit};
 use aes_gcm::{Aes256Gcm, Key, Nonce};
 use async_trait::async_trait;
+use bitcoin::hashes::{sha256, Hash};
+use bitcoin::secp256k1::rand::rngs::OsRng;
 use cdk_common::auth::oidc::OidcClient;
 use cdk_common::common::ProofInfo;
 use cdk_common::database::wallet::Database;
@@ -16,17 +18,14 @@ use cdk_common::nuts::{
     CurrencyUnit, Id, KeySet, KeySetInfo, Keys, MintInfo, PublicKey, SpendingConditions, State,
 };
 use cdk_common::secret::Secret;
+use cdk_common::util::hex;
 use cdk_common::wallet::{
     self, MintQuote, Transaction, TransactionDirection, TransactionId, WalletSaga,
 };
-use cdk_common::util::hex;
 use cdk_sql_common::database::DatabaseExecutor;
 use cdk_sql_common::stmt::{Column, Statement};
-use pbkdf2::pbkdf2;
-use bitcoin::secp256k1::rand::rngs::OsRng;
 use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
-use sha2::Sha256;
 use tokio::sync::RwLock;
 use url::Url;
 
@@ -250,32 +249,12 @@ impl SupabaseWalletDatabase {
         *refresh = token;
     }
 
-    /// Set encryption password with a unique salt
-    ///
-    /// Derives an encryption key from the password and salt using PBKDF2.
-    /// This key is used to encrypt sensitive data (proof secrets, kv_store values)
-    /// before sending to Supabase, ensuring end-to-end privacy.
-    ///
-    /// The `salt` should be unique per wallet/user. Good choices include:
-    /// - The user's Supabase UID (from JWT `sub` claim)
-    /// - A randomly generated value stored client-side
-    ///
-    /// Using a unique salt ensures that even if two users have the same password,
-    /// their encryption keys will be different.
-    ///
-    /// # Panics
-    ///
-    /// Panics if HMAC initialization fails.
-    pub async fn set_encryption_password(&self, password: &str, salt: &str) {
-        // Combine a fixed prefix with the user-provided salt for domain separation
-        let full_salt = format!("cdk-supabase:{}", salt);
-
-        let mut key = [0u8; 32];
-        pbkdf2::<hmac::Hmac<Sha256>>(password.as_bytes(), full_salt.as_bytes(), 100_000, &mut key)
-            .expect("HMAC can be initialized with any key length");
+    /// Derives an AES-256-GCM encryption key from `password` via SHA-256.
+    pub async fn set_encryption_password(&self, password: &str) {
+        let key = sha256::Hash::hash(password.as_bytes());
 
         let mut encryption_key = self.encryption_key.write().await;
-        *encryption_key = Some(*Key::<Aes256Gcm>::from_slice(&key));
+        *encryption_key = Some(*Key::<Aes256Gcm>::from_slice(key.as_byte_array()));
     }
 
     async fn encrypt(&self, data: &[u8]) -> Result<Vec<u8>, DatabaseError> {
@@ -2744,5 +2723,20 @@ impl SupabaseAuth {
         }
 
         response.json().await.map_err(Error::Reqwest)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_set_encryption_password_key_derivation() {
+        // SHA-256("password") == 5e884898...
+        let key = sha256::Hash::hash(b"password");
+        assert_eq!(
+            hex::encode(key.as_byte_array()),
+            "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8"
+        );
     }
 }

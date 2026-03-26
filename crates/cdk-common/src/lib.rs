@@ -9,6 +9,7 @@
 pub mod task;
 
 /// Authentication related types and utilities
+#[cfg(feature = "http")]
 pub mod auth;
 
 /// Protocol version for gRPC Mint RPC communication

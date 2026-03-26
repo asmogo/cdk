@@ -108,8 +108,9 @@ impl WalletSupabaseDatabase {
         self.inner.inner().set_refresh_token(token).await;
     }
 
-    /// Derives an AES-256-GCM encryption key from `password` using
-    /// PBKDF2-HMAC-SHA256 (100 000 iterations).
+    /// Derives an AES-256-GCM encryption key from `password`.
+    ///
+    /// The current API does not take a separate salt parameter.
     pub async fn set_encryption_password(&self, password: String) {
         self.inner.inner().set_encryption_password(&password).await;
     }

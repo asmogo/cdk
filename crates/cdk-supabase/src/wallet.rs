@@ -546,7 +546,7 @@ impl SupabaseWalletDatabase {
             .post(url.clone())
             .header("apikey", &self.api_key)
             .header("Authorization", format!("Bearer {}", auth_bearer))
-            .header("Prefer", "resolution=merge-duplicates")
+            .header("Prefer", "resolution=merge-duplicates,missing=default")
             .json(body)
             .send()
             .await

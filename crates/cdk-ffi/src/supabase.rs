@@ -115,6 +115,27 @@ impl WalletSupabaseDatabase {
         self.inner.inner().set_encryption_password(&password).await;
     }
 
+    /// Check that the database schema is compatible with this SDK version
+    ///
+    /// Call this after authentication and before using the database. It verifies
+    /// that the database has been set up with the required schema version.
+    ///
+    /// Returns an error if:
+    /// - The database has not been initialized (no schema_info table)
+    /// - The database schema version is older than what this SDK requires
+    ///
+    /// If this returns an error, an administrator must run migrations before
+    /// the client can use the database.
+    pub async fn check_schema_compatibility(&self) -> Result<(), FfiError> {
+        self.inner
+            .inner()
+            .check_schema_compatibility()
+            .await
+            .map_err(|e| FfiError::Internal {
+                error_message: e.to_string(),
+            })
+    }
+
     /// Refresh the access token using the stored refresh token
     ///
     /// This requires both an OIDC client and a refresh token to be set.
@@ -260,33 +281,23 @@ pub async fn supabase_signin(
     Ok(response.into())
 }
 
-/// Run database migrations using the Service Role Key
-///
-/// This must be called with the Service Role Key to have permission to create tables
-/// and RPC functions. Do not use the anon key or an authenticated user token.
-#[uniffi::export(async_runtime = "tokio")]
-pub async fn supabase_run_migrations(
-    url: String,
-    service_role_key: String,
-) -> Result<(), FfiError> {
-    let url = url::Url::parse(&url).map_err(|e| FfiError::Internal {
-        error_message: e.to_string(),
-    })?;
-
-    SupabaseWalletDatabase::run_migrations(url, service_role_key)
-        .await
-        .map_err(|e| FfiError::Internal {
-            error_message: e.to_string(),
-        })?;
-
-    Ok(())
-}
-
 /// Get the full database schema SQL
 ///
 /// Returns the concatenated SQL of all migration files.
-/// This can be used to manually set up the database in the Supabase Dashboard.
+///
+/// Use this to set up or update the database schema. Pipe the output into
+/// the Supabase Dashboard SQL editor or `supabase db push`.
+/// This is an **admin-only operation** — never call this from a client app.
 #[uniffi::export]
 pub fn supabase_get_schema_sql() -> String {
     SupabaseWalletDatabase::get_schema_sql()
+}
+
+/// Get the schema version required by this SDK version
+///
+/// Returns the schema version number that the database must have for this
+/// SDK version to work correctly. Use this to display helpful upgrade messages.
+#[uniffi::export]
+pub fn supabase_required_schema_version() -> u32 {
+    SupabaseWalletDatabase::REQUIRED_SCHEMA_VERSION
 }

@@ -19,6 +19,25 @@ pub enum Error {
     /// Supabase-specific error
     #[error("Supabase error: {0}")]
     Supabase(String),
+    /// Schema version mismatch — the database schema is outdated
+    #[error(
+        "Schema version mismatch: SDK requires version {required}, \
+         database has version {found}. \
+         An administrator must run migrations to update the database schema."
+    )]
+    SchemaMismatch {
+        /// The schema version required by this SDK version
+        required: u32,
+        /// The schema version found in the database
+        found: u32,
+    },
+    /// Schema not initialized — the database has no schema_info table
+    #[error(
+        "Database schema not initialized. \
+         An administrator must run the initial migrations before clients can connect. \
+         Use `SupabaseWalletDatabase::get_schema_sql()` to get the required SQL."
+    )]
+    SchemaNotInitialized,
 }
 
 impl From<Error> for DatabaseError {
@@ -28,7 +47,20 @@ impl From<Error> for DatabaseError {
             Error::Reqwest(e) => DatabaseError::Database(Box::new(e)),
             Error::Url(e) => DatabaseError::Database(Box::new(e)),
             Error::Serde(e) => DatabaseError::Database(Box::new(e)),
-            Error::Supabase(e) => DatabaseError::Database(Box::new(std::io::Error::other(e))),
+            Error::Supabase(msg) => DatabaseError::Database(Box::new(std::io::Error::other(msg))),
+            Error::SchemaMismatch { required, found } => {
+                DatabaseError::Database(Box::new(std::io::Error::other(format!(
+                    "Schema version mismatch: SDK requires version {required}, \
+                     database has version {found}. \
+                     An administrator must run migrations to update the database schema."
+                ))))
+            }
+            Error::SchemaNotInitialized => {
+                DatabaseError::Database(Box::new(std::io::Error::other(
+                    "Database schema not initialized. \
+                     An administrator must run the initial migrations before clients can connect.",
+                )))
+            }
         }
     }
 }

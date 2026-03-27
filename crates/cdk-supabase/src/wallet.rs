@@ -22,8 +22,6 @@ use cdk_common::util::hex;
 use cdk_common::wallet::{
     self, MintQuote, Transaction, TransactionDirection, TransactionId, WalletSaga,
 };
-use cdk_sql_common::database::DatabaseExecutor;
-use cdk_sql_common::stmt::{Column, Statement};
 use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
@@ -34,6 +32,18 @@ use crate::Error;
 #[rustfmt::skip]
 mod migrations {
     include!(concat!(env!("OUT_DIR"), "/migrations_supabase.rs"));
+}
+
+/// Returns the concatenated SQL of all migration files.
+///
+/// Operators can use this to set up the database manually via the Supabase
+/// Dashboard SQL editor or `supabase db push`.
+pub(crate) fn get_schema_sql_inner() -> String {
+    migrations::MIGRATIONS
+        .iter()
+        .map(|(_, _, sql)| *sql)
+        .collect::<Vec<&str>>()
+        .join("\n\n")
 }
 
 /// URL-encode a value for use in query parameters
@@ -123,7 +133,10 @@ impl SupabaseWalletDatabase {
     ///
     /// No automatic token refresh is configured.
     ///
-    /// **Note**: This does NOT run migrations automatically. Use `run_migrations` manually.
+    /// **Note**: This does NOT run or check migrations automatically. After
+    /// authentication, call [`check_schema_compatibility()`] to verify the
+    /// database schema is ready. Migrations must be run separately by an
+    /// administrator — see [`get_schema_sql()`] or use `supabase db push`.
     pub async fn new(url: Url, api_key: String) -> Result<Self, Error> {
         Ok(Self {
             url,
@@ -142,7 +155,10 @@ impl SupabaseWalletDatabase {
     /// This uses Supabase's built-in GoTrue authentication system.
     /// Token refresh uses `POST /auth/v1/token` with `grant_type=refresh_token`.
     ///
-    /// **Note**: This does NOT run migrations automatically. Use `run_migrations` manually.
+    /// **Note**: This does NOT run or check migrations automatically. After
+    /// authentication, call [`check_schema_compatibility()`] to verify the
+    /// database schema is ready. Migrations must be run separately by an
+    /// administrator — see [`get_schema_sql()`] or use `supabase db push`.
     pub async fn with_supabase_auth(url: Url, api_key: String) -> Result<Self, Error> {
         Ok(Self {
             url,
@@ -161,7 +177,10 @@ impl SupabaseWalletDatabase {
     /// This uses an external OIDC provider (e.g., Keycloak, Auth0) for token refresh.
     /// The OIDC provider must be configured in Supabase to validate the JWTs.
     ///
-    /// **Note**: This does NOT run migrations automatically. Use `run_migrations` manually.
+    /// **Note**: This does NOT run or check migrations automatically. After
+    /// authentication, call [`check_schema_compatibility()`] to verify the
+    /// database schema is ready. Migrations must be run separately by an
+    /// administrator — see [`get_schema_sql()`] or use `supabase db push`.
     pub async fn with_oidc(
         url: Url,
         api_key: String,
@@ -179,53 +198,97 @@ impl SupabaseWalletDatabase {
         })
     }
 
-    /// Run database migrations using the Service Role Key
+    /// The schema version required by this SDK version.
     ///
-    /// This must be called with the Service Role Key to have permission to create tables
-    /// and RPC functions. Do not use the anon key or an authenticated user token.
-    pub async fn run_migrations(url: Url, service_role_key: String) -> Result<(), Error> {
-        let db = Self {
-            url,
-            api_key: service_role_key,
-            jwt_token: Arc::new(RwLock::new(None)),
-            refresh_token: Arc::new(RwLock::new(None)),
-            token_expiration: Arc::new(RwLock::new(None)),
-            auth_provider: Arc::new(RwLock::new(AuthProvider::None)),
-            client: Client::new(),
-            encryption_key: Arc::new(RwLock::new(None)),
-        };
-
-        db.migrate().await?;
-        Ok(())
-    }
+    /// This must match the latest `schema_version` value set in the migration files.
+    /// When adding new migrations, update this constant and set the same value
+    /// in the new migration's `INSERT INTO schema_info` statement.
+    pub const REQUIRED_SCHEMA_VERSION: u32 = 4;
 
     /// Get the full database schema SQL
     ///
     /// Returns the concatenated SQL of all migration files.
-    /// This can be used to manually set up the database in the Supabase Dashboard,
-    /// bypassing the need for the `exec_sql` RPC bootstrap.
+    ///
+    /// Use this to set up or update the database schema by running the output
+    /// through the Supabase Dashboard SQL editor or `supabase db push`.
+    /// This is an **admin-only operation** — never run this from a client app.
     pub fn get_schema_sql() -> String {
-        migrations::MIGRATIONS
-            .iter()
-            .map(|(_, _, sql)| *sql)
-            .collect::<Vec<&str>>()
-            .join("\n\n")
+        get_schema_sql_inner()
     }
 
-    /// Run database migrations
-    pub async fn migrate(&self) -> Result<(), Error> {
-        // We use cdk_sql_common::migrate but we need to implement DatabaseExecutor
-        // for SupabaseWalletDatabase which uses the exec_sql RPC.
-        match cdk_sql_common::migrate(self, "supabase", migrations::MIGRATIONS).await {
-            Ok(_) => Ok(()),
-            Err(e) => {
-                // If it fails because the exec_sql function doesn't exist, we should give a helpful error
-                let err_str = e.to_string();
-                if err_str.contains("404") || err_str.contains("exec_sql") {
-                    tracing::error!("Supabase migrations failed: exec_sql RPC function not found. You must run 001_initial_schema.sql manually once.");
+    /// Check that the database schema is compatible with this SDK version
+    ///
+    /// This is the **recommended client-side startup check**. It queries the
+    /// `schema_info` table (which is readable by all authenticated users) to
+    /// verify the database has the required schema version.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::SchemaNotInitialized`] if the `schema_info` table doesn't exist
+    ///   (database was never set up or is running a pre-v4 schema).
+    /// - [`Error::SchemaMismatch`] if the database schema version is older than
+    ///   what this SDK version requires.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// // Call after authentication, before using the database
+    /// db.check_schema_compatibility().await?;
+    /// // Database is ready for use
+    /// ```
+    pub async fn check_schema_compatibility(&self) -> Result<(), Error> {
+        let path = "rest/v1/schema_info?key=eq.schema_version&select=value";
+
+        let result = self.get_request(path).await;
+
+        match result {
+            Ok((status, text)) => {
+                if status == StatusCode::NOT_FOUND
+                    || text.contains("relation")
+                    || text.contains("does not exist")
+                {
+                    return Err(Error::SchemaNotInitialized);
                 }
-                Err(e.into())
+
+                if !status.is_success() {
+                    // If we get a 404-like error or permission error, schema_info
+                    // table likely doesn't exist
+                    return Err(Error::SchemaNotInitialized);
+                }
+
+                // Parse the response: [{"value": "4"}] or []
+                let items: Vec<serde_json::Value> =
+                    serde_json::from_str(&text).map_err(|_| Error::SchemaNotInitialized)?;
+
+                if items.is_empty() {
+                    return Err(Error::SchemaNotInitialized);
+                }
+
+                let version_str = items[0]
+                    .get("value")
+                    .and_then(|v| v.as_str())
+                    .ok_or(Error::SchemaNotInitialized)?;
+
+                let found_version: u32 = version_str
+                    .parse()
+                    .map_err(|_| Error::SchemaNotInitialized)?;
+
+                if found_version < Self::REQUIRED_SCHEMA_VERSION {
+                    return Err(Error::SchemaMismatch {
+                        required: Self::REQUIRED_SCHEMA_VERSION,
+                        found: found_version,
+                    });
+                }
+
+                tracing::info!(
+                    schema_version = found_version,
+                    required = Self::REQUIRED_SCHEMA_VERSION,
+                    "Database schema compatibility check passed"
+                );
+
+                Ok(())
             }
+            Err(_) => Err(Error::SchemaNotInitialized),
         }
     }
 
@@ -642,96 +705,6 @@ impl SupabaseWalletDatabase {
         } else {
             Ok(Some(items))
         }
-    }
-}
-
-#[async_trait]
-impl DatabaseExecutor for SupabaseWalletDatabase {
-    fn name() -> &'static str {
-        "supabase"
-    }
-
-    async fn execute(&self, statement: Statement) -> Result<usize, DatabaseError> {
-        let (sql, params) = statement.to_sql()?;
-
-        // Special case for migrations table interactions to avoid needing a complex exec_sql with params
-        if sql.contains("INSERT INTO migrations") {
-            let name = params
-                .first()
-                .and_then(|v| match v {
-                    cdk_sql_common::value::Value::Text(t) => Some(t.clone()),
-                    _ => None,
-                })
-                .unwrap_or_default();
-
-            let body = serde_json::json!({ "name": name });
-            let (status, text) = self.post_request("rest/v1/migrations", &body).await?;
-            if !status.is_success() {
-                return Err(DatabaseError::Database(Box::new(std::io::Error::other(
-                    format!("Failed to insert migration: {} - {}", status, text),
-                ))));
-            }
-            return Ok(1);
-        }
-
-        // For everything else, use exec_sql RPC
-        let body = serde_json::json!({ "query": sql });
-        let (status, text) = self.post_request("rest/v1/rpc/exec_sql", &body).await?;
-
-        if !status.is_success() {
-            return Err(DatabaseError::Database(Box::new(std::io::Error::other(
-                format!("Supabase RPC exec_sql failed: {} - {}", status, text),
-            ))));
-        }
-
-        Ok(0)
-    }
-
-    async fn fetch_one(&self, _statement: Statement) -> Result<Option<Vec<Column>>, DatabaseError> {
-        Err(DatabaseError::Database(Box::new(std::io::Error::other(
-            "fetch_one not implemented for Supabase executor",
-        ))))
-    }
-
-    async fn fetch_all(&self, _statement: Statement) -> Result<Vec<Vec<Column>>, DatabaseError> {
-        Err(DatabaseError::Database(Box::new(std::io::Error::other(
-            "fetch_all not implemented for Supabase executor",
-        ))))
-    }
-
-    async fn pluck(&self, statement: Statement) -> Result<Option<Column>, DatabaseError> {
-        let (sql, params) = statement.to_sql()?;
-
-        // Special case for checking migrations
-        if sql.contains("SELECT name FROM migrations") {
-            let name = params
-                .first()
-                .and_then(|v| match v {
-                    cdk_sql_common::value::Value::Text(t) => Some(t.clone()),
-                    _ => None,
-                })
-                .unwrap_or_default();
-
-            let path = format!("rest/v1/migrations?name=eq.{}", url_encode(&name));
-            let (status, text) = self.get_request(&path).await?;
-
-            if status.is_success() {
-                if let Ok(Some(items)) = Self::parse_response::<serde_json::Value>(&text) {
-                    if !items.is_empty() {
-                        return Ok(Some(Column::Text(name)));
-                    }
-                }
-            }
-            return Ok(None);
-        }
-
-        Err(DatabaseError::Database(Box::new(std::io::Error::other(
-            "pluck not implemented for Supabase executor",
-        ))))
-    }
-
-    async fn batch(&self, statement: Statement) -> Result<(), DatabaseError> {
-        self.execute(statement).await.map(|_| ())
     }
 }
 
@@ -1517,7 +1490,10 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
         }
 
         // If PATCH failed (likely 404 because it doesn't exist yet), try INSERT
-        if status == StatusCode::NOT_FOUND || status == StatusCode::OK || status == StatusCode::NO_CONTENT {
+        if status == StatusCode::NOT_FOUND
+            || status == StatusCode::OK
+            || status == StatusCode::NO_CONTENT
+        {
             // Check if it exists
             if self.get_mint_quote(&item.id).await?.is_none() {
                 let (status, response_text) = self
@@ -1573,7 +1549,10 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
             return Ok(());
         }
 
-        if status == StatusCode::NOT_FOUND || status == StatusCode::OK || status == StatusCode::NO_CONTENT {
+        if status == StatusCode::NOT_FOUND
+            || status == StatusCode::OK
+            || status == StatusCode::NO_CONTENT
+        {
             if self.get_melt_quote(&item.id).await?.is_none() {
                 let (status, response_text) = self
                     .post_request("rest/v1/melt_quote?on_conflict=id,wallet_id", &item)

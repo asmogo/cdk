@@ -28,7 +28,6 @@ reqwest = { workspace = true }
 url.workspace = true
 once_cell.workspace = true
 urlencoding = "2.1"
-cdk-sql-common = { workspace = true }
 aes-gcm = "0.10"
 
 [lints]

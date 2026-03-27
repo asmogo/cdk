@@ -5,8 +5,8 @@ use cdk_postgres::WalletPgDatabase;
 
 use crate::{
     CurrencyUnit, FfiError, FfiWalletDatabaseWrapper, Id, KeySet, KeySetInfo, Keys, MeltQuote,
-    MintInfo, MintQuote, MintUrl, ProofInfo, ProofState, PublicKey, SpendingConditions,
-    Transaction, TransactionDirection, TransactionId, WalletDatabase,
+    MintInfo, MintQuote, MintUrl, P2PKSigningKey, ProofInfo, ProofState, PublicKey,
+    SpendingConditions, Transaction, TransactionDirection, TransactionId, WalletDatabase,
 };
 
 #[derive(uniffi::Object)]

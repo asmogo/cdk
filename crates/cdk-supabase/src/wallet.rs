@@ -2134,8 +2134,7 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
     }
 
     async fn latest_p2pk(&self) -> Result<Option<wallet::P2PKSigningKey>, DatabaseError> {
-        let path =
-            "rest/v1/p2pk_signing_key?order=derivation_index.desc&limit=1";
+        let path = "rest/v1/p2pk_signing_key?order=derivation_index.desc&limit=1";
         let (status, text) = self.get_request(path).await?;
 
         if !status.is_success() {

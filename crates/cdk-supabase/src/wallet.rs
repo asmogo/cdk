@@ -7,6 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use aes_gcm::aead::{Aead, AeadCore, KeyInit};
 use aes_gcm::{Aes256Gcm, Key, Nonce};
 use async_trait::async_trait;
+use bitcoin::bip32::DerivationPath;
 use bitcoin::hashes::{sha256, Hash};
 use bitcoin::secp256k1::rand::rngs::OsRng;
 use cdk_common::auth::oidc::OidcClient;
@@ -2048,6 +2049,109 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
         }
         Ok(())
     }
+
+    async fn add_p2pk_key(
+        &self,
+        pubkey: &PublicKey,
+        derivation_path: DerivationPath,
+        derivation_index: u32,
+    ) -> Result<(), DatabaseError> {
+        let created_time = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|e| DatabaseError::Internal(format!("SystemTime error: {}", e)))?
+            .as_secs();
+
+        let item = P2PKSigningKeyTable {
+            pubkey: hex::encode(pubkey.to_bytes()),
+            derivation_index: derivation_index as i64,
+            derivation_path: derivation_path.to_string(),
+            created_time: created_time as i64,
+            _extra: Default::default(),
+        };
+
+        let (status, response_text) = self
+            .post_request(
+                "rest/v1/p2pk_signing_key?on_conflict=pubkey,wallet_id",
+                &item,
+            )
+            .await?;
+
+        if !status.is_success() {
+            return Err(DatabaseError::Internal(format!(
+                "add_p2pk_key failed: HTTP {} - {}",
+                status, response_text
+            )));
+        }
+        Ok(())
+    }
+
+    async fn get_p2pk_key(
+        &self,
+        pubkey: &PublicKey,
+    ) -> Result<Option<wallet::P2PKSigningKey>, DatabaseError> {
+        let path = format!(
+            "rest/v1/p2pk_signing_key?pubkey=eq.{}",
+            url_encode(&hex::encode(pubkey.to_bytes()))
+        );
+        let (status, text) = self.get_request(&path).await?;
+
+        if status == StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        if !status.is_success() {
+            return Err(DatabaseError::Internal(format!(
+                "get_p2pk_key failed: HTTP {}",
+                status
+            )));
+        }
+
+        if let Some(rows) = Self::parse_response::<P2PKSigningKeyTable>(&text)? {
+            if let Some(row) = rows.into_iter().next() {
+                return Ok(Some(row.try_into()?));
+            }
+        }
+        Ok(None)
+    }
+
+    async fn list_p2pk_keys(&self) -> Result<Vec<wallet::P2PKSigningKey>, DatabaseError> {
+        let path = "rest/v1/p2pk_signing_key?order=derivation_index.desc";
+        let (status, text) = self.get_request(path).await?;
+
+        if !status.is_success() {
+            return Err(DatabaseError::Internal(format!(
+                "list_p2pk_keys failed: HTTP {}",
+                status
+            )));
+        }
+
+        if let Some(rows) = Self::parse_response::<P2PKSigningKeyTable>(&text)? {
+            rows.into_iter()
+                .map(|row| row.try_into())
+                .collect::<Result<Vec<_>, _>>()
+        } else {
+            Ok(Vec::new())
+        }
+    }
+
+    async fn latest_p2pk(&self) -> Result<Option<wallet::P2PKSigningKey>, DatabaseError> {
+        let path =
+            "rest/v1/p2pk_signing_key?order=derivation_index.desc&limit=1";
+        let (status, text) = self.get_request(path).await?;
+
+        if !status.is_success() {
+            return Err(DatabaseError::Internal(format!(
+                "latest_p2pk failed: HTTP {}",
+                status
+            )));
+        }
+
+        if let Some(rows) = Self::parse_response::<P2PKSigningKeyTable>(&text)? {
+            if let Some(row) = rows.into_iter().next() {
+                return Ok(Some(row.try_into()?));
+            }
+        }
+        Ok(None)
+    }
 }
 
 // Data Structures for Supabase Tables (Serde)
@@ -2204,6 +2308,31 @@ impl TryInto<KeySetInfo> for KeySetTable {
             active: self.active,
             input_fee_ppk: self.input_fee_ppk as u64,
             final_expiry: self.final_expiry.map(|v| v as u64),
+        })
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct P2PKSigningKeyTable {
+    pubkey: String,
+    derivation_index: i64,
+    derivation_path: String,
+    created_time: i64,
+    /// Extra fields from other applications (captured during deserialization, ignored during serialization)
+    #[serde(default, skip_serializing, flatten)]
+    _extra: serde_json::Map<String, serde_json::Value>,
+}
+
+impl TryInto<wallet::P2PKSigningKey> for P2PKSigningKeyTable {
+    type Error = DatabaseError;
+    fn try_into(self) -> Result<wallet::P2PKSigningKey, Self::Error> {
+        Ok(wallet::P2PKSigningKey {
+            pubkey: PublicKey::from_hex(&self.pubkey)
+                .map_err(|_| DatabaseError::Internal("Invalid pubkey hex".into()))?,
+            derivation_path: DerivationPath::from_str(&self.derivation_path)
+                .map_err(|_| DatabaseError::Internal("Invalid derivation path".into()))?,
+            derivation_index: self.derivation_index as u32,
+            created_time: self.created_time as u64,
         })
     }
 }

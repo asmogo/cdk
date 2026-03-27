@@ -1775,13 +1775,12 @@ dependencies = [
 
 [[package]]
 name = "cdk-supabase"
-version = "0.15.1"
+version = "0.16.0-rc.1"
 dependencies = [
  "aes-gcm",
  "async-trait",
  "bitcoin 0.32.8",
  "cdk-common",
- "cdk-sql-common",
  "lightning-invoice",
  "once_cell",
  "reqwest",

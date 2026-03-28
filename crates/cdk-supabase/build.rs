@@ -1,7 +1,7 @@
 //! Build script for cdk-supabase that generates migration embedding code.
 
 fn main() {
-    let migration_path = std::path::Path::new("migrations");
+    let migration_path = std::path::Path::new("migrations/supabase/migrations");
     let out_dir =
         std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR is set by Cargo"));
     let dest_path = out_dir.join("migrations_supabase.rs");

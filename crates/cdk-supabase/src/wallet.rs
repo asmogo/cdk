@@ -671,6 +671,38 @@ impl SupabaseWalletDatabase {
         Ok((status, text))
     }
 
+    /// Make a PATCH request and ask PostgREST to return the updated rows as JSON
+    /// (`Prefer: return=representation`).  Returns `(status, body)` where body is
+    /// an empty JSON array `[]` when the filter matched no rows.
+    async fn patch_request_returning<T: Serialize + Debug>(
+        &self,
+        path: &str,
+        body: &T,
+    ) -> Result<(StatusCode, String), Error> {
+        let url = self.join_url(path)?;
+        let auth_bearer = self.get_auth_bearer().await;
+
+        tracing::debug!(method = "PATCH", url = %url, "Supabase request (returning)");
+
+        let res = self
+            .client
+            .patch(url.clone())
+            .header("apikey", &self.api_key)
+            .header("Authorization", format!("Bearer {}", auth_bearer))
+            .header("Prefer", "return=representation")
+            .json(body)
+            .send()
+            .await
+            .map_err(Error::Reqwest)?;
+
+        let status = res.status();
+        let text = res.text().await.map_err(Error::Reqwest)?;
+
+        tracing::debug!(method = "PATCH", url = %url, status = %status, response_len = text.len(), "Supabase response (returning)");
+
+        Ok((status, text))
+    }
+
     /// Make a DELETE request
     async fn delete_request(&self, path: &str) -> Result<(StatusCode, String), Error> {
         let url = self.join_url(path)?;
@@ -1478,40 +1510,34 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
             expected_version
         );
 
-        let (status, response_text) = self.patch_request(&path, &item).await?;
+        // Use `return=representation` so PostgREST returns the updated rows as JSON.
+        // An empty array `[]` means the version filter matched nothing — the row either
+        // doesn't exist yet or was concurrently modified.
+        let (status, response_text) = self.patch_request_returning(&path, &item).await?;
 
         if status.is_success() {
-            // PostgREST PATCH returns 204 No Content for success.
-            // If it returns 200/204, but no rows were updated, it might still be success.
-            // However, if the version check fails, it returns success but 0 rows updated.
-            // To be sure, we check if we need to UPSERT or if PATCH was enough.
-            // Actually, the standard behavior for CDK is to UPSERT if it doesn't exist.
-            // But if it DOES exist, it must match the version.
-            return Ok(());
-        }
+            let updated: serde_json::Value =
+                serde_json::from_str(&response_text).unwrap_or(serde_json::Value::Null);
+            let row_count = updated.as_array().map(|a| a.len()).unwrap_or(0);
 
-        // If PATCH failed (likely 404 because it doesn't exist yet), try INSERT
-        if status == StatusCode::NOT_FOUND
-            || status == StatusCode::OK
-            || status == StatusCode::NO_CONTENT
-        {
-            // Check if it exists
-            if self.get_mint_quote(&item.id).await?.is_none() {
-                let (status, response_text) = self
-                    .post_request("rest/v1/mint_quote?on_conflict=id,wallet_id", &item)
-                    .await?;
-
-                if !status.is_success() {
-                    return Err(DatabaseError::Internal(format!(
-                        "add_mint_quote insert failed: HTTP {} - {}",
-                        status, response_text
-                    )));
-                }
+            if row_count > 0 {
+                // PATCH updated an existing row — done.
                 return Ok(());
-            } else {
-                // If it exists but PATCH didn't update it, it's a concurrent update error
-                return Err(DatabaseError::ConcurrentUpdate);
             }
+
+            // No rows updated: the row doesn't exist yet — fall through to INSERT.
+            let (status, response_text) = self
+                .post_request("rest/v1/mint_quote?on_conflict=id,wallet_id", &item)
+                .await?;
+
+            if status.is_success() {
+                return Ok(());
+            }
+
+            return Err(DatabaseError::Internal(format!(
+                "add_mint_quote insert failed: HTTP {} - {}",
+                status, response_text
+            )));
         }
 
         Err(DatabaseError::Internal(format!(
@@ -1544,31 +1570,34 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
             expected_version
         );
 
-        let (status, response_text) = self.patch_request(&path, &item).await?;
+        // Use `return=representation` so PostgREST returns the updated rows as JSON.
+        // An empty array `[]` means the version filter matched nothing — the row either
+        // doesn't exist yet or was concurrently modified.
+        let (status, response_text) = self.patch_request_returning(&path, &item).await?;
 
         if status.is_success() {
-            return Ok(());
-        }
+            let updated: serde_json::Value =
+                serde_json::from_str(&response_text).unwrap_or(serde_json::Value::Null);
+            let row_count = updated.as_array().map(|a| a.len()).unwrap_or(0);
 
-        if status == StatusCode::NOT_FOUND
-            || status == StatusCode::OK
-            || status == StatusCode::NO_CONTENT
-        {
-            if self.get_melt_quote(&item.id).await?.is_none() {
-                let (status, response_text) = self
-                    .post_request("rest/v1/melt_quote?on_conflict=id,wallet_id", &item)
-                    .await?;
-
-                if !status.is_success() {
-                    return Err(DatabaseError::Internal(format!(
-                        "add_melt_quote insert failed: HTTP {} - {}",
-                        status, response_text
-                    )));
-                }
+            if row_count > 0 {
+                // PATCH updated an existing row — done.
                 return Ok(());
-            } else {
-                return Err(DatabaseError::ConcurrentUpdate);
             }
+
+            // No rows updated: the row doesn't exist yet — fall through to INSERT.
+            let (status, response_text) = self
+                .post_request("rest/v1/melt_quote?on_conflict=id,wallet_id", &item)
+                .await?;
+
+            if status.is_success() {
+                return Ok(());
+            }
+
+            return Err(DatabaseError::Internal(format!(
+                "add_melt_quote insert failed: HTTP {} - {}",
+                status, response_text
+            )));
         }
 
         Err(DatabaseError::Internal(format!(

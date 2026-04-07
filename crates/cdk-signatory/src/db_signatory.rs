@@ -7,6 +7,7 @@ use std::sync::Arc;
 use bitcoin::bip32::{DerivationPath, Xpriv};
 use bitcoin::secp256k1::{self, Secp256k1};
 use cdk_common::dhke::{sign_message, verify_message};
+use cdk_common::util::unix_time;
 use cdk_common::mint::MintKeySetInfo;
 use cdk_common::nuts::{BlindSignature, BlindedMessage, CurrencyUnit, Id, MintKeySet, Proof};
 use cdk_common::{database, Error, PublicKey};
@@ -158,9 +159,15 @@ impl Signatory for DbSignatory {
     #[tracing::instrument(skip_all)]
     async fn verify_proofs(&self, proofs: Vec<Proof>) -> Result<(), Error> {
         let keysets = self.keysets.read().await;
+        let now = unix_time();
 
         proofs.into_iter().try_for_each(|proof| {
-            let (_, key) = keysets.get(&proof.keyset_id).ok_or(Error::UnknownKeySet)?;
+            let (info, key) = keysets.get(&proof.keyset_id).ok_or(Error::UnknownKeySet)?;
+            if let Some(expiry) = info.final_expiry {
+                if now > expiry {
+                    return Err(Error::InactiveKeyset);
+                }
+            }
             let key_pair = key.keys.get(&proof.amount).ok_or(Error::UnknownKeySet)?;
             verify_message(&key_pair.secret_key, proof.c, proof.secret.as_bytes())?;
             Ok(())

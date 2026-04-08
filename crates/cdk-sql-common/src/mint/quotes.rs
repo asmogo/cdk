@@ -110,9 +110,15 @@ pub(super) async fn get_mint_quote_inner<T>(
 where
     T: DatabaseExecutor,
 {
-    let payments = get_mint_quote_payments(executor, quote_id).await?;
-    let issuance = get_mint_quote_issuance(executor, quote_id).await?;
-
+    // SECURITY FIX (VULN-016): Acquire the FOR UPDATE row lock BEFORE reading the
+    // payments and issuance arrays.  Previously these reads happened before the lock,
+    // opening a TOCTOU window where two concurrent BOLT12 partial payments could both
+    // see an empty (or stale) payments list, both pass the duplicate-payment check in
+    // `add_payment`, and both receive credit — inflating `amount_paid` and minting
+    // tokens beyond what was actually paid.  By reading payments/issuance after the
+    // lock is held any concurrent writer must wait for our transaction to commit before
+    // it can acquire its own lock, so the duplicate check always operates on
+    // up-to-date data.
     let for_update_clause = if for_update { "FOR UPDATE" } else { "" };
     let query_str = format!(
         r#"
@@ -137,12 +143,24 @@ where
         "#
     );
 
-    query(&query_str)?
+    let mut mint_quote = query(&query_str)?
         .bind("id", quote_id.to_string())
         .fetch_one(executor)
         .await?
-        .map(|row| sql_row_to_mint_quote(row, payments, issuance))
-        .transpose()
+        .map(|row| sql_row_to_mint_quote(row, vec![], vec![]))
+        .transpose()?;
+
+    // Read payments and issuance while the row lock is held (when for_update=true).
+    // Any concurrent writer must wait for our transaction before it can acquire its
+    // own lock, so these reads reflect the true committed state.
+    if let Some(quote) = mint_quote.as_mut() {
+        let payments = get_mint_quote_payments(executor, quote_id).await?;
+        let issuance = get_mint_quote_issuance(executor, quote_id).await?;
+        quote.payments = payments;
+        quote.issuance = issuance;
+    }
+
+    Ok(mint_quote)
 }
 
 pub(super) async fn get_mint_quote_by_request_inner<T>(

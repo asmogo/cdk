@@ -1123,7 +1123,7 @@ impl From<MeltQuote> for crate::nuts::MeltQuoteCustomResponse<QuoteId> {
         Self {
             quote: melt_quote.id,
             amount: melt_quote.amount.into(),
-            fee_reserve: melt_quote.fee_reserve.into(),
+            fee_reserve: Some(melt_quote.fee_reserve.into()),
             state: melt_quote.state,
             expiry: melt_quote.expiry,
             payment_preimage: melt_quote.payment_proof,
@@ -1329,7 +1329,7 @@ mod tests {
 
         assert_eq!(response.quote, melt_quote.id);
         assert_eq!(response.amount, 100.into());
-        assert_eq!(response.fee_reserve, 2.into());
+        assert_eq!(response.fee_reserve, Some(2.into()));
         assert_eq!(response.state, melt_quote.state);
         assert_eq!(response.expiry, melt_quote.expiry);
         assert_eq!(response.payment_preimage, melt_quote.payment_proof);

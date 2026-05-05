@@ -265,7 +265,7 @@ pub struct MeltQuoteCustomResponse {
     /// Amount
     pub amount: Amount,
     /// Fee reserve
-    pub fee_reserve: Amount,
+    pub fee_reserve: Option<Amount>,
     /// State of the quote
     pub state: QuoteState,
     /// Expiry timestamp
@@ -294,7 +294,7 @@ impl From<cdk::nuts::MeltQuoteCustomResponse<String>> for MeltQuoteCustomRespons
         Self {
             quote: response.quote,
             amount: response.amount.into(),
-            fee_reserve: response.fee_reserve.into(),
+            fee_reserve: response.fee_reserve.map(Into::into),
             state: response.state.into(),
             expiry: response.expiry,
             payment_proof: response.payment_preimage,

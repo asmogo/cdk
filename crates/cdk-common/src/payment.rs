@@ -335,7 +335,7 @@ impl OutgoingPaymentOptions {
                     max_fee_amount: Some(fee_reserve),
                     timeout_secs: None,
                     melt_options: melt_quote.options,
-                    extra_json: None,
+                    extra_json: melt_quote.extra_json.as_ref().map(|v| v.to_string()),
                 }),
             )),
         }

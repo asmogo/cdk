@@ -599,27 +599,57 @@ where
             PaymentMethod::Custom(m) => nut19::Path::custom_melt(m),
         };
 
-        match method {
-            PaymentMethod::Known(KnownMethod::Bolt11) => {
-                let res: cdk_common::nuts::MeltQuoteBolt11Response<String> = self
-                    .retriable_http_request(nut19::Method::Post, path, auth_token, &request)
-                    .await?;
-                Ok(MeltQuoteResponse::Bolt11(res))
-            }
-            PaymentMethod::Known(KnownMethod::Bolt12) => {
-                let res: cdk_common::nuts::MeltQuoteBolt12Response<String> = self
-                    .retriable_http_request(nut19::Method::Post, path, auth_token, &request)
-                    .await?;
-                Ok(MeltQuoteResponse::Bolt12(res))
-            }
+        let path_for_log = format!("{path:?}");
+        tracing::info!(
+            "Posting melt request to mint {}: method={}, path={}, quote={}, inputs_count={}, inputs_total={}, outputs_count={}, prefer_async={}",
+            self.mint_url,
+            method,
+            path_for_log,
+            request.quote_id(),
+            request.inputs().len(),
+            request.inputs_amount().unwrap_or(cdk_common::Amount::ZERO),
+            request.outputs().as_ref().map_or(0, Vec::len),
+            request.is_prefer_async()
+        );
+
+        let result = match method {
+            PaymentMethod::Known(KnownMethod::Bolt11) => self
+                .retriable_http_request(nut19::Method::Post, path, auth_token, &request)
+                .await
+                .map(MeltQuoteResponse::Bolt11),
+            PaymentMethod::Known(KnownMethod::Bolt12) => self
+                .retriable_http_request(nut19::Method::Post, path, auth_token, &request)
+                .await
+                .map(MeltQuoteResponse::Bolt12),
             _ => {
-                let res: cdk_common::nuts::MeltQuoteCustomResponse<String> = self
+                let res: Result<cdk_common::nuts::MeltQuoteCustomResponse<String>, Error> = self
                     .retriable_http_request(nut19::Method::Post, path, auth_token, &request)
-                    .await?;
-                let res = normalize_custom_melt_response(res);
-                Ok(MeltQuoteResponse::Custom((method.clone(), res)))
+                    .await;
+                res.map(|res| {
+                    let res = normalize_custom_melt_response(res);
+                    MeltQuoteResponse::Custom((method.clone(), res))
+                })
             }
+        };
+
+        match &result {
+            Ok(response) => tracing::info!(
+                "Received melt response from mint {} for quote {}: state={:?}, payment_proof_present={}, change_count={}",
+                self.mint_url,
+                response.quote(),
+                response.state(),
+                response.payment_proof().is_some(),
+                response.change().map_or(0, Vec::len)
+            ),
+            Err(error) => tracing::warn!(
+                "Melt request to mint {} failed for quote {}: {}",
+                self.mint_url,
+                request.quote_id(),
+                error
+            ),
         }
+
+        result
     }
 
     /// Swap Token [NUT-03]

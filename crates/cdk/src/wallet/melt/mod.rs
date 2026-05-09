@@ -463,7 +463,7 @@ impl<'a> PreparedMelt<'a> {
 
     /// Confirm the prepared melt using async support (NUT-05).
     ///
-    /// Sends the melt request with a `Prefer: respond-async` header and waits for the
+    /// Sends the melt request with `prefer_async=true` and waits for the
     /// mint's response. Returns `Paid` if the payment completed immediately, or
     /// `Pending` if the mint accepted the async request and will process it in the
     /// background.
@@ -525,7 +525,7 @@ impl<'a> PreparedMelt<'a> {
 
     /// Confirm with async support and custom options.
     ///
-    /// Sends the melt request with a `Prefer: respond-async` header and waits for the
+    /// Sends the melt request with `prefer_async=true` and waits for the
     /// mint's response. Returns `Paid` if the payment completed immediately, or
     /// `Pending` if the mint accepted the async request and will process it in the
     /// background.
@@ -557,7 +557,7 @@ impl<'a> PreparedMelt<'a> {
             }
         };
 
-        let result = match melt_requested.execute_async(metadata.clone()).await {
+        let result = match melt_requested.execute(metadata.clone(), true).await {
             Ok(result) => result,
             Err(err) => {
                 let finalized = wallet
@@ -778,7 +778,7 @@ impl Wallet {
             Err(err) => return self.recover_failed_melt_confirm(operation_id, err).await,
         };
 
-        let result = match melt_requested.execute_async(metadata.clone()).await {
+        let result = match melt_requested.execute(metadata.clone(), false).await {
             Ok(result) => result,
             Err(err) => return self.recover_failed_melt_confirm(operation_id, err).await,
         };
@@ -1287,14 +1287,16 @@ mod tests {
     use std::sync::Arc;
 
     use cdk_common::nuts::{CurrencyUnit, State};
-    use cdk_common::Id;
+    use cdk_common::{Id, MeltQuoteResponse};
 
     use super::*;
+    use crate::nuts::MeltQuoteBolt11Response;
     use crate::wallet::saga::test_utils::{
         create_test_db, test_keyset_id, test_mint_url, test_proof_info,
     };
     use crate::wallet::test_utils::{
-        create_test_wallet_with_mock, test_melt_quote, test_proof, MockMintConnector,
+        create_test_wallet_with_mock, test_keyset_id as wallet_test_keyset_id, test_melt_quote,
+        test_proof, MockMintConnector,
     };
 
     #[tokio::test]
@@ -1438,6 +1440,76 @@ mod tests {
     fn build_token(mint_url: cdk_common::mint_url::MintUrl, unit: CurrencyUnit) -> String {
         let proofs = vec![test_proof(test_keyset_id(), 1000)];
         Token::new(mint_url, proofs, None, unit).to_string()
+    }
+
+    fn paid_melt_response(quote_id: &str) -> MeltQuoteResponse<String> {
+        MeltQuoteResponse::Bolt11(MeltQuoteBolt11Response {
+            quote: quote_id.to_string(),
+            amount: Amount::from(1000_u64),
+            fee_reserve: Amount::from(10_u64),
+            state: MeltQuoteState::Paid,
+            expiry: 9_999_999_999,
+            payment_preimage: Some("preimage".to_string()),
+            change: None,
+            request: Some("lnbc1000...".to_string()),
+            unit: Some(CurrencyUnit::Sat),
+        })
+    }
+
+    #[tokio::test]
+    async fn test_confirm_does_not_prefer_async() {
+        let db = create_test_db().await;
+        let quote = test_melt_quote();
+        let quote_id = quote.id.clone();
+        db.add_melt_quote(quote).await.unwrap();
+
+        let mock_client = Arc::new(MockMintConnector::new());
+        mock_client.reset_default_mint_state();
+        mock_client.set_post_melt_response(Ok(paid_melt_response(&quote_id)));
+        let wallet = create_test_wallet_with_mock(db, mock_client.clone()).await;
+        wallet.refresh_keysets().await.unwrap();
+
+        let proof = test_proof(wallet_test_keyset_id(), 2000);
+        let prepared = wallet
+            .prepare_melt_proofs(&quote_id, vec![proof], HashMap::new())
+            .await
+            .unwrap();
+
+        prepared.confirm().await.unwrap();
+
+        let request = mock_client
+            .take_post_melt_request()
+            .expect("post_melt request");
+        assert_eq!(request.quote_id(), &quote_id);
+        assert!(!request.is_prefer_async());
+    }
+
+    #[tokio::test]
+    async fn test_confirm_prefer_async_sets_prefer_async() {
+        let db = create_test_db().await;
+        let quote = test_melt_quote();
+        let quote_id = quote.id.clone();
+        db.add_melt_quote(quote).await.unwrap();
+
+        let mock_client = Arc::new(MockMintConnector::new());
+        mock_client.reset_default_mint_state();
+        mock_client.set_post_melt_response(Ok(paid_melt_response(&quote_id)));
+        let wallet = create_test_wallet_with_mock(db, mock_client.clone()).await;
+        wallet.refresh_keysets().await.unwrap();
+
+        let proof = test_proof(wallet_test_keyset_id(), 2000);
+        let prepared = wallet
+            .prepare_melt_proofs(&quote_id, vec![proof], HashMap::new())
+            .await
+            .unwrap();
+
+        prepared.confirm_prefer_async().await.unwrap();
+
+        let request = mock_client
+            .take_post_melt_request()
+            .expect("post_melt request");
+        assert_eq!(request.quote_id(), &quote_id);
+        assert!(request.is_prefer_async());
     }
 
     #[tokio::test]

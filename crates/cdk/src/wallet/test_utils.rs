@@ -410,6 +410,10 @@ pub struct MockMintConnector {
     pub melt_quote_status_response: Mutex<Option<Result<MeltQuoteBolt11Response<String>, Error>>>,
     /// Response for post_mint calls
     pub post_mint_response: Mutex<Option<Result<MintResponse, Error>>>,
+    /// Last request passed to post_melt
+    pub post_melt_request: Mutex<Option<MeltRequest<String>>>,
+    /// Response for post_melt calls
+    pub post_melt_response: Mutex<Option<Result<MeltQuoteResponse<String>, Error>>>,
     /// Response for post_swap calls
     pub post_swap_response: Mutex<Option<Result<SwapResponse, Error>>>,
     /// Response for LNURL pay request calls
@@ -441,6 +445,8 @@ impl MockMintConnector {
             restore_response: Mutex::new(None),
             melt_quote_status_response: Mutex::new(None),
             post_mint_response: Mutex::new(None),
+            post_melt_request: Mutex::new(None),
+            post_melt_response: Mutex::new(None),
             post_swap_response: Mutex::new(None),
             lnurl_pay_request_response: Mutex::new(None),
             lnurl_invoice_response: Mutex::new(None),
@@ -530,6 +536,14 @@ impl MockMintConnector {
 
     pub fn set_post_mint_response(&self, response: Result<MintResponse, Error>) {
         *self.post_mint_response.lock().unwrap() = Some(response);
+    }
+
+    pub fn set_post_melt_response(&self, response: Result<MeltQuoteResponse<String>, Error>) {
+        *self.post_melt_response.lock().unwrap() = Some(response);
+    }
+
+    pub fn take_post_melt_request(&self) -> Option<MeltRequest<String>> {
+        self.post_melt_request.lock().unwrap().take()
     }
 
     pub fn set_post_swap_response(&self, response: Result<SwapResponse, Error>) {
@@ -707,9 +721,14 @@ impl MintConnector for MockMintConnector {
     async fn post_melt(
         &self,
         _method: &PaymentMethod,
-        _request: MeltRequest<String>,
+        request: MeltRequest<String>,
     ) -> Result<MeltQuoteResponse<String>, Error> {
-        unimplemented!()
+        *self.post_melt_request.lock().unwrap() = Some(request);
+        self.post_melt_response
+            .lock()
+            .unwrap()
+            .take()
+            .expect("MockMintConnector: post_melt called without configured response")
     }
 
     async fn post_batch_check_mint_quote_status(

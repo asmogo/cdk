@@ -93,7 +93,7 @@ pub struct MeltRequest<Q> {
     /// Amount field of BlindedMessages `SHOULD` be set to zero
     outputs: Option<Vec<BlindedMessage>>,
     /// Whether the client prefers asynchronous processing
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[cfg_attr(feature = "swagger", schema(value_type = bool))]
     prefer_async: bool,
 }
@@ -559,7 +559,7 @@ impl From<MeltQuoteCustomResponse<QuoteId>> for MeltQuoteCustomResponse<String> 
 
 #[cfg(test)]
 mod tests {
-    use serde_json::{from_str, json, to_string};
+    use serde_json::{from_str, json, to_string, to_value};
 
     use super::*;
     use crate::nut00::KnownMethod;
@@ -664,5 +664,24 @@ mod tests {
         let parsed: serde_json::Value = from_str(&serialized).unwrap();
 
         assert_eq!(parsed["fee_reserve"], json!(10));
+    }
+
+    #[test]
+    fn test_melt_request_omits_prefer_async_when_false() {
+        let request = MeltRequest::new("quote-id".to_string(), Vec::new(), None);
+        let serialized = to_value(&request).unwrap();
+
+        assert_eq!(serialized["quote"], json!("quote-id"));
+        assert!(serialized.get("prefer_async").is_none());
+        assert!(!request.is_prefer_async());
+    }
+
+    #[test]
+    fn test_melt_request_serializes_prefer_async_when_true() {
+        let request = MeltRequest::new("quote-id".to_string(), Vec::new(), None).prefer_async(true);
+        let serialized = to_value(&request).unwrap();
+
+        assert_eq!(serialized["prefer_async"], json!(true));
+        assert!(request.is_prefer_async());
     }
 }

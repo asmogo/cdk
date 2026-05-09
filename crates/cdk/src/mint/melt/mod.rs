@@ -69,6 +69,30 @@ fn pending_melt_status_recheck_interval() -> Duration {
     }
 }
 
+fn merge_custom_melt_extra(
+    request_extra: &serde_json::Value,
+    response_extra: Option<serde_json::Value>,
+) -> Option<serde_json::Value> {
+    let request_extra = if request_extra.is_null() {
+        None
+    } else {
+        Some(request_extra.clone())
+    };
+
+    match (request_extra, response_extra) {
+        (None, None) => None,
+        (Some(extra), None) | (None, Some(extra)) => Some(extra),
+        (
+            Some(serde_json::Value::Object(mut request_map)),
+            Some(serde_json::Value::Object(response_map)),
+        ) => {
+            request_map.extend(response_map);
+            Some(serde_json::Value::Object(request_map))
+        }
+        (_, Some(extra)) => Some(extra),
+    }
+}
+
 /// A pending mint melt that can optionally be awaited.
 #[derive(Debug)]
 pub struct PendingMelt {
@@ -604,6 +628,7 @@ impl Mint {
         // Extract values for quote creation
         let quote_amount = payment_quote.amount;
         let quote_fee = payment_quote.fee;
+        let quote_extra_json = merge_custom_melt_extra(extra, payment_quote.extra_json);
 
         let quote = MeltQuote::new(
             None,
@@ -618,7 +643,7 @@ impl Mint {
             payment_quote.request_lookup_id.clone(),
             None, // Custom methods don't use options
             PaymentMethod::from(method.as_str()),
-            payment_quote.extra_json,
+            quote_extra_json,
         );
 
         tracing::debug!(

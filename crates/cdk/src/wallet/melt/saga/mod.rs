@@ -81,7 +81,7 @@ pub(crate) struct MeltSaga<'a, S> {
 }
 
 /// Shared helper function to perform the actual melt finalization.
-/// Used by `execute_async` and `PaymentPending::finalize`.
+/// Used by `execute` and `PaymentPending::finalize`.
 #[allow(clippy::too_many_arguments)]
 async fn finalize_melt_common<'a>(
     wallet: &'a Wallet,
@@ -769,6 +769,35 @@ impl<'a> MeltSaga<'a, Prepared> {
         } else {
             None
         };
+        let final_proof_amounts = final_proofs
+            .iter()
+            .map(|proof| proof.amount)
+            .collect::<Vec<_>>();
+        let change_output_amounts = change_blinded_messages
+            .as_ref()
+            .map(|outputs| {
+                outputs
+                    .iter()
+                    .map(|output| output.amount)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
+        tracing::info!(
+            "Prepared melt request details for quote {} with operation {}: inputs_count={}, input_amounts={:?}, inputs_total={}, quote_amount={}, fee_reserve={}, configured_input_fee={}, actual_input_fee={}, change_amount={}, change_outputs_count={}, change_output_amounts={:?}",
+            quote_info.id,
+            operation_id,
+            final_proofs.len(),
+            final_proof_amounts,
+            proofs_total,
+            quote_info.amount,
+            quote_info.fee_reserve,
+            input_fee,
+            actual_input_fee,
+            change_amount,
+            change_output_amounts.len(),
+            change_output_amounts
+        );
 
         // Update saga state to MeltRequested BEFORE making the melt call
         let mut saga = self.state_data.saga.clone();
@@ -859,27 +888,58 @@ impl std::fmt::Debug for MeltSaga<'_, PaymentPending> {
 }
 
 impl<'a> MeltSaga<'a, MeltRequested> {
-    /// Execute the melt request with async support.
+    /// Execute the melt request.
     #[instrument(skip_all)]
-    pub async fn execute_async(
+    pub async fn execute(
         self,
         metadata: HashMap<String, String>,
+        prefer_async: bool,
     ) -> Result<MeltSagaResult<'a>, Error> {
         let operation_id = self.state_data.operation_id;
         let quote_info = &self.state_data.quote;
 
         tracing::info!(
-            "Executing async melt request for quote {} with operation {}",
+            "Executing melt request for quote {} with operation {} (prefer_async: {})",
             quote_info.id,
-            operation_id
+            operation_id,
+            prefer_async
+        );
+
+        let change_outputs = self.state_data.premint_secrets.blinded_messages();
+        let change_output_amounts = change_outputs
+            .iter()
+            .map(|output| output.amount)
+            .collect::<Vec<_>>();
+        let request_outputs = if change_outputs.is_empty() {
+            None
+        } else {
+            Some(change_outputs)
+        };
+        let input_amounts = self
+            .state_data
+            .final_proofs
+            .iter()
+            .map(|proof| proof.amount)
+            .collect::<Vec<_>>();
+
+        tracing::info!(
+            "Posting melt request for quote {}: method={}, inputs_count={}, input_amounts={:?}, inputs_total={}, outputs_count={}, output_amounts={:?}, prefer_async={}",
+            quote_info.id,
+            quote_info.payment_method,
+            self.state_data.final_proofs.len(),
+            input_amounts,
+            self.state_data.final_proofs.total_amount()?,
+            request_outputs.as_ref().map_or(0, Vec::len),
+            change_output_amounts,
+            prefer_async
         );
 
         let request = MeltRequest::new(
             quote_info.id.clone(),
             self.state_data.final_proofs.clone(),
-            Some(self.state_data.premint_secrets.blinded_messages()),
+            request_outputs,
         )
-        .prefer_async(true);
+        .prefer_async(prefer_async);
 
         let melt_result = self
             .wallet

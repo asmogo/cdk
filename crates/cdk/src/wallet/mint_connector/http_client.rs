@@ -9,7 +9,7 @@ use cdk_common::{
     MintQuoteResponse, ProtectedEndpoint, RoutePath,
 };
 use serde::de::DeserializeOwned;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use tracing::instrument;
 use url::Url;
@@ -28,6 +28,43 @@ use crate::nuts::{
 use crate::wallet::auth::{AuthMintConnector, AuthWallet};
 
 type Cache = (u64, HashSet<(nut19::Method, nut19::Path)>);
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+enum CustomQuoteHttpResponse<T> {
+    Object(T),
+    SingletonArray(Vec<T>),
+}
+
+impl<T> CustomQuoteHttpResponse<T> {
+    fn into_response(self, context: &str) -> Result<T, Error> {
+        match self {
+            Self::Object(response) => Ok(response),
+            Self::SingletonArray(mut responses) => {
+                if responses.len() == 1 {
+                    Ok(responses.remove(0))
+                } else {
+                    Err(Error::Custom(format!(
+                        "{context} returned {} responses, expected exactly one",
+                        responses.len()
+                    )))
+                }
+            }
+        }
+    }
+}
+
+fn normalize_custom_melt_response(
+    mut response: cdk_common::nut05::MeltQuoteCustomResponse<String>,
+) -> cdk_common::nut05::MeltQuoteCustomResponse<String> {
+    if response.fee_reserve.is_none() {
+        if let Some(fee) = response.extra.get("fee") {
+            response.fee_reserve = serde_json::from_value::<cdk_common::Amount>(fee.clone()).ok();
+        }
+    }
+
+    response
+}
 
 /// Http Client
 #[derive(Debug, Clone)]
@@ -280,8 +317,10 @@ where
                 Ok(MintQuoteResponse::Bolt12(response))
             }
             MintQuoteRequest::Custom { request: req, .. } => {
-                let response: cdk_common::nut04::MintQuoteCustomResponse<String> =
-                    self.transport.http_post(url, auth_token, req).await?;
+                let response: CustomQuoteHttpResponse<
+                    cdk_common::nut04::MintQuoteCustomResponse<String>,
+                > = self.transport.http_post(url, auth_token, req).await?;
+                let response = response.into_response("custom mint quote")?;
                 Ok(MintQuoteResponse::Custom {
                     method: request.method(),
                     response,
@@ -341,8 +380,9 @@ where
                     .get_auth_token(Method::Get, RoutePath::MintQuote(method_name.clone()))
                     .await?;
 
-                let response: MintQuoteCustomResponse<String> =
+                let response: CustomQuoteHttpResponse<MintQuoteCustomResponse<String>> =
                     self.transport.http_get(url, auth_token).await?;
+                let response = response.into_response("custom mint quote status")?;
 
                 Ok(MintQuoteResponse::Custom { method, response })
             }
@@ -465,8 +505,11 @@ where
                 Ok(MeltQuoteCreateResponse::Bolt12(response))
             }
             MeltQuoteRequest::Custom(req) => {
-                let response: cdk_common::nut05::MeltQuoteCustomResponse<String> =
-                    self.transport.http_post(url, auth_token, req).await?;
+                let response: CustomQuoteHttpResponse<
+                    cdk_common::nut05::MeltQuoteCustomResponse<String>,
+                > = self.transport.http_post(url, auth_token, req).await?;
+                let response =
+                    normalize_custom_melt_response(response.into_response("custom melt quote")?);
                 Ok(MeltQuoteCreateResponse::Custom((
                     request.method(),
                     response,
@@ -526,8 +569,12 @@ where
                     .get_auth_token(Method::Get, RoutePath::MeltQuote(method_name.clone()))
                     .await?;
 
-                let response: cdk_common::nut05::MeltQuoteCustomResponse<String> =
-                    self.transport.http_get(url, auth_token).await?;
+                let response: CustomQuoteHttpResponse<
+                    cdk_common::nut05::MeltQuoteCustomResponse<String>,
+                > = self.transport.http_get(url, auth_token).await?;
+                let response = normalize_custom_melt_response(
+                    response.into_response("custom melt quote status")?,
+                );
 
                 Ok(MeltQuoteResponse::Custom((method.clone(), response)))
             }
@@ -570,9 +617,12 @@ where
                 Ok(MeltQuoteResponse::Bolt12(res))
             }
             _ => {
-                let res: cdk_common::nuts::MeltQuoteCustomResponse<String> = self
+                let res: CustomQuoteHttpResponse<
+                    cdk_common::nuts::MeltQuoteCustomResponse<String>,
+                > = self
                     .retriable_http_request(nut19::Method::Post, path, auth_token, &request)
                     .await?;
+                let res = normalize_custom_melt_response(res.into_response("custom melt")?);
                 Ok(MeltQuoteResponse::Custom((method.clone(), res)))
             }
         }
@@ -744,11 +794,12 @@ mod tests {
     use std::sync::Mutex;
 
     use async_trait::async_trait;
-    use cdk_common::MintQuoteState;
+    use cdk_common::{MeltQuoteState, MintQuoteState};
     use serde::de::DeserializeOwned;
 
     use super::*;
     use crate::nuts::nut04::MintQuoteCustomRequest;
+    use crate::nuts::nut05::MeltQuoteCustomRequest;
 
     /// A mock transport that captures the serialized POST payload and returns
     /// a canned JSON response. Follows the same canned-response pattern as
@@ -929,6 +980,128 @@ mod tests {
             }
             _ => panic!("expected custom response"),
         }
+    }
+
+    #[tokio::test]
+    async fn test_post_mint_quote_custom_accepts_singleton_array_response() {
+        let canned_json = serde_json::json!([
+            {
+                "quote": "test-quote-id",
+                "request": "paypal://pay?id=123",
+                "amount": 1000,
+                "amount_paid": 0,
+                "amount_issued": 0,
+                "unit": "sat"
+            }
+        ])
+        .to_string();
+
+        let transport = MockTransport {
+            post_response: Arc::new(Mutex::new(Some(canned_json))),
+            ..Default::default()
+        };
+        let mint_url = MintUrl::from_str("https://mint.example.com").expect("parse url");
+        let client = HttpClient::with_transport(mint_url, transport, None);
+
+        let response = client
+            .post_mint_quote(MintQuoteRequest::Custom {
+                method: PaymentMethod::Custom("paypal".to_string()),
+                request: MintQuoteCustomRequest {
+                    amount: cdk_common::Amount::from(1000),
+                    unit: cdk_common::CurrencyUnit::Sat,
+                    description: None,
+                    pubkey: None,
+                    extra: serde_json::Value::Null,
+                },
+            })
+            .await
+            .expect("custom mint quote");
+
+        assert_eq!(response.state(), Some(MintQuoteState::Unpaid));
+        match response {
+            MintQuoteResponse::Custom { response, .. } => {
+                assert_eq!(response.quote, "test-quote-id");
+            }
+            _ => panic!("expected custom response"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_post_melt_quote_custom_accepts_singleton_array_response() {
+        let canned_json = serde_json::json!([
+            {
+                "quote": "test-quote-id",
+                "request": "tb1qexample",
+                "amount": 1000,
+                "unit": "sat",
+                "fee": 426,
+                "estimated_blocks": 1,
+                "state": "UNPAID",
+                "expiry": 9999999
+            }
+        ])
+        .to_string();
+
+        let transport = MockTransport {
+            post_response: Arc::new(Mutex::new(Some(canned_json))),
+            ..Default::default()
+        };
+        let mint_url = MintUrl::from_str("https://mint.example.com").expect("parse url");
+        let client = HttpClient::with_transport(mint_url, transport, None);
+
+        let response = client
+            .post_melt_quote(MeltQuoteRequest::Custom(MeltQuoteCustomRequest {
+                method: "onchain".to_string(),
+                request: "tb1qexample".to_string(),
+                unit: cdk_common::CurrencyUnit::Sat,
+                extra: serde_json::json!({ "amount": 1000 }),
+            }))
+            .await
+            .expect("custom melt quote");
+
+        match response {
+            MeltQuoteCreateResponse::Custom((_, response)) => {
+                assert_eq!(response.quote, "test-quote-id");
+                assert_eq!(response.state, MeltQuoteState::Unpaid);
+                assert_eq!(response.fee_reserve, Some(cdk_common::Amount::from(426)));
+                assert_eq!(response.extra["estimated_blocks"], serde_json::json!(1));
+                assert_eq!(response.extra["fee"], serde_json::json!(426));
+            }
+            _ => panic!("expected custom response"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_get_melt_quote_custom_uses_fee_extra_as_fee_reserve() {
+        let canned_json = serde_json::json!({
+            "quote": "test-quote-id",
+            "request": "tb1qexample",
+            "amount": 1000,
+            "unit": "sat",
+            "fee": 426,
+            "estimated_blocks": 1,
+            "state": "UNPAID",
+            "expiry": 9999999
+        })
+        .to_string();
+
+        let transport = MockTransport {
+            get_response: Arc::new(Mutex::new(Some(canned_json))),
+            ..Default::default()
+        };
+        let mint_url = MintUrl::from_str("https://mint.example.com").expect("parse url");
+        let client = HttpClient::with_transport(mint_url, transport, None);
+
+        let response = client
+            .get_melt_quote_status(
+                PaymentMethod::Custom("onchain".to_string()),
+                "test-quote-id",
+            )
+            .await
+            .expect("custom melt quote status");
+
+        assert_eq!(response.state(), MeltQuoteState::Unpaid);
+        assert_eq!(response.fee_reserve(), cdk_common::Amount::from(426));
     }
 
     #[tokio::test]

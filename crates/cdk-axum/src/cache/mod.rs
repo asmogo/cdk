@@ -71,10 +71,10 @@ impl Default for HttpCache {
 const MAX_PAYLOAD_SIZE: usize = 10 * 1024 * 1024;
 
 /// Default TTL for the cache.
-const DEFAULT_TTL_SECS: u64 = 60;
+pub const DEFAULT_TTL_SECS: u64 = 60;
 
 /// Default TTI for the cache.
-const DEFAULT_TTI_SECS: u64 = 60;
+pub const DEFAULT_TTI_SECS: u64 = 60;
 
 /// Http cache key.
 ///
@@ -90,8 +90,13 @@ impl Deref for HttpCacheKey {
     }
 }
 
-impl From<config::Config> for HttpCache {
-    fn from(config: config::Config) -> Self {
+impl HttpCache {
+    /// Build an [`HttpCache`] from a [`config::Config`].
+    ///
+    /// This is async because Redis-backed variants need to open a connection,
+    /// which must be awaited. Calling `block_on` from inside an async runtime
+    /// (where this code runs) panics.
+    pub async fn from_config(config: config::Config) -> Self {
         let ttl = Duration::from_secs(config.ttl.unwrap_or(DEFAULT_TTL_SECS));
         let tti = Duration::from_secs(config.tti.unwrap_or(DEFAULT_TTI_SECS));
 
@@ -101,26 +106,34 @@ impl From<config::Config> for HttpCache {
             config::Backend::Redis(redis_config) => {
                 let client = if redis_config.use_cluster {
                     match redis_config.cluster_nodes {
-                        Some(nodes) => match redis::cluster::ClusterClient::new(nodes) {
-                            Ok(cluster_client) => {
-                                match tokio::runtime::Handle::current()
-                                    .block_on(cluster_client.get_async_connection())
-                                {
-                                    Ok(conn) => Some(RedisClient::Cluster(conn)),
-                                    Err(err) => {
-                                        tracing::error!(
-                                            "Failed to connect to Redis cluster: {}",
-                                            err
-                                        );
-                                        None
+                        Some(nodes) => {
+                            // Explicit timeouts
+                            let builder = redis::cluster::ClusterClientBuilder::new(nodes)
+                                .connection_timeout(Duration::from_secs(5))
+                                .response_timeout(Duration::from_secs(5))
+                                .retries(2);
+                            match builder.build() {
+                                Ok(cluster_client) => {
+                                    match cluster_client.get_async_connection().await {
+                                        Ok(conn) => Some(RedisClient::Cluster(conn)),
+                                        Err(err) => {
+                                            tracing::error!(
+                                                "Failed to connect to Redis cluster: {}",
+                                                err
+                                            );
+                                            None
+                                        }
                                     }
                                 }
+                                Err(err) => {
+                                    tracing::error!(
+                                        "Failed to create Redis cluster client: {}",
+                                        err
+                                    );
+                                    None
+                                }
                             }
-                            Err(err) => {
-                                tracing::error!("Failed to create Redis cluster client: {}", err);
-                                None
-                            }
-                        },
+                        }
                         None => {
                             tracing::error!(
                                 "Redis cluster nodes not provided, falling back to memory cache"
@@ -132,9 +145,7 @@ impl From<config::Config> for HttpCache {
                     match redis_config.connection_string {
                         Some(connection_string) => match redis::Client::open(connection_string) {
                             Ok(single_client) => {
-                                match tokio::runtime::Handle::current()
-                                    .block_on(redis::aio::ConnectionManager::new(single_client))
-                                {
+                                match redis::aio::ConnectionManager::new(single_client).await {
                                     Ok(conn) => Some(RedisClient::Single(conn)),
                                     Err(err) => {
                                         tracing::error!(

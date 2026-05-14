@@ -726,8 +726,12 @@ fn configure_cache(
         ));
     }
 
-    let cache: HttpCache = settings.info.http_cache.clone().into();
-    mint_builder.with_cache(Some(cache.ttl.as_secs()), cached_endpoints)
+    let ttl = settings
+        .info
+        .http_cache
+        .ttl
+        .unwrap_or(cdk_axum::cache::DEFAULT_TTL_SECS);
+    mint_builder.with_cache(Some(ttl), cached_endpoints)
 }
 
 async fn setup_authentication(
@@ -948,7 +952,7 @@ async fn start_services_with_shutdown(
 ) -> Result<()> {
     let listen_addr = settings.info.listen_host.clone();
     let listen_port = settings.info.listen_port;
-    let cache: HttpCache = settings.info.http_cache.clone().into();
+    let cache: HttpCache = HttpCache::from_config(settings.info.http_cache.clone()).await;
 
     #[cfg(feature = "management-rpc")]
     let mut rpc_enabled = false;

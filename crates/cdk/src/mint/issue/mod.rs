@@ -217,7 +217,8 @@ impl Mint {
             // Extract pubkey using the getter
             let pubkey = mint_quote_request.pubkey();
 
-            let ln = self.get_payment_processor(unit.clone(), payment_method.clone())?;
+            let payment_backend =
+                self.get_payment_processor(unit.clone(), payment_method.clone())?;
 
             let quote_id = QuoteId::new();
 
@@ -237,7 +238,7 @@ impl Mint {
 
                     let quote_expiry = unix_time() + mint_ttl;
 
-                    let settings = ln.get_settings().await?;
+                    let settings = payment_backend.get_settings().await?;
 
                     let description = bolt11_request.description;
 
@@ -326,7 +327,7 @@ impl Mint {
                 }
             };
 
-            let create_invoice_response = ln
+            let create_invoice_response = payment_backend
                 .create_incoming_payment_request(payment_options)
                 .await
                 .map_err(|err| {

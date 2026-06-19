@@ -127,7 +127,7 @@ impl std::fmt::Debug for Info {
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
 #[serde(rename_all = "lowercase")]
-pub enum LnBackend {
+pub enum PaymentBackendKind {
     #[default]
     None,
     #[cfg(feature = "cln")]
@@ -142,33 +142,39 @@ pub enum LnBackend {
     LdkNode,
     #[cfg(feature = "grpc-processor")]
     GrpcProcessor,
+    #[cfg(feature = "bdk")]
+    Bdk,
 }
 
-impl std::str::FromStr for LnBackend {
+impl std::str::FromStr for PaymentBackendKind {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             #[cfg(feature = "cln")]
-            "cln" => Ok(LnBackend::Cln),
+            "cln" => Ok(Self::Cln),
             #[cfg(feature = "lnbits")]
-            "lnbits" => Ok(LnBackend::LNbits),
+            "lnbits" => Ok(Self::LNbits),
             #[cfg(feature = "fakewallet")]
-            "fakewallet" => Ok(LnBackend::FakeWallet),
+            "fakewallet" => Ok(Self::FakeWallet),
             #[cfg(feature = "lnd")]
-            "lnd" => Ok(LnBackend::Lnd),
+            "lnd" => Ok(Self::Lnd),
             #[cfg(feature = "ldk-node")]
-            "ldk-node" | "ldknode" => Ok(LnBackend::LdkNode),
+            "ldk-node" | "ldknode" => Ok(Self::LdkNode),
             #[cfg(feature = "grpc-processor")]
-            "grpcprocessor" => Ok(LnBackend::GrpcProcessor),
-            _ => Err(format!("Unknown Lightning backend: {s}")),
+            "grpcprocessor" => Ok(Self::GrpcProcessor),
+            #[cfg(feature = "bdk")]
+            "bdk" => Ok(Self::Bdk),
+            "none" => Ok(Self::None),
+            _ => Err(format!("Unknown payment backend: {s}")),
         }
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Ln {
-    pub ln_backend: LnBackend,
+pub struct PaymentBackend {
+    #[serde(alias = "ln_backend", alias = "onchain_backend")]
+    pub backend: PaymentBackendKind,
     #[serde(default)]
     pub unit: CurrencyUnit,
     pub invoice_description: Option<String>,
@@ -178,10 +184,10 @@ pub struct Ln {
     pub max_melt: Amount,
 }
 
-impl Default for Ln {
+impl Default for PaymentBackend {
     fn default() -> Self {
-        Ln {
-            ln_backend: LnBackend::default(),
+        Self {
+            backend: PaymentBackendKind::default(),
             unit: CurrencyUnit::default(),
             invoice_description: None,
             min_mint: 1.into(),
@@ -192,67 +198,20 @@ impl Default for Ln {
     }
 }
 
-fn deserialize_ln<'de, D>(deserializer: D) -> Result<Vec<Ln>, D::Error>
+fn deserialize_payment_backends<'de, D>(deserializer: D) -> Result<Vec<PaymentBackend>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
     #[derive(Deserialize)]
     #[serde(untagged)]
-    enum LnOneOrMany {
-        Many(Vec<Ln>),
-        One(Ln),
+    enum PaymentBackendOneOrMany {
+        Many(Vec<PaymentBackend>),
+        One(PaymentBackend),
     }
 
-    match LnOneOrMany::deserialize(deserializer)? {
-        LnOneOrMany::Many(ln) => Ok(ln),
-        LnOneOrMany::One(ln) => Ok(vec![ln]),
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum OnchainBackend {
-    #[default]
-    None,
-    #[cfg(feature = "bdk")]
-    Bdk,
-    #[cfg(feature = "fakewallet")]
-    FakeWallet,
-}
-
-impl std::str::FromStr for OnchainBackend {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "none" => Ok(OnchainBackend::None),
-            #[cfg(feature = "bdk")]
-            "bdk" => Ok(OnchainBackend::Bdk),
-            #[cfg(feature = "fakewallet")]
-            "fakewallet" => Ok(OnchainBackend::FakeWallet),
-            _ => Err(format!("Unknown Onchain backend: {s}")),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Onchain {
-    pub onchain_backend: OnchainBackend,
-    pub min_mint: Amount,
-    pub max_mint: Amount,
-    pub min_melt: Amount,
-    pub max_melt: Amount,
-}
-
-impl Default for Onchain {
-    fn default() -> Self {
-        Onchain {
-            onchain_backend: OnchainBackend::default(),
-            min_mint: 1.into(),
-            max_mint: 500_000.into(),
-            min_melt: 1.into(),
-            max_melt: 500_000.into(),
-        }
+    match PaymentBackendOneOrMany::deserialize(deserializer)? {
+        PaymentBackendOneOrMany::Many(backends) => Ok(backends),
+        PaymentBackendOneOrMany::One(backend) => Ok(vec![backend]),
     }
 }
 
@@ -811,12 +770,12 @@ impl Default for FakeWallet {
 
 // Helper functions to provide default values
 // Common fee defaults for all backends
-#[cfg(any(feature = "cln", feature = "lnbits", feature = "lnd"))]
+#[cfg(any(feature = "cln", feature = "lnbits", feature = "lnd", feature = "bdk"))]
 fn default_fee_percent() -> f32 {
     0.02
 }
 
-#[cfg(any(feature = "cln", feature = "lnbits", feature = "lnd"))]
+#[cfg(any(feature = "cln", feature = "lnbits", feature = "lnd", feature = "bdk"))]
 fn default_reserve_fee_min() -> Amount {
     2.into()
 }
@@ -998,13 +957,12 @@ fn default_blind() -> AuthType {
 }
 
 /// CDK settings, derived from `config.toml`
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Default)]
 pub struct Settings {
     pub info: Info,
     pub mint_info: MintInfo,
-    #[serde(default, deserialize_with = "deserialize_ln")]
-    pub ln: Vec<Ln>,
-    pub onchain: Option<Onchain>,
+    #[serde(rename = "payment_backend")]
+    pub payment_backends: Vec<PaymentBackend>,
     /// Transaction limits for DoS protection
     #[serde(default)]
     pub limits: Limits,
@@ -1029,6 +987,108 @@ pub struct Settings {
     #[cfg(feature = "prometheus")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prometheus: Option<Prometheus>,
+}
+
+#[derive(Deserialize)]
+struct SettingsFile {
+    pub info: Info,
+    pub mint_info: MintInfo,
+    #[serde(
+        default,
+        rename = "payment_backend",
+        deserialize_with = "deserialize_payment_backends"
+    )]
+    pub payment_backends: Vec<PaymentBackend>,
+    #[serde(default, deserialize_with = "deserialize_optional_payment_backends")]
+    pub ln: Option<Vec<PaymentBackend>>,
+    pub onchain: Option<PaymentBackend>,
+    #[serde(default)]
+    pub limits: Limits,
+    #[cfg(feature = "cln")]
+    pub cln: Option<Cln>,
+    #[cfg(feature = "lnbits")]
+    pub lnbits: Option<LNbits>,
+    #[cfg(feature = "lnd")]
+    pub lnd: Option<Lnd>,
+    #[cfg(feature = "ldk-node")]
+    pub ldk_node: Option<LdkNode>,
+    #[cfg(feature = "fakewallet")]
+    pub fake_wallet: Option<FakeWallet>,
+    pub grpc_processor: Option<GrpcProcessor>,
+    #[cfg(feature = "bdk")]
+    pub bdk: Option<Bdk>,
+    pub database: Database,
+    pub auth_database: Option<AuthDatabase>,
+    #[cfg(feature = "management-rpc")]
+    pub mint_management_rpc: Option<MintManagementRpc>,
+    pub auth: Option<Auth>,
+    #[cfg(feature = "prometheus")]
+    pub prometheus: Option<Prometheus>,
+}
+
+fn deserialize_optional_payment_backends<'de, D>(
+    deserializer: D,
+) -> Result<Option<Vec<PaymentBackend>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    deserialize_payment_backends(deserializer).map(Some)
+}
+
+impl<'de> Deserialize<'de> for Settings {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let file = SettingsFile::deserialize(deserializer)?;
+        let mut payment_backends = file.payment_backends;
+
+        if let Some(legacy_ln) = file.ln {
+            tracing::warn!("`[ln]` is deprecated; use `[[payment_backend]]`");
+            payment_backends.extend(legacy_ln);
+        }
+        if let Some(legacy_onchain) = file.onchain {
+            tracing::warn!("`[onchain]` is deprecated; use `[[payment_backend]]`");
+            #[cfg(feature = "fakewallet")]
+            let duplicate_fake_wallet = legacy_onchain.backend == PaymentBackendKind::FakeWallet
+                && payment_backends
+                    .iter()
+                    .any(|entry| entry.backend == PaymentBackendKind::FakeWallet);
+            #[cfg(not(feature = "fakewallet"))]
+            let duplicate_fake_wallet = false;
+
+            if !duplicate_fake_wallet {
+                payment_backends.push(legacy_onchain);
+            }
+        }
+
+        Ok(Self {
+            info: file.info,
+            mint_info: file.mint_info,
+            payment_backends,
+            limits: file.limits,
+            #[cfg(feature = "cln")]
+            cln: file.cln,
+            #[cfg(feature = "lnbits")]
+            lnbits: file.lnbits,
+            #[cfg(feature = "lnd")]
+            lnd: file.lnd,
+            #[cfg(feature = "ldk-node")]
+            ldk_node: file.ldk_node,
+            #[cfg(feature = "fakewallet")]
+            fake_wallet: file.fake_wallet,
+            grpc_processor: file.grpc_processor,
+            #[cfg(feature = "bdk")]
+            bdk: file.bdk,
+            database: file.database,
+            auth_database: file.auth_database,
+            #[cfg(feature = "management-rpc")]
+            mint_management_rpc: file.mint_management_rpc,
+            auth: file.auth,
+            #[cfg(feature = "prometheus")]
+            prometheus: file.prometheus,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -1111,45 +1171,23 @@ impl Settings {
 
     #[cfg(feature = "fakewallet")]
     fn validate_fake_wallet_backend_pairing(&self) -> Result<(), String> {
-        let onchain_backend = self
-            .onchain
-            .as_ref()
-            .map(|onchain| &onchain.onchain_backend)
-            .unwrap_or(&OnchainBackend::None);
-
-        let has_fake_wallet_ln_backend = self
-            .ln
+        let has_fake_wallet_backend = self
+            .payment_backends
             .iter()
-            .any(|ln| ln.ln_backend == LnBackend::FakeWallet);
-        let has_real_ln_backend = self
-            .ln
-            .iter()
-            .any(|ln| !matches!(ln.ln_backend, LnBackend::None | LnBackend::FakeWallet));
+            .any(|entry| entry.backend == PaymentBackendKind::FakeWallet);
+        let has_real_backend = self.payment_backends.iter().any(|entry| {
+            !matches!(
+                entry.backend,
+                PaymentBackendKind::None | PaymentBackendKind::FakeWallet
+            )
+        });
 
-        // A fake Lightning backend cannot be combined with a real one.
-        if has_fake_wallet_ln_backend && has_real_ln_backend {
+        if has_fake_wallet_backend && has_real_backend {
             return Err(
-                "ln_backend = \"fakewallet\" cannot be combined with a real \
-                 Lightning backend; use only fakewallet backends or only real backends"
+                "backend = \"fakewallet\" cannot be combined with a real payment backend; \
+                 use only fakewallet backends or only real backends"
                     .to_string(),
             );
-        }
-
-        match onchain_backend {
-            #[cfg(feature = "bdk")]
-            OnchainBackend::Bdk if has_fake_wallet_ln_backend => {
-                return Err("ln_backend = \"fakewallet\" cannot be combined with \
-                     onchain_backend = \"bdk\"; use onchain_backend = \
-                     \"fakewallet\" or \"none\""
-                    .to_string());
-            }
-            OnchainBackend::FakeWallet if has_real_ln_backend => {
-                return Err("onchain_backend = \"fakewallet\" cannot be combined with \
-                     a real Lightning backend; use ln_backend = \"fakewallet\" \
-                     or \"none\""
-                    .to_string());
-            }
-            _ => {}
         }
 
         Ok(())
@@ -1231,6 +1269,7 @@ mod tests {
         std::env::remove_var(crate::env_vars::BDK_TARGET_BLOCK_TIME_SECS_ENV_VAR);
         std::env::remove_var(crate::env_vars::BDK_FEE_OPTIONS_ENV_VAR);
         std::env::remove_var(crate::env_vars::ENV_ONCHAIN_BACKEND);
+        std::env::remove_var(crate::env_vars::ENV_PAYMENT_BACKEND);
     }
 
     #[test]
@@ -1575,62 +1614,69 @@ target_block_time_secs = 300
 
     #[cfg(all(feature = "fakewallet", feature = "bdk"))]
     #[test]
-    fn test_fakewallet_ln_with_bdk_onchain_rejected() {
+    fn test_fakewallet_with_bdk_rejected() {
         let settings = Settings {
-            ln: vec![Ln {
-                ln_backend: LnBackend::FakeWallet,
-                ..Default::default()
-            }],
-            onchain: Some(Onchain {
-                onchain_backend: OnchainBackend::Bdk,
-                ..Default::default()
-            }),
+            payment_backends: vec![
+                PaymentBackend {
+                    backend: PaymentBackendKind::FakeWallet,
+                    ..Default::default()
+                },
+                PaymentBackend {
+                    backend: PaymentBackendKind::Bdk,
+                    ..Default::default()
+                },
+            ],
             ..Default::default()
         };
 
         let err = settings
             .validate_backend_pairing()
-            .expect_err("fake LN with BDK onchain should fail");
+            .expect_err("fake wallet with BDK should fail");
 
         assert!(err.contains("fakewallet"));
-        assert!(err.contains("bdk"));
+        assert!(err.contains("real payment backend"));
     }
 
     #[cfg(all(feature = "fakewallet", feature = "cln"))]
     #[test]
-    fn test_real_ln_with_fakewallet_onchain_rejected() {
+    fn test_real_backend_with_fakewallet_rejected() {
         let settings = Settings {
-            ln: vec![Ln {
-                ln_backend: LnBackend::Cln,
-                ..Default::default()
-            }],
-            onchain: Some(Onchain {
-                onchain_backend: OnchainBackend::FakeWallet,
-                ..Default::default()
-            }),
+            payment_backends: vec![
+                PaymentBackend {
+                    backend: PaymentBackendKind::Cln,
+                    ..Default::default()
+                },
+                PaymentBackend {
+                    backend: PaymentBackendKind::FakeWallet,
+                    ..Default::default()
+                },
+            ],
             ..Default::default()
         };
 
         let err = settings
             .validate_backend_pairing()
-            .expect_err("real LN with fake onchain should fail");
+            .expect_err("real backend with fake wallet should fail");
 
         assert!(err.contains("fakewallet"));
-        assert!(err.contains("real Lightning"));
+        assert!(err.contains("real payment backend"));
     }
 
     #[cfg(feature = "fakewallet")]
     #[test]
-    fn test_fakewallet_ln_with_fakewallet_onchain_accepted() {
+    fn test_multiple_fakewallet_backends_accepted() {
         let settings = Settings {
-            ln: vec![Ln {
-                ln_backend: LnBackend::FakeWallet,
-                ..Default::default()
-            }],
-            onchain: Some(Onchain {
-                onchain_backend: OnchainBackend::FakeWallet,
-                ..Default::default()
-            }),
+            payment_backends: vec![
+                PaymentBackend {
+                    backend: PaymentBackendKind::FakeWallet,
+                    ..Default::default()
+                },
+                PaymentBackend {
+                    backend: PaymentBackendKind::FakeWallet,
+                    unit: CurrencyUnit::Msat,
+                    ..Default::default()
+                },
+            ],
             ..Default::default()
         };
 
@@ -1641,55 +1687,31 @@ target_block_time_secs = 300
 
     #[cfg(feature = "fakewallet")]
     #[test]
-    fn test_fakewallet_ln_with_no_onchain_accepted() {
+    fn test_fakewallet_backend_accepted() {
         let settings = Settings {
-            ln: vec![Ln {
-                ln_backend: LnBackend::FakeWallet,
+            payment_backends: vec![PaymentBackend {
+                backend: PaymentBackendKind::FakeWallet,
                 ..Default::default()
             }],
-            onchain: Some(Onchain {
-                onchain_backend: OnchainBackend::None,
-                ..Default::default()
-            }),
             ..Default::default()
         };
 
         settings
             .validate_backend_pairing()
-            .expect("fake LN without onchain should pass");
-    }
-
-    #[cfg(feature = "fakewallet")]
-    #[test]
-    fn test_no_ln_with_fakewallet_onchain_accepted() {
-        let settings = Settings {
-            ln: vec![Ln {
-                ln_backend: LnBackend::None,
-                ..Default::default()
-            }],
-            onchain: Some(Onchain {
-                onchain_backend: OnchainBackend::FakeWallet,
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-
-        settings
-            .validate_backend_pairing()
-            .expect("fake onchain-only backend pairing should pass");
+            .expect("fake wallet backend should pass");
     }
 
     #[cfg(all(feature = "fakewallet", feature = "cln"))]
     #[test]
-    fn test_fakewallet_ln_with_real_ln_rejected() {
+    fn test_fakewallet_with_real_backend_rejected() {
         let settings = Settings {
-            ln: vec![
-                Ln {
-                    ln_backend: LnBackend::FakeWallet,
+            payment_backends: vec![
+                PaymentBackend {
+                    backend: PaymentBackendKind::FakeWallet,
                     ..Default::default()
                 },
-                Ln {
-                    ln_backend: LnBackend::Cln,
+                PaymentBackend {
+                    backend: PaymentBackendKind::Cln,
                     ..Default::default()
                 },
             ],
@@ -1698,10 +1720,10 @@ target_block_time_secs = 300
 
         let err = settings
             .validate_backend_pairing()
-            .expect_err("fake LN combined with real LN should fail");
+            .expect_err("fake wallet combined with real backend should fail");
 
         assert!(err.contains("fakewallet"));
-        assert!(err.contains("real Lightning"));
+        assert!(err.contains("real payment backend"));
     }
 
     #[cfg(feature = "fakewallet")]
@@ -1748,16 +1770,16 @@ target_block_time_secs = 300
         let config_path = temp_dir.join("config.toml");
 
         let config_content = r#"
-[[ln]]
-ln_backend = "fakewallet"
+[[payment_backend]]
+backend = "fakewallet"
 unit = "sat"
 min_mint = 1
 max_mint = 500000
 min_melt = 1
 max_melt = 500000
 
-[[ln]]
-ln_backend = "fakewallet"
+[[payment_backend]]
+backend = "fakewallet"
 unit = "eur"
 min_mint = 1
 max_mint = 1000
@@ -1768,16 +1790,22 @@ max_melt = 1000
 
         let settings = Settings::new(Some(&config_path));
 
-        assert_eq!(settings.ln.len(), 2);
+        assert_eq!(settings.payment_backends.len(), 2);
 
-        assert_eq!(settings.ln[0].ln_backend, LnBackend::FakeWallet);
-        assert_eq!(settings.ln[0].unit, CurrencyUnit::Sat);
-        let max_mint_0: u64 = settings.ln[0].max_mint.into();
+        assert_eq!(
+            settings.payment_backends[0].backend,
+            PaymentBackendKind::FakeWallet
+        );
+        assert_eq!(settings.payment_backends[0].unit, CurrencyUnit::Sat);
+        let max_mint_0: u64 = settings.payment_backends[0].max_mint.into();
         assert_eq!(max_mint_0, 500_000);
 
-        assert_eq!(settings.ln[1].ln_backend, LnBackend::FakeWallet);
-        assert_eq!(settings.ln[1].unit, CurrencyUnit::Eur);
-        let max_mint_1: u64 = settings.ln[1].max_mint.into();
+        assert_eq!(
+            settings.payment_backends[1].backend,
+            PaymentBackendKind::FakeWallet
+        );
+        assert_eq!(settings.payment_backends[1].unit, CurrencyUnit::Eur);
+        let max_mint_1: u64 = settings.payment_backends[1].max_mint.into();
         assert_eq!(max_mint_1, 1_000);
 
         let _ = fs::remove_dir_all(&temp_dir);
@@ -1804,11 +1832,144 @@ max_melt = 500000
 
         let settings = Settings::new(Some(&config_path));
 
-        assert_eq!(settings.ln.len(), 1);
-        assert_eq!(settings.ln[0].ln_backend, LnBackend::FakeWallet);
-        assert_eq!(settings.ln[0].unit, CurrencyUnit::Sat);
+        assert_eq!(settings.payment_backends.len(), 1);
+        assert_eq!(
+            settings.payment_backends[0].backend,
+            PaymentBackendKind::FakeWallet
+        );
+        assert_eq!(settings.payment_backends[0].unit, CurrencyUnit::Sat);
 
         let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[cfg(all(feature = "fakewallet", feature = "bdk"))]
+    #[test]
+    fn test_legacy_ln_and_onchain_blocks_are_merged() {
+        use std::{env, fs};
+
+        let temp_dir = env::temp_dir().join("cdk_test_legacy_payment_backend_blocks");
+        fs::create_dir_all(&temp_dir).expect("Failed to create temp dir");
+        let config_path = temp_dir.join("config.toml");
+
+        let config_content = r#"
+[ln]
+ln_backend = "fakewallet"
+min_mint = 1
+max_mint = 500000
+min_melt = 1
+max_melt = 500000
+
+[onchain]
+onchain_backend = "bdk"
+min_mint = 1000
+max_mint = 1000000
+min_melt = 1000
+max_melt = 1000000
+"#;
+        fs::write(&config_path, config_content).expect("Failed to write config file");
+
+        let settings = Settings::try_new(Some(&config_path)).expect("legacy config should parse");
+
+        assert_eq!(settings.payment_backends.len(), 2);
+        assert_eq!(
+            settings.payment_backends[0].backend,
+            PaymentBackendKind::FakeWallet
+        );
+        assert_eq!(
+            settings.payment_backends[1].backend,
+            PaymentBackendKind::Bdk
+        );
+        assert_eq!(settings.payment_backends[1].unit, CurrencyUnit::Sat);
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[cfg(feature = "fakewallet")]
+    #[test]
+    fn test_legacy_duplicate_fakewallet_blocks_collapse_to_one_backend() {
+        use std::{env, fs};
+
+        let temp_dir = env::temp_dir().join("cdk_test_legacy_duplicate_fakewallet_blocks");
+        fs::create_dir_all(&temp_dir).expect("Failed to create temp dir");
+        let config_path = temp_dir.join("config.toml");
+
+        let config_content = r#"
+[ln]
+ln_backend = "fakewallet"
+min_mint = 1
+max_mint = 500000
+min_melt = 1
+max_melt = 500000
+
+[onchain]
+onchain_backend = "fakewallet"
+min_mint = 1
+max_mint = 500000
+min_melt = 1
+max_melt = 500000
+"#;
+        fs::write(&config_path, config_content).expect("Failed to write config file");
+
+        let settings = Settings::try_new(Some(&config_path)).expect("legacy config should parse");
+
+        assert_eq!(settings.payment_backends.len(), 1);
+        assert_eq!(
+            settings.payment_backends[0].backend,
+            PaymentBackendKind::FakeWallet
+        );
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[cfg(feature = "fakewallet")]
+    #[test]
+    fn test_payment_backend_env_takes_precedence_over_legacy_env() {
+        let _guard = config_env_lock();
+        std::env::set_var(crate::env_vars::ENV_PAYMENT_BACKEND, "fakewallet");
+        std::env::set_var(crate::env_vars::ENV_LN_BACKEND, "none");
+
+        let backend = PaymentBackend::default().from_env();
+
+        assert_eq!(backend.backend, PaymentBackendKind::FakeWallet);
+        std::env::remove_var(crate::env_vars::ENV_PAYMENT_BACKEND);
+        std::env::remove_var(crate::env_vars::ENV_LN_BACKEND);
+    }
+
+    #[cfg(feature = "fakewallet")]
+    #[test]
+    fn test_legacy_payment_backend_env_is_still_supported() {
+        let _guard = config_env_lock();
+        std::env::remove_var(crate::env_vars::ENV_PAYMENT_BACKEND);
+        std::env::set_var(crate::env_vars::ENV_LN_BACKEND, "fakewallet");
+
+        let backend = PaymentBackend::default().from_env();
+
+        assert_eq!(backend.backend, PaymentBackendKind::FakeWallet);
+        std::env::remove_var(crate::env_vars::ENV_LN_BACKEND);
+    }
+
+    #[cfg(all(feature = "cln", feature = "bdk"))]
+    #[test]
+    fn test_legacy_ln_and_onchain_env_create_separate_backends() {
+        let _guard = config_env_lock();
+        std::env::remove_var(crate::env_vars::ENV_PAYMENT_BACKEND);
+        std::env::set_var(crate::env_vars::ENV_LN_BACKEND, "cln");
+        std::env::set_var(crate::env_vars::ENV_ONCHAIN_BACKEND, "bdk");
+
+        let mut settings = Settings::default();
+        settings.from_env().expect("legacy env vars should resolve");
+
+        assert_eq!(settings.payment_backends.len(), 2);
+        assert_eq!(
+            settings.payment_backends[0].backend,
+            PaymentBackendKind::Cln
+        );
+        assert_eq!(
+            settings.payment_backends[1].backend,
+            PaymentBackendKind::Bdk
+        );
+        std::env::remove_var(crate::env_vars::ENV_LN_BACKEND);
+        std::env::remove_var(crate::env_vars::ENV_ONCHAIN_BACKEND);
     }
 
     #[cfg(feature = "fakewallet")]
@@ -1839,8 +2000,8 @@ max_delay_time = 3
 
         let settings = Settings::try_new(Some(&config_path)).expect("config should parse");
 
-        assert_eq!(settings.ln.len(), 1);
-        assert_eq!(settings.ln[0].unit, CurrencyUnit::Sat);
+        assert_eq!(settings.payment_backends.len(), 1);
+        assert_eq!(settings.payment_backends[0].unit, CurrencyUnit::Sat);
         assert_eq!(
             settings
                 .fake_wallet
@@ -2164,9 +2325,9 @@ max_melt = 500000
         assert_eq!(fakewallet_config.max_delay_time, 5);
         assert_eq!(
             settings
-                .ln
+                .payment_backends
                 .iter()
-                .map(|ln| ln.unit.clone())
+                .map(|entry| entry.unit.clone())
                 .collect::<Vec<_>>(),
             vec![CurrencyUnit::Sat, CurrencyUnit::Msat]
         );

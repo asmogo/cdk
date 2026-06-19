@@ -11,9 +11,9 @@ use crate::{Amount, Error};
 pub enum MeltSagaState {
     /// Proofs reserved and quote locked, ready to initiate payment
     ProofsReserved,
-    /// Melt request sent to mint, Lightning payment initiated
+    /// Melt request sent to mint, external payment initiated
     MeltRequested,
-    /// Lightning payment in progress, awaiting confirmation from network
+    /// External payment in progress, awaiting confirmation from the backend
     PaymentPending,
 }
 

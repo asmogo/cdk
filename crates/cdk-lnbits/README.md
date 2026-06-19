@@ -26,8 +26,8 @@ cdk-lnbits = "*"
 ### Config File
 
 ```toml
-[ln]
-ln_backend = "lnbits"
+[[payment_backend]]
+backend = "lnbits"
 
 [lnbits]
 admin_api_key = "your-admin-api-key"
@@ -43,7 +43,7 @@ All configuration can be set via environment variables:
 
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `CDK_MINTD_LN_BACKEND` | Set to `lnbits` | Yes |
+| `CDK_MINTD_PAYMENT_BACKEND` | Set to `lnbits` | Yes |
 | `CDK_MINTD_LNBITS_ADMIN_API_KEY` | LNBits admin API key | Yes |
 | `CDK_MINTD_LNBITS_INVOICE_API_KEY` | LNBits invoice API key | Yes |
 | `CDK_MINTD_LNBITS_LNBITS_API` | LNBits API URL | Yes |
@@ -53,7 +53,7 @@ All configuration can be set via environment variables:
 ### Example
 
 ```bash
-export CDK_MINTD_LN_BACKEND=lnbits
+export CDK_MINTD_PAYMENT_BACKEND=lnbits
 export CDK_MINTD_LNBITS_ADMIN_API_KEY=your-admin-api-key
 export CDK_MINTD_LNBITS_INVOICE_API_KEY=your-invoice-api-key
 export CDK_MINTD_LNBITS_LNBITS_API=https://your-lnbits-instance.com/api/v1

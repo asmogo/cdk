@@ -96,43 +96,39 @@ max_connections = 20
 # Connection timeout in seconds (optional, defaults to 10)
 connection_timeout_seconds = 10
 
-# Lightning backends. Use [ln] for a single backend, or repeat [[ln]] for one
-# backend per unit. Duplicate (unit, method) pairs are rejected at startup.
-#   [[ln]]
-#   ln_backend = "cln"
+# Payment backends. Repeat [[payment_backend]] for one backend per unit.
+# Duplicate (unit, method) pairs are rejected at startup.
+#   [[payment_backend]]
+#   backend = "cln"
 #   unit = "sat"
-#   [[ln]]
-#   ln_backend = "lnbits"
+#   [[payment_backend]]
+#   backend = "lnbits"
 #   unit = "msat"
 #
-# Fake wallet multi-unit testing uses one fakewallet [[ln]] entry per unit:
-#   [[ln]]
-#   ln_backend = "fakewallet"
+# Fake wallet multi-unit testing uses one fakewallet entry per unit:
+#   [[payment_backend]]
+#   backend = "fakewallet"
 #   unit = "sat"
-#   [[ln]]
-#   ln_backend = "fakewallet"
+#   [[payment_backend]]
+#   backend = "fakewallet"
 #   unit = "usd"
+# Legacy [ln] and [onchain] tables are still accepted with a deprecation warning.
 
-[ln]
-# Required ln backend `cln`, `lnd`, `fakewallet`, 'lnbits', 'ldknode' or 'none' (if onchain is enabled)
+[[payment_backend]]
+# Required backend: cln, lnd, lnbits, ldknode, grpcprocessor, bdk, fakewallet, or none.
 # NOTE: fakewallet is isolated testing mode and cannot be mixed with real payment backends.
-ln_backend = "fakewallet"
+backend = "fakewallet"
 # unit = "sat"          # Optional, defaults to "sat"
+# invoice_description = "Payment to the mint"
 # min_mint=1
 # max_mint=500000
 # min_melt=1
 # max_melt=500000
 
-[onchain]
-# Required onchain backend `bdk`, `fakewallet`, or `none`.
-# If `ln_backend` is set to `none`, `onchain_backend` MUST be set to a valid backend (e.g., `bdk`).
-# Use `fakewallet` with `ln_backend = "fakewallet"` for fully fake rails, or with
-# `ln_backend = "none"` for fake onchain-only testing.
-onchain_backend = "fakewallet"
-# min_mint=1000
-# max_mint=1000000
-# min_melt=1000
-# max_melt=1000000
+# To enable BDK, add another entry and configure [bdk] below:
+# [[payment_backend]]
+# backend = "bdk"
+# unit = "sat"
 
 # [bdk]
 # mnemonic = "your twelve or twenty-four word mnemonic phrase here"

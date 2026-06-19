@@ -14,18 +14,19 @@ fn main() {
         );
     }
 
-    // Check that at least one Lightning backend is enabled
-    let has_lightning_backend = cfg!(feature = "cln")
+    // Check that at least one payment backend is enabled
+    let has_payment_backend = cfg!(feature = "cln")
         || cfg!(feature = "lnd")
         || cfg!(feature = "lnbits")
         || cfg!(feature = "fakewallet")
         || cfg!(feature = "grpc-processor")
-        || cfg!(feature = "ldk-node");
+        || cfg!(feature = "ldk-node")
+        || cfg!(feature = "bdk");
 
-    if !has_lightning_backend {
+    if !has_payment_backend {
         panic!(
-            "cdk-mintd requires at least one Lightning backend to be enabled.\n\
-             Available Lightning backends: cln, lnd, lnbits, fakewallet, grpc-processor\n\
+            "cdk-mintd requires at least one payment backend to be enabled.\n\
+             Available payment backends: cln, lnd, lnbits, ldk-node, fakewallet, grpc-processor, bdk\n\
              Example: cargo build --features \"sqlite fakewallet\""
         );
     }

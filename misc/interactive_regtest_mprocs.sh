@@ -177,6 +177,8 @@ echo "export CDK_REGTEST_PID=\"$CDK_REGTEST_PID\"" >> "$ENV_FILE"
 # Get the project root directory (where justfile is located)
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# These dual-backend launchers intentionally exercise the deprecated LN/onchain
+# env aliases because a single PAYMENT_BACKEND override represents one entry.
 # Create environment setup scripts for mprocs to use
 cat > "$CDK_ITESTS_DIR/start_cln_mint.sh" << EOF
 #!/usr/bin/env bash

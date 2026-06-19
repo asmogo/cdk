@@ -40,7 +40,7 @@ pub struct PaymentConfirmed {
 /// Result of attempting internal settlement for a melt operation.
 ///
 /// This enum represents the decision point in the melt flow:
-/// - Internal settlement succeeded → skip external Lightning payment
+/// - Internal settlement succeeded → skip external payment
 /// - External payment required → proceed with Lightning Network call
 #[derive(Debug, Clone)]
 pub enum SettlementDecision {

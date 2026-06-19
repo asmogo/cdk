@@ -57,10 +57,10 @@ pub(crate) fn should_fail_for(operation: &str) -> bool {
     TEST_FAILURES.with(|failures| failures.borrow().contains(&operation.to_string()))
 }
 
-/// Creates and starts a test mint with in-memory storage and a fake Lightning backend.
+/// Creates and starts a test mint with in-memory storage and a fake payment backend.
 ///
 /// This mint can be used for unit tests without requiring external dependencies
-/// like Lightning nodes or persistent databases.
+/// like external payment services or persistent databases.
 ///
 /// # Example
 ///

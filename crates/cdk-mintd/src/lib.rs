@@ -45,9 +45,9 @@ use cdk_sqlite::mint::MintSqliteAuthDatabase;
 #[cfg(feature = "sqlite")]
 use cdk_sqlite::MintSqliteDatabase;
 use cli::CLIArgs;
-use config::{AuthType, DatabaseEngine, LnBackend};
+use config::{AuthType, DatabaseEngine, PaymentBackendKind};
 use env_vars::ENV_WORK_DIR;
-use setup::LnBackendSetup;
+use setup::PaymentBackendSetup;
 use tower::ServiceBuilder;
 use tower_http::compression::CompressionLayer;
 use tower_http::decompression::RequestDecompressionLayer;
@@ -290,9 +290,9 @@ pub fn apply_seed_file(settings: &mut config::Settings, seed_file: &Path) -> Res
 
     #[cfg(feature = "bdk")]
     if settings
-        .onchain
-        .as_ref()
-        .is_some_and(|onchain| onchain.onchain_backend == config::OnchainBackend::Bdk)
+        .payment_backends
+        .iter()
+        .any(|entry| entry.backend == PaymentBackendKind::Bdk)
     {
         let mut bdk = settings.bdk.clone().unwrap_or_default();
         bdk.mnemonic = Some(mnemonic.to_owned());
@@ -301,9 +301,9 @@ pub fn apply_seed_file(settings: &mut config::Settings, seed_file: &Path) -> Res
 
     #[cfg(feature = "ldk-node")]
     if settings
-        .ln
+        .payment_backends
         .iter()
-        .any(|ln| ln.ln_backend == LnBackend::LdkNode)
+        .any(|entry| entry.backend == PaymentBackendKind::LdkNode)
     {
         let mut ldk_node = settings.ldk_node.clone().unwrap_or_default();
         ldk_node.ldk_node_mnemonic = Some(mnemonic.to_owned());
@@ -404,7 +404,7 @@ async fn setup_sqlite_database(
 
 /**
  * Configures a `MintBuilder` instance with provided settings and initializes
- * routers for Lightning Network backends.
+ * routers for payment backends.
  */
 async fn configure_mint_builder(
     settings: &config::Settings,
@@ -420,41 +420,9 @@ async fn configure_mint_builder(
     // Configure basic mint information
     let mint_builder = configure_basic_info(settings, mint_builder);
 
-    // Check that fake wallet is not used on mainnet
-    #[cfg(feature = "fakewallet")]
-    if settings
-        .ln
-        .iter()
-        .any(|ln| ln.ln_backend == LnBackend::FakeWallet)
-    {
-        if let Some(_onchain) = &settings.onchain {
-            #[cfg(feature = "bdk")]
-            if _onchain.onchain_backend == config::OnchainBackend::Bdk {
-                if let Some(bdk) = &settings.bdk {
-                    if let Some(network) = &bdk.network {
-                        let network = network.to_lowercase();
-                        if network == "mainnet" || network == "bitcoin" {
-                            bail!("Fake wallet cannot be used for Lightning when On-chain is configured for Mainnet");
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Configure lightning backend
-    let mint_builder = configure_lightning_backend(
-        settings,
-        mint_builder,
-        runtime.clone(),
-        work_dir,
-        kv_store.clone(),
-    )
-    .await?;
-
-    // Configure onchain backend
+    // Configure payment backends
     let mint_builder =
-        configure_onchain_backend(settings, mint_builder, runtime, work_dir, kv_store).await?;
+        configure_payment_backends(settings, mint_builder, runtime, work_dir, kv_store).await?;
 
     // Extract configured payment methods from mint_builder
     let mint_info = mint_builder.current_mint_info();
@@ -479,7 +447,7 @@ async fn configure_mint_builder(
         .methods
         .is_empty()
     {
-        bail!("At least one payment backend (Lightning or On-chain) must be configured");
+        bail!("At least one payment backend must be configured");
     }
 
     Ok(mint_builder)
@@ -556,39 +524,39 @@ fn configure_basic_info(settings: &config::Settings, mint_builder: MintBuilder) 
 
     builder
 }
-/// Configures Lightning Network backend based on the specified backend type
-async fn configure_lightning_backend(
+/// Configures payment backends based on the specified backend types.
+async fn configure_payment_backends(
     settings: &config::Settings,
     mut mint_builder: MintBuilder,
     _runtime: Option<std::sync::Arc<tokio::runtime::Runtime>>,
-    work_dir: &Path,
+    _work_dir: &Path,
     _kv_store: Option<Arc<dyn KVStore<Err = cdk::cdk_database::Error> + Send + Sync>>,
 ) -> Result<MintBuilder> {
-    if settings.ln.is_empty() {
-        tracing::info!("No Lightning backend configured");
+    if settings.payment_backends.is_empty() {
+        tracing::info!("No payment backend configured");
         return Ok(mint_builder);
     }
 
     #[cfg(feature = "fakewallet")]
     let mut configure_fake_wallet_keyset_rotations = false;
 
-    for ln_entry in &settings.ln {
+    for backend_entry in &settings.payment_backends {
         let mint_melt_limits = MintMeltLimits {
-            mint_min: ln_entry.min_mint,
-            mint_max: ln_entry.max_mint,
-            melt_min: ln_entry.min_melt,
-            melt_max: ln_entry.max_melt,
+            mint_min: backend_entry.min_mint,
+            mint_max: backend_entry.max_mint,
+            melt_min: backend_entry.min_melt,
+            melt_max: backend_entry.max_melt,
         };
 
         tracing::debug!(
-            "Ln backend: {:?} (unit: {:?})",
-            ln_entry.ln_backend,
-            ln_entry.unit
+            "Payment backend: {:?} (unit: {:?})",
+            backend_entry.backend,
+            backend_entry.unit
         );
 
-        match ln_entry.ln_backend {
+        match backend_entry.backend {
             #[cfg(feature = "cln")]
-            LnBackend::Cln => {
+            PaymentBackendKind::Cln => {
                 let cln_settings = settings.cln.clone().ok_or_else(|| {
                     anyhow!("CLN backend selected but [cln] config section is missing")
                 })?;
@@ -597,7 +565,7 @@ async fn configure_lightning_backend(
                         settings,
                         cdk::nuts::CurrencyUnit::Msat,
                         None,
-                        work_dir,
+                        _work_dir,
                         _kv_store.clone(),
                     )
                     .await?;
@@ -607,19 +575,19 @@ async fn configure_lightning_backend(
                 mint_builder = configure_backend_for_unit(
                     settings,
                     mint_builder,
-                    ln_entry.unit.clone(),
+                    backend_entry.unit.clone(),
                     mint_melt_limits,
                     Arc::new(cln),
                 )
                 .await?;
             }
             #[cfg(feature = "lnbits")]
-            LnBackend::LNbits => {
+            PaymentBackendKind::LNbits => {
                 let lnbits_settings = settings.lnbits.clone().ok_or_else(|| {
                     anyhow!("LNbits backend selected but [lnbits] config section is missing")
                 })?;
                 let lnbits = lnbits_settings
-                    .setup(settings, ln_entry.unit.clone(), None, work_dir, None)
+                    .setup(settings, backend_entry.unit.clone(), None, _work_dir, None)
                     .await?;
                 #[cfg(feature = "prometheus")]
                 let lnbits = MetricsMintPayment::new(lnbits);
@@ -627,14 +595,14 @@ async fn configure_lightning_backend(
                 mint_builder = configure_backend_for_unit(
                     settings,
                     mint_builder,
-                    ln_entry.unit.clone(),
+                    backend_entry.unit.clone(),
                     mint_melt_limits,
                     Arc::new(lnbits),
                 )
                 .await?;
             }
             #[cfg(feature = "lnd")]
-            LnBackend::Lnd => {
+            PaymentBackendKind::Lnd => {
                 let lnd_settings = settings.lnd.clone().ok_or_else(|| {
                     anyhow!("LND backend selected but [lnd] config section is missing")
                 })?;
@@ -643,7 +611,7 @@ async fn configure_lightning_backend(
                         settings,
                         cdk::nuts::CurrencyUnit::Msat,
                         None,
-                        work_dir,
+                        _work_dir,
                         _kv_store.clone(),
                     )
                     .await?;
@@ -653,14 +621,14 @@ async fn configure_lightning_backend(
                 mint_builder = configure_backend_for_unit(
                     settings,
                     mint_builder,
-                    ln_entry.unit.clone(),
+                    backend_entry.unit.clone(),
                     mint_melt_limits,
                     Arc::new(lnd),
                 )
                 .await?;
             }
             #[cfg(feature = "fakewallet")]
-            LnBackend::FakeWallet => {
+            PaymentBackendKind::FakeWallet => {
                 let fake_wallet = settings.fake_wallet.clone().ok_or_else(|| {
                     anyhow!(
                         "Fake wallet backend selected but [fake_wallet] config section is missing"
@@ -671,9 +639,9 @@ async fn configure_lightning_backend(
                 let fake = fake_wallet
                     .setup(
                         settings,
-                        ln_entry.unit.clone(),
+                        backend_entry.unit.clone(),
                         None,
-                        work_dir,
+                        _work_dir,
                         _kv_store.clone(),
                     )
                     .await?;
@@ -683,7 +651,7 @@ async fn configure_lightning_backend(
                 mint_builder = configure_backend_for_unit(
                     settings,
                     mint_builder,
-                    ln_entry.unit.clone(),
+                    backend_entry.unit.clone(),
                     mint_melt_limits,
                     Arc::new(fake),
                 )
@@ -692,7 +660,7 @@ async fn configure_lightning_backend(
                 configure_fake_wallet_keyset_rotations = true;
             }
             #[cfg(feature = "grpc-processor")]
-            LnBackend::GrpcProcessor => {
+            PaymentBackendKind::GrpcProcessor => {
                 let grpc_processor = settings.grpc_processor.clone().ok_or_else(|| {
                     anyhow!(
                         "gRPC payment processor backend selected but [grpc_processor] config section is missing"
@@ -706,7 +674,7 @@ async fn configure_lightning_backend(
                 );
 
                 let processor = grpc_processor
-                    .setup(settings, ln_entry.unit.clone(), None, work_dir, None)
+                    .setup(settings, backend_entry.unit.clone(), None, _work_dir, None)
                     .await?;
                 #[cfg(feature = "prometheus")]
                 let processor = MetricsMintPayment::new(processor);
@@ -714,14 +682,14 @@ async fn configure_lightning_backend(
                 mint_builder = configure_backend_for_unit(
                     settings,
                     mint_builder,
-                    ln_entry.unit.clone(),
+                    backend_entry.unit.clone(),
                     mint_melt_limits,
                     Arc::new(processor),
                 )
                 .await?;
             }
             #[cfg(feature = "ldk-node")]
-            LnBackend::LdkNode => {
+            PaymentBackendKind::LdkNode => {
                 let ldk_node_settings = settings.ldk_node.clone().ok_or_else(|| {
                     anyhow!("LDK Node backend selected but [ldk_node] config section is missing")
                 })?;
@@ -730,9 +698,9 @@ async fn configure_lightning_backend(
                 let ldk_node = ldk_node_settings
                     .setup(
                         settings,
-                        ln_entry.unit.clone(),
+                        backend_entry.unit.clone(),
                         _runtime.clone(),
-                        work_dir,
+                        _work_dir,
                         None,
                     )
                     .await?;
@@ -740,16 +708,42 @@ async fn configure_lightning_backend(
                 mint_builder = configure_backend_for_unit(
                     settings,
                     mint_builder,
-                    ln_entry.unit.clone(),
+                    backend_entry.unit.clone(),
                     mint_melt_limits,
                     Arc::new(ldk_node),
                 )
                 .await?;
             }
-            LnBackend::None => {
+            #[cfg(feature = "bdk")]
+            PaymentBackendKind::Bdk => {
+                let bdk_settings = settings.bdk.clone().ok_or_else(|| {
+                    anyhow!("BDK backend selected but [bdk] config section is missing")
+                })?;
+                let bdk = bdk_settings
+                    .setup(
+                        settings,
+                        backend_entry.unit.clone(),
+                        None,
+                        _work_dir,
+                        _kv_store.clone(),
+                    )
+                    .await?;
+                #[cfg(feature = "prometheus")]
+                let bdk = MetricsMintPayment::new(bdk);
+
+                mint_builder = configure_backend_for_unit(
+                    settings,
+                    mint_builder,
+                    backend_entry.unit.clone(),
+                    mint_melt_limits,
+                    Arc::new(bdk),
+                )
+                .await?;
+            }
+            PaymentBackendKind::None => {
                 tracing::info!(
-                    "No Lightning backend configured for unit {:?}",
-                    ln_entry.unit
+                    "No payment backend configured for unit {:?}",
+                    backend_entry.unit
                 );
             }
         };
@@ -792,107 +786,7 @@ fn configure_fake_wallet_keyset_rotations_once(
 
     mint_builder
 }
-
-/// Configures Onchain backend based on the specified backend type
-async fn configure_onchain_backend(
-    settings: &config::Settings,
-    #[cfg_attr(not(feature = "bdk"), allow(unused_mut))] mut mint_builder: MintBuilder,
-    _runtime: Option<std::sync::Arc<tokio::runtime::Runtime>>,
-    _work_dir: &Path,
-    _kv_store: Option<Arc<dyn KVStore<Err = cdk::cdk_database::Error> + Send + Sync>>,
-) -> Result<MintBuilder> {
-    use config::OnchainBackend;
-    #[cfg(feature = "bdk")]
-    use setup::OnchainBackendSetup;
-
-    if let Some(onchain_settings) = &settings.onchain {
-        match onchain_settings.onchain_backend {
-            #[cfg(feature = "bdk")]
-            OnchainBackend::Bdk => {
-                let mint_melt_limits = MintMeltLimits {
-                    mint_min: onchain_settings.min_mint,
-                    mint_max: onchain_settings.max_mint,
-                    melt_min: onchain_settings.min_melt,
-                    melt_max: onchain_settings.max_melt,
-                };
-
-                let bdk_settings = settings.bdk.clone().ok_or_else(|| {
-                    anyhow!("BDK onchain backend selected but [bdk] config section is missing")
-                })?;
-                let bdk = bdk_settings
-                    .setup(
-                        settings,
-                        cdk::nuts::CurrencyUnit::Sat,
-                        None,
-                        _work_dir,
-                        _kv_store,
-                    )
-                    .await?;
-                let bdk = Arc::new(bdk);
-
-                mint_builder = configure_backend_for_unit(
-                    settings,
-                    mint_builder,
-                    cdk::nuts::CurrencyUnit::Sat,
-                    mint_melt_limits,
-                    bdk,
-                )
-                .await?;
-            }
-            OnchainBackend::None => {}
-            #[cfg(feature = "fakewallet")]
-            OnchainBackend::FakeWallet => {
-                let has_lightning_backend = settings
-                    .ln
-                    .iter()
-                    .any(|ln| ln.ln_backend != LnBackend::None);
-                let has_real_ln_backend = settings
-                    .ln
-                    .iter()
-                    .any(|ln| !matches!(ln.ln_backend, LnBackend::None | LnBackend::FakeWallet));
-
-                if !has_lightning_backend {
-                    let mint_melt_limits = MintMeltLimits {
-                        mint_min: onchain_settings.min_mint,
-                        mint_max: onchain_settings.max_mint,
-                        melt_min: onchain_settings.min_melt,
-                        melt_max: onchain_settings.max_melt,
-                    };
-                    let fake_wallet = settings
-                        .fake_wallet
-                        .clone()
-                        .ok_or_else(|| anyhow!("Fake wallet config section is missing"))?;
-
-                    for unit in fake_wallet.clone().supported_units {
-                        let fake = fake_wallet
-                            .setup(settings, unit.clone(), None, _work_dir, _kv_store.clone())
-                            .await?;
-                        #[cfg(feature = "prometheus")]
-                        let fake = MetricsMintPayment::new(fake);
-
-                        mint_builder = configure_backend_for_methods(
-                            settings,
-                            mint_builder,
-                            unit,
-                            mint_melt_limits,
-                            Arc::new(fake),
-                            vec![PaymentMethod::Known(KnownMethod::Onchain)],
-                        )
-                        .await?;
-                    }
-                } else if has_real_ln_backend {
-                    bail!(
-                        "onchain_backend = \"fakewallet\" cannot be combined with a real Lightning backend"
-                    );
-                }
-            }
-        }
-    }
-
-    Ok(mint_builder)
-}
-
-/// Helper function to configure a mint builder with a lightning backend for a specific currency unit
+/// Configures a mint builder with a payment backend for a specific currency unit.
 async fn configure_backend_for_unit(
     settings: &config::Settings,
     mint_builder: MintBuilder,
@@ -1807,15 +1701,15 @@ mod tests {
     #[cfg(feature = "bdk")]
     #[test]
     fn apply_seed_file_sets_active_bdk_mnemonic() {
-        use crate::config::{Bdk, Onchain, OnchainBackend};
+        use crate::config::{Bdk, PaymentBackend, PaymentBackendKind};
 
         let seed_file = temp_seed_file("seed_file_sets_bdk_seed");
         fs::write(&seed_file, TEST_MNEMONIC).expect("seed file should be written");
         let mut settings = config::Settings {
-            onchain: Some(Onchain {
-                onchain_backend: OnchainBackend::Bdk,
+            payment_backends: vec![PaymentBackend {
+                backend: PaymentBackendKind::Bdk,
                 ..Default::default()
-            }),
+            }],
             bdk: Some(Bdk {
                 mnemonic: Some("old bdk mnemonic".to_string()),
                 ..Default::default()
@@ -1839,13 +1733,13 @@ mod tests {
     #[cfg(feature = "ldk-node")]
     #[test]
     fn apply_seed_file_sets_active_ldk_node_mnemonic() {
-        use crate::config::{LdkNode, Ln, LnBackend};
+        use crate::config::{LdkNode, PaymentBackend, PaymentBackendKind};
 
         let seed_file = temp_seed_file("seed_file_sets_ldk_seed");
         fs::write(&seed_file, TEST_MNEMONIC).expect("seed file should be written");
         let mut settings = config::Settings {
-            ln: vec![Ln {
-                ln_backend: LnBackend::LdkNode,
+            payment_backends: vec![PaymentBackend {
+                backend: PaymentBackendKind::LdkNode,
                 ..Default::default()
             }],
             ldk_node: Some(LdkNode {
@@ -1900,15 +1794,15 @@ mod tests {
 
     #[cfg(all(feature = "fakewallet", feature = "sqlite"))]
     #[tokio::test]
-    async fn fakewallet_dispatcher_uses_ln_entry_unit() {
+    async fn fakewallet_dispatcher_uses_backend_entry_unit() {
         use cdk::mint::MintBuilder;
         use cdk_sqlite::mint::memory;
 
-        use crate::config::{FakeWallet, Ln, LnBackend};
+        use crate::config::{FakeWallet, PaymentBackend, PaymentBackendKind};
 
         let settings = config::Settings {
-            ln: vec![Ln {
-                ln_backend: LnBackend::FakeWallet,
+            payment_backends: vec![PaymentBackend {
+                backend: PaymentBackendKind::FakeWallet,
                 unit: CurrencyUnit::Eur,
                 ..Default::default()
             }],
@@ -1919,7 +1813,7 @@ mod tests {
         let localstore = Arc::new(memory::empty().await.unwrap());
         let builder = MintBuilder::new(localstore);
         let builder =
-            configure_lightning_backend(&settings, builder, None, &std::env::temp_dir(), None)
+            configure_payment_backends(&settings, builder, None, &std::env::temp_dir(), None)
                 .await
                 .expect("dispatcher should succeed");
 
@@ -1983,21 +1877,21 @@ mod tests {
 
     #[cfg(all(feature = "fakewallet", feature = "sqlite"))]
     #[tokio::test]
-    async fn duplicate_ln_unit_method_pair_is_rejected() {
+    async fn duplicate_backend_unit_method_pair_is_rejected() {
         use cdk::mint::MintBuilder;
         use cdk_sqlite::mint::memory;
 
-        use crate::config::{FakeWallet, Ln, LnBackend};
+        use crate::config::{FakeWallet, PaymentBackend, PaymentBackendKind};
 
         let settings = config::Settings {
-            ln: vec![
-                Ln {
-                    ln_backend: LnBackend::FakeWallet,
+            payment_backends: vec![
+                PaymentBackend {
+                    backend: PaymentBackendKind::FakeWallet,
                     unit: CurrencyUnit::Sat,
                     ..Default::default()
                 },
-                Ln {
-                    ln_backend: LnBackend::FakeWallet,
+                PaymentBackend {
+                    backend: PaymentBackendKind::FakeWallet,
                     unit: CurrencyUnit::Sat,
                     ..Default::default()
                 },
@@ -2008,29 +1902,28 @@ mod tests {
 
         let localstore = Arc::new(memory::empty().await.unwrap());
         let builder = MintBuilder::new(localstore);
-        let err =
-            configure_lightning_backend(&settings, builder, None, &std::env::temp_dir(), None)
-                .await
-                .expect_err("duplicate unit/method pair should be rejected");
+        let err = configure_payment_backends(&settings, builder, None, &std::env::temp_dir(), None)
+            .await
+            .expect_err("duplicate unit/method pair should be rejected");
 
         assert!(err.to_string().contains("Duplicate payment processor"));
     }
 
     #[cfg(all(feature = "fakewallet", feature = "sqlite"))]
     #[tokio::test]
-    async fn empty_ln_vec_returns_unchanged_builder() {
+    async fn empty_backend_vec_returns_unchanged_builder() {
         use cdk::mint::MintBuilder;
         use cdk_sqlite::mint::memory;
 
         let settings = config::Settings {
-            ln: vec![],
+            payment_backends: vec![],
             ..Default::default()
         };
 
         let localstore = Arc::new(memory::empty().await.unwrap());
         let builder = MintBuilder::new(localstore);
         let builder =
-            configure_lightning_backend(&settings, builder, None, &std::env::temp_dir(), None)
+            configure_payment_backends(&settings, builder, None, &std::env::temp_dir(), None)
                 .await
                 .expect("empty ln should succeed");
 
@@ -2043,15 +1936,15 @@ mod tests {
 
     #[cfg(all(feature = "fakewallet", feature = "sqlite"))]
     #[tokio::test]
-    async fn ln_backend_none_logs_and_continues() {
+    async fn payment_backend_none_logs_and_continues() {
         use cdk::mint::MintBuilder;
         use cdk_sqlite::mint::memory;
 
-        use crate::config::{Ln, LnBackend};
+        use crate::config::{PaymentBackend, PaymentBackendKind};
 
         let settings = config::Settings {
-            ln: vec![Ln {
-                ln_backend: LnBackend::None,
+            payment_backends: vec![PaymentBackend {
+                backend: PaymentBackendKind::None,
                 unit: CurrencyUnit::Sat,
                 ..Default::default()
             }],
@@ -2061,119 +1954,14 @@ mod tests {
         let localstore = Arc::new(memory::empty().await.unwrap());
         let builder = MintBuilder::new(localstore);
         let builder =
-            configure_lightning_backend(&settings, builder, None, &std::env::temp_dir(), None)
+            configure_payment_backends(&settings, builder, None, &std::env::temp_dir(), None)
                 .await
-                .expect("LnBackend::None should succeed");
+                .expect("PaymentBackendKind::None should succeed");
 
         let mint_info = builder.current_mint_info();
         assert!(
             mint_info.nuts.nut04.methods.is_empty(),
-            "LnBackend::None should not register any methods"
-        );
-    }
-
-    #[cfg(all(feature = "fakewallet", feature = "sqlite"))]
-    #[tokio::test]
-    async fn onchain_backend_none_returns_unchanged() {
-        use cdk::mint::MintBuilder;
-        use cdk_sqlite::mint::memory;
-
-        use crate::config::{Onchain, OnchainBackend};
-
-        let settings = config::Settings {
-            onchain: Some(Onchain {
-                onchain_backend: OnchainBackend::None,
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-
-        let localstore = Arc::new(memory::empty().await.unwrap());
-        let builder = MintBuilder::new(localstore);
-        let builder =
-            configure_onchain_backend(&settings, builder, None, &std::env::temp_dir(), None)
-                .await
-                .expect("OnchainBackend::None should succeed");
-
-        let mint_info = builder.current_mint_info();
-        assert!(
-            mint_info.nuts.nut04.methods.is_empty(),
-            "OnchainBackend::None should not register any methods"
-        );
-    }
-
-    #[cfg(all(feature = "fakewallet", feature = "sqlite"))]
-    #[tokio::test]
-    async fn fakewallet_onchain_no_lightning_configures_onchain_methods() {
-        use cdk::mint::MintBuilder;
-        use cdk_sqlite::mint::memory;
-
-        use crate::config::{FakeWallet, Ln, LnBackend, Onchain, OnchainBackend};
-
-        let settings = config::Settings {
-            ln: vec![Ln {
-                ln_backend: LnBackend::None,
-                ..Default::default()
-            }],
-            onchain: Some(Onchain {
-                onchain_backend: OnchainBackend::FakeWallet,
-                ..Default::default()
-            }),
-            fake_wallet: Some(FakeWallet::default()),
-            ..Default::default()
-        };
-
-        let localstore = Arc::new(memory::empty().await.unwrap());
-        let builder = MintBuilder::new(localstore);
-        let builder =
-            configure_onchain_backend(&settings, builder, None, &std::env::temp_dir(), None)
-                .await
-                .expect("fakewallet onchain should succeed");
-
-        let mint_info = builder.current_mint_info();
-        let methods: Vec<_> = mint_info
-            .nuts
-            .nut04
-            .methods
-            .iter()
-            .map(|m| m.method.clone())
-            .collect();
-        assert!(
-            methods.contains(&PaymentMethod::Known(KnownMethod::Onchain)),
-            "expected onchain method, got {methods:?}"
-        );
-    }
-
-    #[cfg(all(feature = "fakewallet", feature = "cln", feature = "sqlite"))]
-    #[tokio::test]
-    async fn fakewallet_onchain_with_real_ln_bails() {
-        use cdk::mint::MintBuilder;
-        use cdk_sqlite::mint::memory;
-
-        use crate::config::{Ln, LnBackend, Onchain, OnchainBackend};
-
-        let settings = config::Settings {
-            ln: vec![Ln {
-                ln_backend: LnBackend::Cln,
-                unit: CurrencyUnit::Sat,
-                ..Default::default()
-            }],
-            onchain: Some(Onchain {
-                onchain_backend: OnchainBackend::FakeWallet,
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-
-        let localstore = Arc::new(memory::empty().await.unwrap());
-        let builder = MintBuilder::new(localstore);
-        let err = configure_onchain_backend(&settings, builder, None, &std::env::temp_dir(), None)
-            .await
-            .expect_err("fakewallet onchain with real LN should bail");
-
-        assert!(
-            err.to_string().contains("fakewallet"),
-            "error should mention fakewallet: {err}"
+            "PaymentBackendKind::None should not register any methods"
         );
     }
 
@@ -2183,11 +1971,11 @@ mod tests {
         use cdk::mint::MintBuilder;
         use cdk_sqlite::mint::memory;
 
-        use crate::config::{Ln, LnBackend};
+        use crate::config::{PaymentBackend, PaymentBackendKind};
 
         let settings = config::Settings {
-            ln: vec![Ln {
-                ln_backend: LnBackend::None,
+            payment_backends: vec![PaymentBackend {
+                backend: PaymentBackendKind::None,
                 ..Default::default()
             }],
             ..Default::default()
@@ -2211,17 +1999,19 @@ mod tests {
         use cdk::mint::MintBuilder;
         use cdk_sqlite::mint::memory;
 
-        use crate::config::{Bdk, FakeWallet, Ln, LnBackend, Onchain, OnchainBackend};
+        use crate::config::{Bdk, FakeWallet, PaymentBackend, PaymentBackendKind};
 
         let settings = config::Settings {
-            ln: vec![Ln {
-                ln_backend: LnBackend::FakeWallet,
-                ..Default::default()
-            }],
-            onchain: Some(Onchain {
-                onchain_backend: OnchainBackend::Bdk,
-                ..Default::default()
-            }),
+            payment_backends: vec![
+                PaymentBackend {
+                    backend: PaymentBackendKind::FakeWallet,
+                    ..Default::default()
+                },
+                PaymentBackend {
+                    backend: PaymentBackendKind::Bdk,
+                    ..Default::default()
+                },
+            ],
             fake_wallet: Some(FakeWallet::default()),
             bdk: Some(Bdk {
                 network: Some("mainnet".to_string()),
@@ -2237,7 +2027,8 @@ mod tests {
             .expect_err("fake wallet with BDK onchain should bail");
 
         assert!(
-            err.to_string().contains("fakewallet") && err.to_string().contains("bdk"),
+            err.to_string().contains("fakewallet")
+                && err.to_string().contains("real payment backend"),
             "error should mention backend pairing validation: {err}"
         );
     }
@@ -2248,11 +2039,11 @@ mod tests {
         use cdk::mint::MintBuilder;
         use cdk_sqlite::mint::memory;
 
-        use crate::config::{FakeWallet, Ln, LnBackend};
+        use crate::config::{FakeWallet, PaymentBackend, PaymentBackendKind};
 
         let settings = config::Settings {
-            ln: vec![Ln {
-                ln_backend: LnBackend::FakeWallet,
+            payment_backends: vec![PaymentBackend {
+                backend: PaymentBackendKind::FakeWallet,
                 unit: CurrencyUnit::Sat,
                 ..Default::default()
             }],
@@ -2310,70 +2101,29 @@ mod tests {
 
     #[cfg(all(feature = "fakewallet", feature = "sqlite"))]
     #[tokio::test]
-    async fn fakewallet_onchain_with_fake_ln_does_not_duplicate() {
+    async fn fakewallet_missing_config_bails() {
         use cdk::mint::MintBuilder;
         use cdk_sqlite::mint::memory;
 
-        use crate::config::{FakeWallet, Ln, LnBackend, Onchain, OnchainBackend};
+        use crate::config::{PaymentBackend, PaymentBackendKind};
 
         let settings = config::Settings {
-            ln: vec![Ln {
-                ln_backend: LnBackend::FakeWallet,
-                unit: CurrencyUnit::Sat,
+            payment_backends: vec![PaymentBackend {
+                backend: PaymentBackendKind::FakeWallet,
                 ..Default::default()
             }],
-            onchain: Some(Onchain {
-                onchain_backend: OnchainBackend::FakeWallet,
-                ..Default::default()
-            }),
-            fake_wallet: Some(FakeWallet::default()),
-            ..Default::default()
-        };
-
-        let localstore = Arc::new(memory::empty().await.unwrap());
-        let builder = MintBuilder::new(localstore);
-        let builder =
-            configure_onchain_backend(&settings, builder, None, &std::env::temp_dir(), None)
-                .await
-                .expect("fakewallet onchain with fake LN should succeed without duplicating");
-
-        let mint_info = builder.current_mint_info();
-        assert!(
-            mint_info.nuts.nut04.methods.is_empty(),
-            "when has_lightning_backend is true and no real LN, fakewallet onchain should skip; got {:?}",
-            mint_info.nuts.nut04.methods
-        );
-    }
-
-    #[cfg(all(feature = "fakewallet", feature = "sqlite"))]
-    #[tokio::test]
-    async fn fakewallet_onchain_missing_fake_wallet_config_bails() {
-        use cdk::mint::MintBuilder;
-        use cdk_sqlite::mint::memory;
-
-        use crate::config::{Ln, LnBackend, Onchain, OnchainBackend};
-
-        let settings = config::Settings {
-            ln: vec![Ln {
-                ln_backend: LnBackend::None,
-                ..Default::default()
-            }],
-            onchain: Some(Onchain {
-                onchain_backend: OnchainBackend::FakeWallet,
-                ..Default::default()
-            }),
             fake_wallet: None,
             ..Default::default()
         };
 
         let localstore = Arc::new(memory::empty().await.unwrap());
         let builder = MintBuilder::new(localstore);
-        let err = configure_onchain_backend(&settings, builder, None, &std::env::temp_dir(), None)
+        let err = configure_payment_backends(&settings, builder, None, &std::env::temp_dir(), None)
             .await
             .expect_err("missing fake_wallet config should bail");
 
         assert!(
-            err.to_string().contains("Fake wallet config"),
+            err.to_string().contains("Fake wallet backend"),
             "error should mention missing config: {err}"
         );
     }

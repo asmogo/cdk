@@ -3270,10 +3270,10 @@ async fn test_saga_drop_after_payment() {
     // SUCCESS: Drop after payment correctly finalizes (doesn't compensate)!
 }
 
-/// Test: PaymentAttempted state triggers LN backend check during recovery
+/// Test: PaymentAttempted state triggers payment backend check during recovery
 ///
 /// This test verifies that when recovery finds a saga in PaymentAttempted state,
-/// it checks the LN backend to determine whether to finalize or compensate,
+/// it checks the payment backend to determine whether to finalize or compensate,
 /// rather than blindly compensating like SetupComplete state.
 #[tokio::test]
 async fn test_payment_attempted_state_triggers_ln_check() {
@@ -3341,7 +3341,7 @@ async fn test_payment_attempted_state_triggers_ln_check() {
     // STEP 4: Drop saga (simulate crash after payment but before finalize)
     drop(confirmed_saga);
 
-    // STEP 5: Run recovery - should check LN backend and finalize
+    // STEP 5: Run recovery - should check payment backend and finalize
     mint.recover_from_incomplete_melt_sagas()
         .await
         .expect("Recovery should succeed");
@@ -3362,7 +3362,7 @@ async fn test_payment_attempted_state_triggers_ln_check() {
     assert_eq!(
         final_quote.state,
         MeltQuoteState::Paid,
-        "Quote should be Paid - LN backend check should have triggered finalization"
+        "Quote should be Paid - payment backend check should have triggered finalization"
     );
 
     // SUCCESS: PaymentAttempted state correctly triggers LN check and finalizes!
@@ -3371,7 +3371,7 @@ async fn test_payment_attempted_state_triggers_ln_check() {
 /// Test: SetupComplete state compensates without LN check
 ///
 /// This test verifies that when recovery finds a saga in SetupComplete state,
-/// it compensates (returns proofs) without checking LN backend, because
+/// it compensates (returns proofs) without checking payment backend, because
 /// payment was never sent.
 #[tokio::test]
 async fn test_setup_complete_state_compensates() {

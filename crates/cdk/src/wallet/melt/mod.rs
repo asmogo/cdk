@@ -305,7 +305,7 @@ impl MeltQuoteStatusResponse {
 
     /// Get the payment proof.
     ///
-    /// For Bolt11/Bolt12/Custom methods this is the Lightning payment preimage.
+    /// For Bolt11/Bolt12/Custom methods this is the payment preimage.
     /// For Onchain, the "proof" is the broadcast outpoint (`txid:vout`) — it
     /// plays the same role: it is the canonical, method-specific artifact that
     /// proves the mint executed the payment. Callers that persist

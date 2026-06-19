@@ -21,8 +21,8 @@
 //! | State | Description |
 //! |-------|-------------|
 //! | `ProofsReserved` | Proofs reserved and quote locked, ready to initiate payment |
-//! | `MeltRequested` | Melt request sent to mint, Lightning payment initiated |
-//! | `PaymentPending` | Lightning payment in progress, awaiting confirmation from network |
+//! | `MeltRequested` | Melt request sent to mint, external payment initiated |
+//! | `PaymentPending` | External payment in progress, awaiting backend confirmation |
 //!
 //! # Recovery Outcomes
 //!

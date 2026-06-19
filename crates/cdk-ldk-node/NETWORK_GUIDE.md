@@ -26,8 +26,8 @@ listen_port = 8085
 [database]
 engine = "sqlite"
 
-[ln]
-ln_backend = "ldk-node"
+[[payment_backend]]
+backend = "ldk-node"
 
 [ldk_node]
 bitcoin_network = "signet"
@@ -42,7 +42,7 @@ webserver_port = 8091
 ### Environment Variables
 
 ```bash
-export CDK_MINTD_LN_BACKEND="ldk-node"
+export CDK_MINTD_PAYMENT_BACKEND="ldk-node"
 export CDK_MINTD_LDK_NODE_BITCOIN_NETWORK="signet"
 export CDK_MINTD_LDK_NODE_ESPLORA_URL="https://mutinynet.com/api"
 export CDK_MINTD_LDK_NODE_RGS_URL="https://rgs.mutinynet.com/snapshot/0"
@@ -59,8 +59,8 @@ cdk-mintd
 ## Bitcoin Testnet
 
 ```toml
-[ln]
-ln_backend = "ldk-node"
+[[payment_backend]]
+backend = "ldk-node"
 
 [ldk_node]
 bitcoin_network = "testnet"
@@ -77,8 +77,8 @@ storage_dir_path = "~/.cdk-ldk-node/testnet"
 ⚠️ **WARNING**: Uses real Bitcoin!
 
 ```toml
-[ln]
-ln_backend = "ldk-node"
+[[payment_backend]]
+backend = "ldk-node"
 
 [ldk_node]
 bitcoin_network = "mainnet"
@@ -105,8 +105,8 @@ webserver_port = 8091
 ## Regtest (Development)
 
 ```toml
-[ln]
-ln_backend = "ldk-node"
+[[payment_backend]]
+backend = "ldk-node"
 
 [ldk_node]
 bitcoin_network = "regtest"
@@ -129,7 +129,7 @@ For complete regtest environment: `just regtest` (see [REGTEST_GUIDE.md](../../R
 docker run -d \
   --name cdk-mintd \
   -p 8085:8085 -p 8091:8091 \
-  -e CDK_MINTD_LN_BACKEND=ldk-node \
+  -e CDK_MINTD_PAYMENT_BACKEND=ldk-node \
   -e CDK_MINTD_LDK_NODE_BITCOIN_NETWORK=signet \
   -e CDK_MINTD_LDK_NODE_ESPLORA_URL=https://mutinynet.com/api \
   -e CDK_MINTD_LDK_NODE_RGS_URL=https://rgs.mutinynet.com/snapshot/0 \
@@ -141,7 +141,7 @@ docker run -d \
   --name cdk-mintd \
   -p 8085:8085 \
   --network host \
-  -e CDK_MINTD_LN_BACKEND=ldk-node \
+  -e CDK_MINTD_PAYMENT_BACKEND=ldk-node \
   -e CDK_MINTD_LDK_NODE_BITCOIN_NETWORK=mainnet \
   -e CDK_MINTD_LDK_NODE_WEBSERVER_HOST=127.0.0.1 \
   cashubtc/cdk-mintd:latest

@@ -174,7 +174,7 @@ impl<Q: ToString> MeltQuoteResponse<Q> {
 
     /// Returns the payment proof.
     ///
-    /// For Bolt11/Bolt12/Custom methods this is the Lightning payment
+    /// For Bolt11/Bolt12/Custom methods this is the payment
     /// preimage. For Onchain, the "proof" is the broadcast outpoint
     /// (`txid:vout`) — it plays the same role of a canonical,
     /// method-specific artifact proving the mint executed the payment.

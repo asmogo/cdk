@@ -289,6 +289,8 @@ restart_mints() {
     echo "Restarting CDK Mints"
     echo "==============================="
 
+    # Dual-backend regtest mints retain the deprecated onchain alias so it can
+    # coexist with the deprecated LN alias as two payment backend entries.
     export_regtest_bdk_env() {
         local mnemonic="$1"
 

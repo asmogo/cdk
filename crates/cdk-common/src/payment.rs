@@ -528,7 +528,7 @@ impl WaitPaymentResponse {
 /// Create incoming payment response
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CreateIncomingPaymentResponse {
-    /// Id that is used to look up the payment from the ln backend
+    /// Id that is used to look up the payment from the payment backend
     pub request_lookup_id: PaymentIdentifier,
     /// Payment request
     pub request: String,

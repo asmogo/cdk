@@ -317,14 +317,14 @@ impl Mint {
                 ..
             } = melt_request;
 
-            let ln = self
+            let payment_backend = self
                 .payment_processors
                 .get(&PaymentProcessorKey::new(
                     unit.clone(),
                     PaymentMethod::Known(KnownMethod::Bolt11),
                 ))
                 .ok_or_else(|| {
-                    tracing::info!("Could not get ln backend for {}, bolt11 ", unit);
+                    tracing::info!("Could not get payment backend for {}, bolt11 ", unit);
 
                     Error::UnsupportedUnit
                 })?;
@@ -342,7 +342,7 @@ impl Mint {
                 quote_id: quote_id.clone(),
             };
 
-            let payment_quote = ln
+            let payment_quote = payment_backend
                 .get_payment_quote(
                     &melt_request.unit,
                     OutgoingPaymentOptions::Bolt11(Box::new(bolt11)),
@@ -434,14 +434,14 @@ impl Mint {
                 options,
             } = melt_request;
 
-            let ln = self
+            let payment_backend = self
                 .payment_processors
                 .get(&PaymentProcessorKey::new(
                     unit.clone(),
                     PaymentMethod::Known(KnownMethod::Bolt12),
                 ))
                 .ok_or_else(|| {
-                    tracing::info!("Could not get ln backend for {}, bolt12 ", unit);
+                    tracing::info!("Could not get payment backend for {}, bolt12 ", unit);
 
                     Error::UnsupportedUnit
                 })?;
@@ -458,7 +458,7 @@ impl Mint {
                 quote_id: quote_id.clone(),
             };
 
-            let payment_quote = ln
+            let payment_quote = payment_backend
                 .get_payment_quote(
                     &melt_request.unit,
                     OutgoingPaymentOptions::Bolt12(Box::new(outgoing_payment_options)),
@@ -546,14 +546,14 @@ impl Mint {
         let result = async {
             let unit = &melt_request.unit;
 
-            let ln = self
+            let payment_backend = self
                 .payment_processors
                 .get(&PaymentProcessorKey::new(
                     unit.clone(),
                     PaymentMethod::Known(KnownMethod::Onchain),
                 ))
                 .ok_or_else(|| {
-                    tracing::info!("Could not get ln backend for {}, onchain ", unit);
+                    tracing::info!("Could not get payment backend for {}, onchain ", unit);
                     Error::UnsupportedUnit
                 })?;
 
@@ -579,7 +579,7 @@ impl Mint {
                 metadata: None,
             };
 
-            let payment_quote = ln
+            let payment_quote = payment_backend
                 .get_payment_quote(
                     unit,
                     OutgoingPaymentOptions::Onchain(Box::new(outgoing_payment_options)),
@@ -696,7 +696,7 @@ impl Mint {
                 }
             }
 
-            let ln = self
+            let payment_backend = self
                 .payment_processors
                 .get(&PaymentProcessorKey::new(
                     unit.clone(),
@@ -727,7 +727,7 @@ impl Mint {
                     quote_id: quote_id.clone(),
                 }));
 
-            let payment_quote = ln
+            let payment_quote = payment_backend
                 .get_payment_quote(&melt_request.unit, custom_options)
                 .await
                 .map_err(|err| {

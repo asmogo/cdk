@@ -6,7 +6,9 @@
 
 **ALPHA** This library is in early development, the API will change and should be used with caution.
 
-A fake Lightning wallet implementation for the Cashu Development Kit (CDK). This is intended for testing purposes only - quotes are automatically filled without actual Lightning Network interaction.
+A fake payment backend for the Cashu Development Kit (CDK). This is intended
+for testing only: quotes are automatically filled without external payment
+network interaction.
 
 ## Installation
 

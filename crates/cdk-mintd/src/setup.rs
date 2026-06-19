@@ -25,24 +25,21 @@ use cdk::nuts::CurrencyUnit;
 ))]
 use cdk::types::FeeReserve;
 
-use crate::config::{self, Settings};
+#[cfg(any(
+    feature = "cln",
+    feature = "lnbits",
+    feature = "lnd",
+    feature = "ldk-node",
+    feature = "fakewallet",
+    feature = "grpc-processor"
+))]
+use crate::config;
+use crate::config::Settings;
 #[cfg(feature = "cln")]
 use crate::expand_path;
 
 #[async_trait]
-pub trait LnBackendSetup {
-    async fn setup(
-        &self,
-        settings: &Settings,
-        unit: CurrencyUnit,
-        runtime: Option<std::sync::Arc<tokio::runtime::Runtime>>,
-        work_dir: &Path,
-        kv_store: Option<Arc<dyn KVStore<Err = cdk::cdk_database::Error> + Send + Sync>>,
-    ) -> anyhow::Result<impl MintPayment<Err = cdk_common::payment::Error>>;
-}
-
-#[async_trait]
-pub trait OnchainBackendSetup {
+pub trait PaymentBackendSetup {
     async fn setup(
         &self,
         settings: &Settings,
@@ -55,7 +52,7 @@ pub trait OnchainBackendSetup {
 
 #[cfg(feature = "cln")]
 #[async_trait]
-impl LnBackendSetup for config::Cln {
+impl PaymentBackendSetup for config::Cln {
     async fn setup(
         &self,
         _settings: &Settings,
@@ -97,7 +94,7 @@ impl LnBackendSetup for config::Cln {
 
 #[cfg(feature = "lnbits")]
 #[async_trait]
-impl LnBackendSetup for config::LNbits {
+impl PaymentBackendSetup for config::LNbits {
     async fn setup(
         &self,
         _settings: &Settings,
@@ -146,7 +143,7 @@ impl LnBackendSetup for config::LNbits {
 
 #[cfg(feature = "lnd")]
 #[async_trait]
-impl LnBackendSetup for config::Lnd {
+impl PaymentBackendSetup for config::Lnd {
     async fn setup(
         &self,
         _settings: &Settings,
@@ -193,7 +190,7 @@ impl LnBackendSetup for config::Lnd {
 
 #[cfg(feature = "fakewallet")]
 #[async_trait]
-impl LnBackendSetup for config::FakeWallet {
+impl PaymentBackendSetup for config::FakeWallet {
     async fn setup(
         &self,
         _settings: &Settings,
@@ -312,7 +309,7 @@ mod tests {
 
 #[cfg(feature = "grpc-processor")]
 #[async_trait]
-impl LnBackendSetup for config::GrpcProcessor {
+impl PaymentBackendSetup for config::GrpcProcessor {
     async fn setup(
         &self,
         _settings: &Settings,
@@ -334,7 +331,7 @@ impl LnBackendSetup for config::GrpcProcessor {
 
 #[cfg(feature = "ldk-node")]
 #[async_trait]
-impl LnBackendSetup for config::LdkNode {
+impl PaymentBackendSetup for config::LdkNode {
     async fn setup(
         &self,
         settings: &Settings,
@@ -518,7 +515,7 @@ impl LnBackendSetup for config::LdkNode {
 
 #[cfg(feature = "bdk")]
 #[async_trait]
-impl OnchainBackendSetup for crate::config::Bdk {
+impl PaymentBackendSetup for crate::config::Bdk {
     async fn setup(
         &self,
         settings: &Settings,
@@ -598,9 +595,10 @@ impl OnchainBackendSetup for crate::config::Bdk {
         };
 
         let min_receive_amount_sat = settings
-            .onchain
-            .as_ref()
-            .map(|onchain| onchain.min_mint.to_u64().max(self.min_receive_amount_sat))
+            .payment_backends
+            .iter()
+            .find(|entry| entry.backend == crate::config::PaymentBackendKind::Bdk)
+            .map(|entry| entry.min_mint.to_u64().max(self.min_receive_amount_sat))
             .unwrap_or(self.min_receive_amount_sat);
 
         let bdk = cdk_bdk::CdkBdk::new(

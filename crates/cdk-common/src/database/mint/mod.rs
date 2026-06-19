@@ -261,7 +261,7 @@ pub trait QuotesTransaction {
     ///
     /// # Arguments
     ///
-    /// * `request_lookup_id` - The payment identifier used by the Lightning backend to track
+    /// * `request_lookup_id` - The payment identifier used by the payment backend to track
     ///   payment state (e.g., payment hash, offer ID, or label).
     async fn get_melt_quotes_by_request_lookup_id(
         &mut self,

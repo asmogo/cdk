@@ -318,8 +318,8 @@ fn create_ldk_settings(
         },
         mint_info: cdk_mintd::config::MintInfo::default(),
         limits: cdk_mintd::config::Limits::default(),
-        ln: vec![cdk_mintd::config::Ln {
-            ln_backend: cdk_mintd::config::LnBackend::LdkNode,
+        payment_backends: vec![cdk_mintd::config::PaymentBackend {
+            backend: cdk_mintd::config::PaymentBackendKind::LdkNode,
             unit: cdk::nuts::CurrencyUnit::Sat,
             invoice_description: None,
             min_mint: 1.into(),
@@ -332,19 +332,22 @@ fn create_ldk_settings(
         lnd: None,
         ldk_node: Some(ldk_config),
         fake_wallet: None,
-        onchain: None,
         ..Default::default()
     }
 }
 
 fn apply_onchain_settings(settings: &mut cdk_mintd::config::Settings) {
-    settings.onchain = Some(cdk_mintd::config::Onchain {
-        onchain_backend: cdk_mintd::config::OnchainBackend::Bdk,
-        min_mint: 1.into(),
-        max_mint: 500_000.into(),
-        min_melt: 1.into(),
-        max_melt: 500_000.into(),
-    });
+    settings
+        .payment_backends
+        .push(cdk_mintd::config::PaymentBackend {
+            backend: cdk_mintd::config::PaymentBackendKind::Bdk,
+            unit: cdk::nuts::CurrencyUnit::Sat,
+            invoice_description: None,
+            min_mint: 1.into(),
+            max_mint: 500_000.into(),
+            min_melt: 1.into(),
+            max_melt: 500_000.into(),
+        });
     settings.bdk = Some(cdk_mintd::config::Bdk {
         mnemonic: Some(
             "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
@@ -423,11 +426,7 @@ fn create_onchain_settings(port: u16) -> cdk_mintd::config::Settings {
         },
         mint_info: cdk_mintd::config::MintInfo::default(),
         limits: cdk_mintd::config::Limits::default(),
-        ln: vec![cdk_mintd::config::Ln {
-            ln_backend: cdk_mintd::config::LnBackend::None,
-            ..Default::default()
-        }],
-        onchain: None, // Will be set by apply_onchain_settings
+        payment_backends: Vec::new(), // BDK is added by apply_onchain_settings.
         ..Default::default()
     }
 }

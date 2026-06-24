@@ -1162,6 +1162,7 @@ dependencies = [
  "cdk-common",
  "cdk-fake-wallet",
  "cdk-npubcash",
+ "cdk-nwc",
  "cdk-prometheus",
  "cdk-signatory",
  "cdk-sqlite",
@@ -1356,6 +1357,7 @@ dependencies = [
  "cdk",
  "cdk-common",
  "cdk-npubcash",
+ "cdk-nwc",
  "cdk-postgres",
  "cdk-sql-common",
  "cdk-sqlite",
@@ -1369,6 +1371,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
  "uniffi",
@@ -1633,6 +1636,19 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "web-time",
+]
+
+[[package]]
+name = "cdk-nwc"
+version = "0.17.0"
+dependencies = [
+ "async-trait",
+ "nostr-sdk",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-util",
+ "tracing",
 ]
 
 [[package]]

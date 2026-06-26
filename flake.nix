@@ -1040,6 +1040,8 @@
               # Nix store paths for openssl, sqlite, zlib, libiconv, etc.
               OPENSSL_STATIC = "1";
               PKG_CONFIG_ALL_STATIC = "1";
+              doNotSign = true;
+              darwinDontCodeSign = true;
 
               installPhaseCommand = ''
                 mkdir -p $out/bin

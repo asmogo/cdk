@@ -204,7 +204,7 @@ When a GitHub release is published, the [`static-build-publish.yml`](.github/wor
 2. Generates a `SHA256SUMS` file with checksums for each binary
 3. Uploads the binaries and checksums to the GitHub release
 
-The workflow can also be triggered manually via `workflow_dispatch` with a tag input. Pre-built static binaries are available on the [GitHub releases page](https://github.com/cashubtc/cdk/releases).
+The workflow can also be triggered manually via `workflow_dispatch`. Manual runs build the binaries and checksums without publishing by default, which is useful for CI smoke tests. To publish from a manual run, provide the release `tag` and set `upload_to_release` to `true`. Pre-built release binaries are available on the [GitHub releases page](https://github.com/cashubtc/cdk/releases).
 
 **Reproducibility:**
 

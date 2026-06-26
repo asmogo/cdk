@@ -6,8 +6,13 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to build and publish"
-        required: true
+        description: "Tag, branch, or SHA to build. Required only when uploading to a release."
+        required: false
+      upload_to_release:
+        description: "Upload built assets to the GitHub release named by tag"
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   build-x86_64:
@@ -169,6 +174,7 @@ jobs:
           cat SHA256SUMS
 
       - name: Upload binaries to release
+        if: github.event_name == 'release' || github.event.inputs.upload_to_release == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -176,4 +182,8 @@ jobs:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           TAG="${INPUT_TAG:-$RELEASE_TAG}"
+          if [ -z "$TAG" ]; then
+            echo "::error::tag input is required when upload_to_release is true"
+            exit 1
+          fi
           gh release upload "$TAG" ./static-bin/* --clobber

@@ -1105,9 +1105,9 @@
                     exit 1
                   fi
 
-                  # The install_name_tool changes happen after Nix's default
-                  # Darwin signing hook, so refresh the ad-hoc signature.
-                  codesign --force --sign - "$f"
+                  # The install_name_tool changes happen after the usual
+                  # signing hooks, so refresh the ad-hoc signature.
+                  signIfRequired "$f"
                 done
               '';
             }

@@ -1221,8 +1221,7 @@ dependencies = [
  "cdk-common",
  "cdk-fake-wallet",
  "cdk-http-client",
- "cdk-npubcash",
- "cdk-nwc",
+ "cdk-nostr",
  "cdk-prometheus",
  "cdk-signatory",
  "cdk-sqlite",
@@ -1421,15 +1420,13 @@ dependencies = [
  "cdk",
  "cdk-common",
  "cdk-http-client",
- "cdk-npubcash",
- "cdk-nwc",
+ "cdk-nostr",
  "cdk-postgres",
  "cdk-sql-common",
  "cdk-sqlite",
  "cdk-supabase",
  "futures",
  "log",
- "nostr-sdk",
  "once_cell",
  "rand 0.9.5",
  "serde",
@@ -1537,7 +1534,7 @@ dependencies = [
  "cdk-ldk-node",
  "cdk-lnd",
  "cdk-mintd",
- "cdk-nwc",
+ "cdk-nostr",
  "cdk-postgres",
  "cdk-redb",
  "cdk-signatory",
@@ -1688,40 +1685,25 @@ dependencies = [
 ]
 
 [[package]]
-name = "cdk-npubcash"
+name = "cdk-nostr"
 version = "0.17.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
  "cashu",
- "cdk",
  "cdk-common",
  "cdk-http-client",
- "cdk-sqlite",
  "chrono",
  "nostr-sdk",
- "rustls",
  "serde",
- "serde_json",
- "thiserror 2.0.20",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "url",
- "web-time",
-]
-
-[[package]]
-name = "cdk-nwc"
-version = "0.17.0"
-dependencies = [
- "async-trait",
- "nostr-sdk",
  "serde_json",
  "thiserror 2.0.20",
  "tokio",
  "tokio-util",
  "tracing",
+ "tracing-subscriber",
+ "url",
+ "web-time",
 ]
 
 [[package]]

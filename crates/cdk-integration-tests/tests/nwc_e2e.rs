@@ -24,11 +24,11 @@ use std::time::Duration;
 use cdk::wallet::WalletNwcHandler;
 use cdk_fake_wallet::create_fake_invoice;
 use cdk_integration_tests::init_pure_tests::*;
-use cdk_nwc::nip47::{
+use cdk_nostr::nwc::nip47::{
     ListTransactionsRequest, LookupInvoiceRequest, MakeInvoiceRequest, PayInvoiceRequest,
     TransactionState,
 };
-use cdk_nwc::{NwcService, NwcServiceConfig};
+use cdk_nostr::nwc::{NwcService, NwcServiceConfig};
 use nostr_sdk::{Client as NostrClient, Filter, Keys, Kind, PublicKey, RelayUrl, SecretKey};
 use nwc::prelude::{NostrWalletConnectOptions, NostrWalletConnectURI, NWC};
 use tokio_util::sync::CancellationToken;

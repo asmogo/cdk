@@ -58,6 +58,7 @@ npubcash = ["cdk/npubcash", "nostr", "cdk-nostr/npubcash"]
 nwc = ["cdk/nwc", "nostr", "cdk-nostr/nwc", "dep:tokio-util"]
 
 [dev-dependencies]
+cdk-common = { workspace = true, features = ["test"] }
 
 [[bin]]
 name = "uniffi-bindgen"

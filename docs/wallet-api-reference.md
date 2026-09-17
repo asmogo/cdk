@@ -355,6 +355,15 @@ FFI storage supports SQLite, optional PostgreSQL, and custom foreign-language
 `create_wallet_db`. Custom implementations must preserve durable saga,
 proof-reservation, quote-reservation, and optimistic-locking semantics.
 
+Supplying payment proofs requires the atomic `reserve_supplied_proofs` database
+operation. Existing coins must be unspent, unowned, and match the supplied proof;
+new coins are inserted without overwriting concurrent imports. The whole batch
+must roll back on conflict. Keep stored origin metadata and update only the
+reservation and spending witness. Custom Rust backends default to an error until
+they implement this operation; custom FFI backends must add the callback.
+Supabase deployments must apply the schema version 11 migrations before using
+this client version.
+
 Rust callers receive `cdk::Error`; inspect `wallet_kind()` and `is_retryable()`.
 FFI callers receive structured `FfiError` categories:
 

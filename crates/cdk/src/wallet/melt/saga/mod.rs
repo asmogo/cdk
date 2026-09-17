@@ -613,16 +613,9 @@ impl<'a> MeltSaga<'a, Initial> {
         }
 
         let operation_id = self.state_data.operation_id;
-        let proof_ys = proofs.ys()?;
 
-        // Since proofs may be external (not in our database), add them first
-        // while preserving the operation link needed for recovery.
-        let existing_proofs = self
-            .wallet
-            .localstore
-            .get_proofs_by_ys(proof_ys.clone())
-            .await?;
-        let mut proofs_info = proofs
+        // Import new inputs and reserve existing ones in one guarded operation.
+        let proofs_info = proofs
             .clone()
             .into_iter()
             .map(|p| {
@@ -636,16 +629,9 @@ impl<'a> MeltSaga<'a, Initial> {
                 )
             })
             .collect::<Result<Vec<ProofInfo>, _>>()?;
-        for proof_info in &mut proofs_info {
-            proof_info.derivation_index = existing_proofs
-                .iter()
-                .find(|existing| existing.y == proof_info.y)
-                .and_then(|existing| existing.derivation_index);
-        }
-
         self.wallet
             .localstore
-            .update_proofs(proofs_info, vec![])
+            .reserve_supplied_proofs(proofs_info, &operation_id)
             .await?;
 
         let input_fee = self.wallet.get_proofs_fee(&proofs).await?.total;
@@ -2281,3 +2267,6 @@ mod tests {
         assert_eq!(stored_quote.payment_proof.as_deref(), Some("preimage123"));
     }
 }
+
+#[cfg(test)]
+mod supplied_tests;

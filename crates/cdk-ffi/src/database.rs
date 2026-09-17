@@ -13,6 +13,31 @@ use crate::postgres::WalletPostgresDatabase;
 use crate::sqlite::WalletSqliteDatabase;
 use crate::types::*;
 
+fn to_cdk_proof_info(info: ProofInfo) -> Result<cdk::types::ProofInfo, FfiError> {
+    Ok(cdk::types::ProofInfo {
+        proof: info.proof.try_into()?,
+        y: info.y.try_into()?,
+        mint_url: info.mint_url.try_into()?,
+        state: info.state.into(),
+        spending_condition: info
+            .spending_condition
+            .map(|sc| sc.try_into())
+            .transpose()?,
+        unit: info.unit.into(),
+        derivation_index: info.derivation_index,
+        used_by_operation: info
+            .used_by_operation
+            .map(|id| uuid::Uuid::parse_str(&id))
+            .transpose()
+            .map_err(|e| FfiError::internal(e.to_string()))?,
+        created_by_operation: info
+            .created_by_operation
+            .map(|id| uuid::Uuid::parse_str(&id))
+            .transpose()
+            .map_err(|e| FfiError::internal(e.to_string()))?,
+    })
+}
+
 /// FFI-compatible wallet database trait with all read and write operations
 /// This trait mirrors the CDK WalletDatabase trait structure
 #[uniffi::export(with_foreign)]
@@ -241,6 +266,15 @@ pub trait WalletDatabase: Send + Sync {
     async fn reserve_proofs(
         &self,
         ys: Vec<PublicKey>,
+        operation_id: String,
+    ) -> Result<(), FfiError>;
+
+    /// Atomically reserve supplied proofs, inserting only absent coins.
+    /// Existing coins must be unspent and unowned. Preserve origin metadata and
+    /// reject the whole batch on conflict; separate upsert/reserve calls are unsafe.
+    async fn reserve_supplied_proofs(
+        &self,
+        proofs: Vec<ProofInfo>,
         operation_id: String,
     ) -> Result<(), FfiError>;
 
@@ -1010,6 +1044,20 @@ impl CdkWalletDatabase<cdk::cdk_database::Error> for WalletDatabaseBridge {
             .map_err(|e| cdk::cdk_database::Error::Database(e.to_string().into()))
     }
 
+    async fn reserve_supplied_proofs(
+        &self,
+        proofs: Vec<cdk_common::wallet::ProofInfo>,
+        operation_id: &uuid::Uuid,
+    ) -> Result<(), cdk::cdk_database::Error> {
+        self.ffi_db
+            .reserve_supplied_proofs(
+                proofs.into_iter().map(Into::into).collect(),
+                operation_id.to_string(),
+            )
+            .await
+            .map_err(|e| cdk::cdk_database::Error::Database(e.to_string().into()))
+    }
+
     async fn release_proofs(
         &self,
         operation_id: &uuid::Uuid,
@@ -1508,34 +1556,10 @@ where
         added: Vec<ProofInfo>,
         removed_ys: Vec<PublicKey>,
     ) -> Result<(), FfiError> {
-        let cdk_added: Result<Vec<cdk::types::ProofInfo>, FfiError> = added
+        let cdk_added = added
             .into_iter()
-            .map(|info| {
-                Ok::<cdk::types::ProofInfo, FfiError>(cdk::types::ProofInfo {
-                    proof: info.proof.try_into()?,
-                    y: info.y.try_into()?,
-                    mint_url: info.mint_url.try_into()?,
-                    state: info.state.into(),
-                    spending_condition: info
-                        .spending_condition
-                        .map(|sc| sc.try_into())
-                        .transpose()?,
-                    unit: info.unit.into(),
-                    derivation_index: info.derivation_index,
-                    used_by_operation: info
-                        .used_by_operation
-                        .map(|id| uuid::Uuid::parse_str(&id))
-                        .transpose()
-                        .map_err(|e| FfiError::internal(e.to_string()))?,
-                    created_by_operation: info
-                        .created_by_operation
-                        .map(|id| uuid::Uuid::parse_str(&id))
-                        .transpose()
-                        .map_err(|e| FfiError::internal(e.to_string()))?,
-                })
-            })
-            .collect();
-        let cdk_added = cdk_added?;
+            .map(to_cdk_proof_info)
+            .collect::<Result<Vec<_>, FfiError>>()?;
 
         let cdk_removed_ys: Result<Vec<cdk::nuts::PublicKey>, FfiError> =
             removed_ys.into_iter().map(|pk| pk.try_into()).collect();
@@ -1756,6 +1780,22 @@ where
         let cdk_ys = cdk_ys?;
         self.inner
             .reserve_proofs(cdk_ys, &operation_id)
+            .await
+            .map_err(FfiError::internal)
+    }
+
+    async fn reserve_supplied_proofs(
+        &self,
+        proofs: Vec<ProofInfo>,
+        operation_id: String,
+    ) -> Result<(), FfiError> {
+        let operation_id = uuid::Uuid::parse_str(&operation_id).map_err(FfiError::internal)?;
+        let proofs = proofs
+            .into_iter()
+            .map(to_cdk_proof_info)
+            .collect::<Result<Vec<_>, FfiError>>()?;
+        self.inner
+            .reserve_supplied_proofs(proofs, &operation_id)
             .await
             .map_err(FfiError::internal)
     }
@@ -2141,6 +2181,16 @@ macro_rules! impl_ffi_wallet_database {
                 self.inner.reserve_proofs(ys, operation_id).await
             }
 
+            async fn reserve_supplied_proofs(
+                &self,
+                proofs: Vec<ProofInfo>,
+                operation_id: String,
+            ) -> Result<(), FfiError> {
+                self.inner
+                    .reserve_supplied_proofs(proofs, operation_id)
+                    .await
+            }
+
             async fn release_proofs(&self, operation_id: String) -> Result<(), FfiError> {
                 self.inner.release_proofs(operation_id).await
             }
@@ -2288,4 +2338,19 @@ pub fn create_cdk_database_from_ffi(
     ffi_db: Arc<dyn WalletDatabase>,
 ) -> Arc<dyn CdkWalletDatabase<cdk::cdk_database::Error> + Send + Sync> {
     Arc::new(WalletDatabaseBridge::new(ffi_db))
+}
+
+#[cfg(test)]
+mod reservation_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn reserve_supplied_bridge_preserves_ownership() {
+        let db = cdk_sqlite::wallet::memory::empty().await.unwrap();
+        let bridge = WalletDatabaseBridge::new(FfiWalletDatabaseWrapper::new(db));
+        cdk_common::database::wallet::test::reserve_supplied_preserves_metadata(bridge).await;
+        let db = cdk_sqlite::wallet::memory::empty().await.unwrap();
+        let bridge = WalletDatabaseBridge::new(FfiWalletDatabaseWrapper::new(db));
+        cdk_common::database::wallet::test::reserve_supplied_stale_read(bridge).await;
+    }
 }

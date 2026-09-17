@@ -19,6 +19,9 @@ use crate::wallet::{
 #[cfg(feature = "test")]
 pub mod test;
 
+mod reservation;
+pub use self::reservation::reserve_supplied_proof;
+
 /// Wallet Database trait
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
@@ -185,6 +188,25 @@ where
         ys: Vec<PublicKey>,
         operation_id: &uuid::Uuid,
     ) -> Result<(), Err>;
+
+    /// Atomically reserve supplied inputs, importing only proofs absent from storage.
+    ///
+    /// Inputs must have canonical Ys, Reserved state and the given operation owner.
+    /// Existing coins must be unspent, unowned and match the supplied bearer proof
+    /// and wallet scope. Preserve their origin metadata and allow updated witnesses.
+    /// Reject duplicate Ys. A conflict or error must leave the whole batch unchanged.
+    /// The default fails before mutation; custom backends must provide an atomic
+    /// implementation before preparing melts with supplied proofs.
+    async fn reserve_supplied_proofs(
+        &self,
+        _proofs: Vec<ProofInfo>,
+        _operation_id: &uuid::Uuid,
+    ) -> Result<(), Err> {
+        Err(Error::Internal(
+            "Atomic supplied-proof reservation is not supported by this database".to_owned(),
+        )
+        .into())
+    }
 
     /// Release proofs reserved by an operation.
     ///

@@ -36,6 +36,8 @@ mod migrations {
     include!(concat!(env!("OUT_DIR"), "/migrations_wallet.rs"));
 }
 
+mod proofs;
+
 /// Wallet SQLite Database
 #[derive(Debug, Clone)]
 pub struct SQLWalletDatabase<RM>
@@ -770,78 +772,7 @@ where
         let tx = ConnectionWithTransaction::new(conn).await?;
 
         for proof in added {
-            query(
-                r#"
-    INSERT INTO proof
-    (y, mint_url, state, spending_condition, unit, amount, keyset_id, secret, c, witness, dleq_e, dleq_s, dleq_r, used_by_operation, created_by_operation, derivation_index, p2pk_e)
-    VALUES
-    (:y, :mint_url, :state, :spending_condition, :unit, :amount, :keyset_id, :secret, :c, :witness, :dleq_e, :dleq_s, :dleq_r, :used_by_operation, :created_by_operation, :derivation_index, :p2pk_e)
-    ON CONFLICT(y) DO UPDATE SET
-        mint_url = excluded.mint_url,
-        state = excluded.state,
-        spending_condition = excluded.spending_condition,
-        unit = excluded.unit,
-        amount = excluded.amount,
-        keyset_id = excluded.keyset_id,
-        secret = excluded.secret,
-        c = excluded.c,
-        witness = excluded.witness,
-        dleq_e = excluded.dleq_e,
-        dleq_s = excluded.dleq_s,
-        dleq_r = excluded.dleq_r,
-        used_by_operation = excluded.used_by_operation,
-        created_by_operation = excluded.created_by_operation,
-        derivation_index = COALESCE(excluded.derivation_index, proof.derivation_index),
-        p2pk_e = excluded.p2pk_e
-    ;
-            "#,
-            )?
-            .bind("y", proof.y.to_bytes().to_vec())
-            .bind("mint_url", proof.mint_url.to_string())
-            .bind("state", proof.state.to_string())
-            .bind(
-                "spending_condition",
-                proof
-                    .spending_condition
-                    .map(|s| serde_json::to_string(&s).ok()),
-            )
-            .bind("unit", proof.unit.to_string())
-            .bind("amount", u64::from(proof.proof.amount) as i64)
-            .bind("keyset_id", proof.proof.keyset_id.to_string())
-            .bind("secret", proof.proof.secret.to_string())
-            .bind("c", proof.proof.c.to_bytes().to_vec())
-            .bind(
-                "witness",
-                proof
-                    .proof
-                    .witness
-                    .and_then(|w| serde_json::to_string(&w).ok()),
-            )
-            .bind(
-                "dleq_e",
-                proof.proof.dleq.as_ref().map(|dleq| dleq.e.to_secret_bytes().to_vec()),
-            )
-            .bind(
-                "dleq_s",
-                proof.proof.dleq.as_ref().map(|dleq| dleq.s.to_secret_bytes().to_vec()),
-            )
-            .bind(
-                "dleq_r",
-                proof.proof.dleq.as_ref().map(|dleq| dleq.r.to_secret_bytes().to_vec()),
-            )
-            .bind("used_by_operation", proof.used_by_operation.map(|id| id.to_string()))
-            .bind("created_by_operation", proof.created_by_operation.map(|id| id.to_string()))
-            .bind("derivation_index", proof.derivation_index.map(i64::from))
-            .bind(
-                "p2pk_e",
-                proof
-                    .proof
-                    .p2pk_e
-                    .as_ref()
-                    .map(|pk| pk.to_bytes().to_vec()),
-            )
-            .execute(&tx)
-            .await?;
+            proofs::write(&tx, proof, false).await?;
         }
 
         if !removed_ys.is_empty() {
@@ -1656,6 +1587,47 @@ where
         tx.commit().await?;
 
         Ok(())
+    }
+
+    async fn reserve_supplied_proofs(
+        &self,
+        mut inputs: Vec<ProofInfo>,
+        operation_id: &Uuid,
+    ) -> Result<(), database::Error> {
+        inputs.sort_by_key(|p| p.y);
+        if inputs.windows(2).any(|p| p[0].y == p[1].y) {
+            return Err(database::Error::ProofNotUnspent);
+        }
+        let conn = self
+            .pool
+            .get()
+            .await
+            .map_err(|e| Error::Database(Box::new(e)))?;
+        let tx = ConnectionWithTransaction::new(conn).await?;
+        for input in inputs {
+            // Lock existing rows before validating; absent rows use a strict INSERT.
+            let current = query(
+                "UPDATE proof SET state=state WHERE y=:y
+                 RETURNING amount, unit, keyset_id, secret, c, witness, dleq_e, dleq_s,
+                    dleq_r, y, mint_url, state, spending_condition, used_by_operation,
+                    created_by_operation, derivation_index, p2pk_e",
+            )?
+            .bind("y", input.y.to_bytes().to_vec())
+            .fetch_all(&tx)
+            .await?
+            .into_iter()
+            .next()
+            .map(sql_row_to_proof_info)
+            .transpose()?;
+            let insert_only = current.is_none();
+            let reserved = cdk_common::database::wallet::reserve_supplied_proof(
+                &input,
+                current,
+                operation_id,
+            )?;
+            proofs::write(&tx, reserved, insert_only).await?;
+        }
+        tx.commit().await
     }
 
     #[instrument(skip(self))]

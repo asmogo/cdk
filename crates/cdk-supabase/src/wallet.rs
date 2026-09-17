@@ -50,6 +50,8 @@ pub(crate) fn get_schema_sql_inner() -> String {
         .join("\n\n")
 }
 
+mod reservation;
+
 /// URL-encode a value for use in query parameters
 fn url_encode(value: &str) -> String {
     url::form_urlencoded::byte_serialize(value.as_bytes()).collect()
@@ -243,7 +245,7 @@ impl SupabaseWalletDatabase {
     /// This must match the latest `schema_version` value set in the migration files.
     /// When adding new migrations, update this constant and set the same value
     /// in the new migration's `INSERT INTO schema_info` statement.
-    pub const REQUIRED_SCHEMA_VERSION: u32 = 10;
+    pub const REQUIRED_SCHEMA_VERSION: u32 = 11;
 
     /// Get the full database schema SQL
     ///
@@ -2107,6 +2109,14 @@ impl Database<DatabaseError> for SupabaseWalletDatabase {
         }
 
         Ok(())
+    }
+
+    async fn reserve_supplied_proofs(
+        &self,
+        proofs: Vec<ProofInfo>,
+        operation_id: &uuid::Uuid,
+    ) -> Result<(), DatabaseError> {
+        self.reserve_supplied_atomic(proofs, operation_id).await
     }
 
     async fn release_proofs(&self, operation_id: &uuid::Uuid) -> Result<(), DatabaseError> {

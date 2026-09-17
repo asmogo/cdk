@@ -21,6 +21,9 @@ use crate::wallet::{
     TransactionDirection, TransactionStatus, WalletSaga, WalletSagaState,
 };
 
+mod supplied;
+pub use supplied::*;
+
 /// Generate a unique test ID
 fn unique_id() -> String {
     format!("test-{}", uuid::Uuid::now_v7())
@@ -1839,7 +1842,12 @@ macro_rules! wallet_db_test {
             release_proofs_preserves_spent,
             get_reserved_proofs,
             reserve_proofs_already_reserved,
-            reserve_proofs_is_atomic
+            reserve_proofs_is_atomic,
+            reserve_supplied_preserves_metadata,
+            reserve_supplied_stale_read,
+            reserve_supplied_rolls_back_batch,
+            reserve_supplied_concurrent,
+            reserve_supplied_rejects_mismatch
         );
     };
     ($make_db_fn:ident, $($name:ident),+ $(,)?) => {

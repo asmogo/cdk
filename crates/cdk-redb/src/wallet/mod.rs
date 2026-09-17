@@ -1220,6 +1220,45 @@ impl WalletDatabase<database::Error> for WalletRedbDatabase {
         Ok(())
     }
 
+    async fn reserve_supplied_proofs(
+        &self,
+        inputs: Vec<ProofInfo>,
+        operation_id: &uuid::Uuid,
+    ) -> Result<(), database::Error> {
+        let tx = self.db.begin_write().map_err(Error::from)?;
+        {
+            let mut table = tx.open_table(PROOFS_TABLE).map_err(Error::from)?;
+            let mut seen = std::collections::HashSet::new();
+            for input in inputs {
+                if !seen.insert(input.y) {
+                    return Err(database::Error::ProofNotUnspent);
+                }
+                let y = input.y.to_bytes();
+                let current = table
+                    .get(y.as_slice())
+                    .map_err(Error::from)?
+                    .map(|p| serde_json::from_str::<ProofInfo>(p.value()))
+                    .transpose()
+                    .map_err(Error::from)?;
+                let reserved = cdk_common::database::wallet::reserve_supplied_proof(
+                    &input,
+                    current,
+                    operation_id,
+                )?;
+                table
+                    .insert(
+                        y.as_slice(),
+                        serde_json::to_string(&reserved)
+                            .map_err(Error::from)?
+                            .as_str(),
+                    )
+                    .map_err(Error::from)?;
+            }
+        }
+        tx.commit().map_err(Error::from)?;
+        Ok(())
+    }
+
     #[instrument(skip(self))]
     async fn release_proofs(&self, operation_id: &uuid::Uuid) -> Result<(), database::Error> {
         let write_txn = self.db.begin_write().map_err(Error::from)?;

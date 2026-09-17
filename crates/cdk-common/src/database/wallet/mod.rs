@@ -20,7 +20,7 @@ use crate::wallet::{
 pub mod test;
 
 mod reservation;
-pub use reservation::reserve_supplied_proof;
+pub use self::reservation::reserve_supplied_proof;
 
 /// Wallet Database trait
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]

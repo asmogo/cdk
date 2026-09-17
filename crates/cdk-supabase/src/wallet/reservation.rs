@@ -1,7 +1,9 @@
 //! Atomic reservation of supplied encrypted coins.
-use super::*;
-use cdk_common::database::wallet::reserve_supplied_proof;
 use std::collections::HashSet;
+
+use cdk_common::database::wallet::reserve_supplied_proof;
+
+use super::*;
 
 impl SupabaseWalletDatabase {
     pub(super) async fn reserve_supplied_atomic(
@@ -63,9 +65,10 @@ impl SupabaseWalletDatabase {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use mockito::Matcher;
     use serde_json::json;
+
+    use super::*;
 
     fn proof() -> ProofInfo {
         ProofInfo::new(

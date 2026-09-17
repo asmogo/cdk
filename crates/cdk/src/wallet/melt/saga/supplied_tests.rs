@@ -1,10 +1,11 @@
+use std::collections::HashMap;
+use std::sync::Arc;
+
 use super::*;
 use crate::wallet::test_utils::{
     create_test_db, create_test_wallet_with_mock, test_keyset_id, test_melt_quote, test_mint_url,
     test_proof_info, MockMintConnector,
 };
-use std::collections::HashMap;
-use std::sync::Arc;
 
 #[tokio::test]
 async fn supplied_proofs_cannot_steal_another_reservation() {

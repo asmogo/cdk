@@ -1,8 +1,9 @@
 //! Shared proof writes within a caller-owned SQL transaction.
-use crate::database::DatabaseExecutor;
-use crate::stmt::query;
 use cdk_common::database::Error;
 use cdk_common::wallet::ProofInfo;
+
+use crate::database::DatabaseExecutor;
+use crate::stmt::query;
 
 pub(super) async fn write(
     conn: &impl DatabaseExecutor,
